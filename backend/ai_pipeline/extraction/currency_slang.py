@@ -280,9 +280,7 @@ def _to_int(value: Decimal) -> int:
     return int(value.quantize(Decimal(1), rounding=ROUND_HALF_UP))
 
 
-def _period_after(
-    tokens: list[_Token], k: int, clause: int
-) -> tuple[int | None, int, bool]:
+def _period_after(tokens: list[_Token], k: int, clause: int) -> tuple[int | None, int, bool]:
     """Đơn vị kỳ ngay sau cụm tiền: ``... một ngày`` / ``.../ngày`` / ``mỗi tuần``."""
     if k < len(tokens) and tokens[k].clause == clause:
         if tokens[k].text in PERIOD_DAYS:
