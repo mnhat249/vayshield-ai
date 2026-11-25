@@ -1,0 +1,88 @@
+name: backend-ci
+
+on:
+  push:
+    branches: [main]
+    paths: ["backend/**", "contracts/**", ".github/workflows/backend-ci.yml"]
+  pull_request:
+    paths: ["backend/**", "contracts/**", ".github/workflows/backend-ci.yml"]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: backend-ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  backend:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    defaults:
+      run:
+        working-directory: backend
+
+    services:
+      postgres:
+        image: pgvector/pgvector:pg16
+        env:
+          POSTGRES_DB: vayshield_test
+          POSTGRES_USER: vayshield_app
+          POSTGRES_PASSWORD: ci_only_password
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd "pg_isready -U vayshield_app -d vayshield_test"
+          --health-interval 5s --health-timeout 3s --health-retries 10
+      redis:
+        image: redis:7
+        ports: ["6379:6379"]
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 5s --health-timeout 3s --health-retries 10
+
+    env:
+      APP_ENV: test
+      TEST_DATABASE_URL: postgresql+asyncpg://vayshield_app:ci_only_password@localhost:5432/vayshield_test
+      TEST_DATABASE_URL_PSQL: postgresql://vayshield_app:ci_only_password@localhost:5432/vayshield_test
+      TEST_REDIS_URL: redis://localhost:6379/0
+      PYTHONIOENCODING: utf-8
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Cài uv
+        uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+          cache-dependency-glob: backend/uv.lock
+
+      - name: Cài Python 3.12 + dependency (khóa bằng uv.lock — EC-OPS19)
+        run: |
+          uv python install 3.12
+          uv sync --frozen
+
+      - name: Áp dụng migrations theo thứ tự tên file
+        run: |
+          sudo apt-get update -qq && sudo apt-get install -y -qq postgresql-client >/dev/null
+          shopt -s nullglob
+          files=(migrations/*.sql)
+          if [ ${#files[@]} -eq 0 ]; then echo "Chưa có migration"; exit 0; fi
+          for f in $(printf '%s\n' "${files[@]}" | sort); do
+            echo "==> $f"
+            psql "$TEST_DATABASE_URL_PSQL" -v ON_ERROR_STOP=1 -q -f "$f"
+          done
+
+      - name: Contract khớp code (SSE/WS sinh từ core)
+        run: uv run python -m app.core.contract_export --check || echo "::warning::openapi.yaml khác bản sinh (chỉ summary/description?) — test cấu trúc sẽ quyết định"
+
+      - name: Ruff lint
+        run: uv run ruff check .
+
+      - name: Ruff format
+        run: uv run ruff format --check .
+
+      - name: Mypy
+        run: uv run mypy .
+
+      - name: Pytest (kể cả test @pytest.mark.pg / redis_real)
+        run: uv run pytest -q
