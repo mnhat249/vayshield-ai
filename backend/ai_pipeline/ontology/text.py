@@ -12,7 +12,7 @@ _NON_WORD = re.compile(r"[^a-z0-9% ]+")
 # Chỉ sửa khi có ngữ cảnh đi kèm ("... khoản vay") để không biến đổi câu vô hại.
 _PHONETIC_FIXES: tuple[tuple[re.Pattern[str], str], ...] = (
     (re.compile(r"\b(gui|ky|quy|hui)\s+(lai\s+)?(khoan|khoang)\s+vay\b"), "huy khoan vay"),
-    (re.compile(r"\b(gui|ky|quy|hui)\s+(hop dong|khoan tien vay)\b"), r"huy \2"),
+    (re.compile(r"\b(tk|stk)\b"), "tai khoan"),
     (re.compile(r"\bdoi chung\b"), "doi ung"),
     (re.compile(r"\bgiai thoa\b"), "giai toa"),
 )

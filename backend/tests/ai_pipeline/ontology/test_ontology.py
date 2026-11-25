@@ -12,7 +12,7 @@ import pytest
 from ai_pipeline.ontology import classify_response, generate_challenge
 from ai_pipeline.ontology.challenge import CHOICE_PERSONAL, CHOICE_REVERSAL, CHOICE_VERIFY
 from ai_pipeline.ontology.llm import FakeLlmIntentClassifier
-from app.core.schemas.common import AudioCallState, OntologyAction, OntologyAxis
+from app.core.schemas.common import AudioCallState, HsmState, OntologyAction, OntologyAxis
 from app.core.schemas.shield import SensorSnapshot
 
 NO_CALL = SensorSnapshot(audio_call_state=AudioCallState.NONE)
@@ -236,7 +236,7 @@ def test_llm_only_consulted_when_rules_find_nothing() -> None:
     assert res.used_llm is False
     res2 = classify_response(text="chuyển theo chỉ dẫn xyz la", sensors=NO_CALL, llm=fake)
     assert fake.calls and res2.used_llm
-    assert res2.action == OntologyAction.RED
+    assert res2.action == OntologyAction.ORANGE_RED  # LLM một mình không lên RED
 
 
 def test_llm_cannot_downgrade_rule_result() -> None:
@@ -254,7 +254,7 @@ def test_result_fields_match_contract_model() -> None:
         action=res.action,
         detected_axes=res.detected_axes,
         computed_scam_prob=res.computed_scam_prob,
-        next_hsm_state="S5_CRITICAL_INTERCEPTION",
+        next_hsm_state=HsmState.S5_CRITICAL_INTERCEPTION,
         message_vi=res.message_vi,
         tts_script_vi=res.tts_script_vi,
         callback_hotline_hint_vi=res.callback_hotline_hint_vi,
@@ -267,3 +267,102 @@ def test_result_fields_match_contract_model() -> None:
 )
 def test_benign_text_passes_without_call(text: str) -> None:
     assert classify_response(text=text, sensors=NO_CALL).action == OntologyAction.PASS
+
+
+BENIGN = [
+    "Rút tiền vì cần mua thuốc cho mẹ",
+    "Lấy tiền đưa cho má đi chợ",
+    "Mua hoa hồng tặng vợ nhân ngày cưới",
+    "Chuyển đúng tên người nhận là chủ nhà",
+    "Đóng bảo hiểm y tế cho bố mẹ",
+    "Ký hợp đồng thuê nhà, chuyển tiền cọc",
+    "Trả tiền hàng trước 5 giờ chiều cho cửa hàng",
+    "Trả lại ngay tiền mượn của bạn",
+    "chuyển tiền cho con trai đang làm công an ở quê",
+    "nộp tiền phạt nguội xe máy",
+    "Nộp thuế thu nhập cá nhân cuối năm",
+    "Nộp thuế vào kho bạc nhà nước cho công ty",
+    "Kiểm tra điểm CIC của tôi",
+    "Em mua gạo cho nhà",
+    "Trả tiền điện tháng này",
+    "Biếu bố mẹ ít tiền",
+    "Gấp lắm, mẹ nhập viện cần tiền viện phí",
+    "Chuyển tiền học phí cho con",
+    "Mua vé tàu về quê ăn tết",
+    "Trả tiền thuê phòng trọ tháng 11",
+    "Gửi tiền tiết kiệm cho kỳ hạn mới",
+    "Đóng bảo hiểm xe máy hàng năm",
+    "Tôi làm công an, chuyển lương cho vợ",
+    "Mua ví da tặng bạn",
+    "Quét mã QR trả tiền cà phê",
+    "Đặt cọc mua xe máy cũ",
+    "Mua quà sinh nhật cho bạn",
+    "Trả nợ anh trai tiền mượn tháng trước",
+    "Tôi thanh toán tiền ăn trưa với đồng nghiệp",
+    "Chuyển tiền sửa mái nhà",
+]
+
+
+@pytest.mark.parametrize("text", BENIGN)
+def test_benign_personal_transactions_pass(text: str) -> None:
+    res = classify_response(text=text, sensors=NO_CALL)
+    assert res.action == OntologyAction.PASS, (text, res.detected_axes)
+
+
+SCAMS = [
+    "chuyển vào tk kỹ thuật theo hướng dẫn",
+    "chuyen vao tk tam giu de dieu tra",
+    "anh ấy bảo chuyển vào tài khoản đảm bảo",
+    "Đóng phí bảo hiểm khoản vay mới được rút tiền",
+    "Công an yêu cầu chuyển tiền vào tài khoản điều tra",
+    "Phải chuyển trong 5 phút nếu không bị phạt",
+    "Quét mã QR để rút tiền mặt từ ví trả sau",
+    "Đứng tên vay hộ cho sếp rồi nhận hoa hồng",
+]
+
+
+@pytest.mark.parametrize("text", SCAMS)
+def test_scam_phrases_caught(text: str) -> None:
+    assert classify_response(text=text, sensors=NO_CALL).action == OntologyAction.RED, text
+
+
+def test_llm_exception_falls_back_to_rules() -> None:
+    class Boom:
+        def classify(self, text: str) -> list:  # type: ignore[type-arg]
+            raise TimeoutError("llm")
+
+    res = classify_response(text="mua gạo cho nhà", sensors=NO_CALL, llm=Boom())
+    assert res.action == OntologyAction.PASS and res.used_llm is False
+    res2 = classify_response(text="mua đồ", sensors=CALL, llm=Boom())
+    assert res2.action == OntologyAction.ORANGE_RED and res2.used_llm is False
+
+
+def test_llm_low_confidence_axis_ignored_and_real_confidence_used() -> None:
+    from app.core.schemas.shield import DetectedAxis
+
+    class Low:
+        def classify(self, text: str) -> list[DetectedAxis]:
+            return [DetectedAxis(axis=OntologyAxis.C6, name="x", confidence=0.05)]
+
+    res = classify_response(text="chuyen tien an trua cho dong nghiep", sensors=NO_CALL, llm=Low())
+    assert res.action == OntologyAction.PASS and res.computed_scam_prob == 0.0
+
+    class High:
+        def classify(self, text: str) -> list[DetectedAxis]:
+            return [DetectedAxis(axis=OntologyAxis.C6, name="x", confidence=0.85)]
+
+    res = classify_response(text="chuyen khoan theo chi dan", sensors=NO_CALL, llm=High())
+    assert res.action == OntologyAction.ORANGE_RED
+    assert res.computed_scam_prob == 0.85
+    assert res.escalate_recommended is False
+
+
+def test_llm_receives_original_text_with_diacritics() -> None:
+    fake = FakeLlmIntentClassifier({})
+    classify_response(text="Chuyển cho người quen", sensors=NO_CALL, llm=fake)
+    assert fake.calls == ["Chuyển cho người quen"]
+
+
+def test_invalid_choice_id_treated_as_no_input() -> None:
+    assert classify_response(choice_id="ch_bogus", sensors=NO_CALL).action == OntologyAction.PASS
+    assert classify_response(choice_id="ch_bogus", sensors=CALL).action == OntologyAction.ORANGE_RED

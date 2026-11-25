@@ -18,6 +18,8 @@ FIRST_HOUR_S = 3600
 REOPEN_THRESHOLD = 2
 CALM_COUNTDOWN_S = 15  # S2-EC22
 C7_LOCK_EXTENSION_S = 20
+LLM_MIN_CONFIDENCE = 0.8
+_VALID_CHOICES = {CHOICE_REVERSAL, CHOICE_VERIFY, CHOICE_PERSONAL}
 
 HOTLINE_HINT_VI = (
     "Hình ảnh và giọng nói trên cuộc gọi video hoàn toàn có thể làm giả bằng AI — "
@@ -117,7 +119,11 @@ def classify_response(
     llm: LlmIntentClassifier | None = None,
 ) -> OntologyResult:
     """Phân loại câu trả lời/lựa chọn thành trục C1–C10 + hành động RED / ORANGE_RED / PASS."""
-    norm = normalize(text) if text else ""
+    raw_text = (text or "").strip()
+    norm = normalize(raw_text)
+    # choice_id không hợp lệ coi như không có lựa chọn.
+    if choice_id not in _VALID_CHOICES:
+        choice_id = None
     in_call = sensors.audio_call_state.value in _ACTIVE_CALL
     is_voip = sensors.audio_call_state.value == "ACTIVE_VOIP"
 
@@ -132,14 +138,22 @@ def classify_response(
         axes[OntologyAxis.C2] = 1.0
         axes[OntologyAxis.C4] = 1.0
 
-    used_llm = False
+    # LLM tùy chọn: chỉ khi luật không bắt được gì; lỗi LLM -> rơi về luật;
+    # trục từ LLM cần confidence >= 0.8 và một mình chỉ nâng tối đa lên ORANGE_RED.
+    llm_axes: dict[OntologyAxis, float] = {}
     if not axes and norm and llm is not None:
-        for d in llm.classify(norm):
-            if d.axis != OntologyAxis.C7:
-                axes[d.axis] = max(axes.get(d.axis, 0.0), d.confidence)
-                used_llm = True
+        try:
+            suggestions = llm.classify(raw_text)
+        except Exception:  # mọi lỗi LLM (timeout, mạng) đều rơi về lớp luật
+            suggestions = []
+        for d in suggestions:
+            if d.axis != OntologyAxis.C7 and d.confidence >= LLM_MIN_CONFIDENCE:
+                llm_axes[d.axis] = max(llm_axes.get(d.axis, 0.0), d.confidence)
+    used_llm = bool(llm_axes)
 
-    # C7: cần cuộc gọi đang diễn ra (S2-EC22, EC-AI13).
+    # C7: cần cuộc gọi đang diễn ra (S2-EC22, EC-AI13). Lựa chọn "mua sắm/sinh hoạt" chỉ cần
+    # IN_CALL (không cho mở khóa bằng câu chung chung); thiếu "60 phút đầu + mở lại app >= 2 lần"
+    # hoặc ngập ngừng thì độ tin cậy thấp hơn (xem _c7_confidence).
     hesitation = sensors.hesitation_ms or 0
     hesitated = hesitation > HESITATION_THRESHOLD_MS
     silent = not norm and choice_id is None and hesitation >= SILENCE_THRESHOLD_MS
@@ -154,7 +168,6 @@ def classify_response(
         secs = sensors.seconds_since_disbursement
         first_hour = secs is not None and secs <= FIRST_HOUR_S
         reopen_ok = sensors.bank_app_reopen_count >= REOPEN_THRESHOLD
-        # Đang gọi thì KHÔNG cho mở khóa bằng câu trả lời chung chung (S2-EC22).
         axes[OntologyAxis.C7] = _c7_confidence(evasive, hesitated or silent, reopen_ok, first_hour)
     elif in_call and hesitated and axes:
         axes[OntologyAxis.C7] = _c7_confidence(evasive, True, False, False)
@@ -162,17 +175,18 @@ def classify_response(
     red_axes = [a for a in axes if a != OntologyAxis.C7]
     if red_axes:
         action = OntologyAction.RED
-    elif OntologyAxis.C7 in axes:
+    elif OntologyAxis.C7 in axes or llm_axes:
         action = OntologyAction.ORANGE_RED
     else:
         action = OntologyAction.PASS
 
-    detected = [_axis(a, c) for a, c in sorted(axes.items(), key=lambda kv: -kv[1])]
+    all_axes = {**llm_axes, **axes}
+    detected = [_axis(a, c) for a, c in sorted(all_axes.items(), key=lambda kv: -kv[1])]
     prob = 0.0
     if action == OntologyAction.RED:
         prob = max(0.9, max(axes[a] for a in red_axes))
     elif action == OntologyAction.ORANGE_RED:
-        prob = axes[OntologyAxis.C7]
+        prob = max(all_axes.values())
 
     # S2-EC47: cuộc gọi VoIP/video có dấu hiệu -> nhắc gọi lại hotline chính thức.
     mentions_video = any(k in norm for k in ("video", "zalo", "deepfake", "facetime"))
@@ -183,9 +197,13 @@ def classify_response(
     if action == OntologyAction.PASS:
         message, tts = _PASS_MESSAGE
     else:
-        primary = red_axes[0] if red_axes else OntologyAxis.C7
+        primary: OntologyAxis
         if red_axes:
             primary = max(red_axes, key=lambda a: axes[a])
+        elif llm_axes:
+            primary = max(llm_axes, key=lambda a: llm_axes[a])
+        else:
+            primary = OntologyAxis.C7
         message, tts = _AXIS_MESSAGES[primary]
         if hint:
             message = f"{message} {hint}"
