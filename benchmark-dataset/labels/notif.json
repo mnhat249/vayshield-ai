@@ -1,0 +1,1349 @@
+[
+ {
+  "id": "NT-001",
+  "bank": "Vietcombank",
+  "category": "DISBURSEMENT",
+  "text": "Vietcombank: TK 000015867 +8,000,000VND LUC 23:46 ND: CTY TC TNHH MTV DEMO FINCO GIAI NGAN HD 000024114717",
+  "is_disbursement": true,
+  "contains_otp": false,
+  "otp_value": null,
+  "pii_spans": [
+   "000015867",
+   "000024114717"
+  ],
+  "expected_masked": "Vietcombank: TK [MASKED] +8,000,000VND LUC 23:46 ND: CTY TC TNHH MTV DEMO FINCO GIAI NGAN HD [MASKED]"
+ },
+ {
+  "id": "NT-002",
+  "bank": "VietinBank",
+  "category": "DISBURSEMENT",
+  "text": "VietinBank +6,500,000VND TK 000011773. ND: GIAI NGAN KHOAN VAY DEMOCREDIT SDT 0000734384",
+  "is_disbursement": true,
+  "contains_otp": false,
+  "otp_value": null,
+  "pii_spans": [
+   "000011773",
+   "0000734384"
+  ],
+  "expected_masked": "VietinBank +6,500,000VND TK [MASKED]. ND: GIAI NGAN KHOAN VAY DEMOCREDIT SDT [MASKED]"
+ },
+ {
+  "id": "NT-003",
+  "bank": "BIDV",
+  "category": "SALARY_P2P",
+  "text": "BIDV: TK 000067342 +12,000,000VND ND: NGUYEN VAN DEMO chuyen khoan SDT 0000633469",
+  "is_disbursement": false,
+  "contains_otp": false,
+  "otp_value": null,
+  "pii_spans": [
+   "000067342",
+   "0000633469"
+  ],
+  "expected_masked": "BIDV: TK [MASKED] +12,000,000VND ND: NGUYEN VAN DEMO chuyen khoan SDT [MASKED]"
+ },
+ {
+  "id": "NT-004",
+  "bank": "Agribank",
+  "category": "DISBURSEMENT",
+  "text": "Agribank: TK 000095068 +3,000,000VND LUC 19:56 ND: CTY TC TNHH MTV DEMO FINCO GIAI NGAN HD 000043235025",
+  "is_disbursement": true,
+  "contains_otp": false,
+  "otp_value": null,
+  "pii_spans": [
+   "000095068",
+   "000043235025"
+  ],
+  "expected_masked": "Agribank: TK [MASKED] +3,000,000VND LUC 19:56 ND: CTY TC TNHH MTV DEMO FINCO GIAI NGAN HD [MASKED]"
+ },
+ {
+  "id": "NT-005",
+  "bank": "MB Bank",
+  "category": "DISBURSEMENT",
+  "text": "MB Bank +19,000,000VND TK 000065623. ND: GIAI NGAN KHOAN VAY DEMOCREDIT SDT 0000761046",
+  "is_disbursement": true,
+  "contains_otp": false,
+  "otp_value": null,
+  "pii_spans": [
+   "000065623",
+   "0000761046"
+  ],
+  "expected_masked": "MB Bank +19,000,000VND TK [MASKED]. ND: GIAI NGAN KHOAN VAY DEMOCREDIT SDT [MASKED]"
+ },
+ {
+  "id": "NT-006",
+  "bank": "Techcombank",
+  "category": "DEBIT_REFUND",
+  "text": "Techcombank: TK 000041975 -1,550,000VND LUC 15:49 ND: THANH TOAN QR SHOP DEMO",
+  "is_disbursement": false,
+  "contains_otp": false,
+  "otp_value": null,
+  "pii_spans": [
+   "000041975"
+  ],
+  "expected_masked": "Techcombank: TK [MASKED] -1,550,000VND LUC 15:49 ND: THANH TOAN QR SHOP DEMO"
+ },
+ {
+  "id": "NT-007",
+  "bank": "ACB",
+  "category": "DISBURSEMENT",
+  "text": "ACB: TK 000011182 +12,000,000VND LUC 21:06 ND: CTY TC TNHH MTV DEMO FINCO GIAI NGAN HD 000034296100",
+  "is_disbursement": true,
+  "contains_otp": false,
+  "otp_value": null,
+  "pii_spans": [
+   "000011182",
+   "000034296100"
+  ],
+  "expected_masked": "ACB: TK [MASKED] +12,000,000VND LUC 21:06 ND: CTY TC TNHH MTV DEMO FINCO GIAI NGAN HD [MASKED]"
+ },
+ {
+  "id": "NT-008",
+  "bank": "VPBank",
+  "category": "OTP",
+  "text": "VPBank SmartOTP: Ma 519681 xac nhan GD 850,000VND tai TK 000089721. Tuyet doi khong chia se ma nay.",
+  "is_disbursement": false,
+  "contains_otp": true,
+  "otp_value": "519681",
+  "pii_spans": [
+   "000089721"
+  ],
+  "expected_masked": "VPBank SmartOTP: Ma [OTP] xac nhan GD 850,000VND tai TK [MASKED]. Tuyet doi khong chia se ma nay."
+ },
+ {
+  "id": "NT-009",
+  "bank": "TPBank",
+  "category": "OTP",
+  "text": "TPBank SMS OTP: Ma 325956 xac nhan GD 750,000VND tai TK 000013334. Tuyet doi khong chia se ma nay.",
+  "is_disbursement": false,
+  "contains_otp": true,
+  "otp_value": "325956",
+  "pii_spans": [
+   "000013334"
+  ],
+  "expected_masked": "TPBank SMS OTP: Ma [OTP] xac nhan GD 750,000VND tai TK [MASKED]. Tuyet doi khong chia se ma nay."
+ },
+ {
+  "id": "NT-010",
+  "bank": "Sacombank",
+  "category": "SALARY_P2P",
+  "text": "Sacombank: TK 000081495 +3,500,000VND LUC 02:18 ND: CTY MAY DEMO TRA LUONG THANG 8",
+  "is_disbursement": false,
+  "contains_otp": false,
+  "otp_value": null,
+  "pii_spans": [
+   "000081495"
+  ],
+  "expected_masked": "Sacombank: TK [MASKED] +3,500,000VND LUC 02:18 ND: CTY MAY DEMO TRA LUONG THANG 8"
+ },
+ {
+  "id": "NT-011",
+  "bank": "HDBank",
+  "category": "SALARY_P2P",
+  "text": "HDBank: TK 000069095 +19,500,000VND ND: NGUYEN VAN DEMO chuyen khoan SDT 0000495758",
+  "is_disbursement": false,
+  "contains_otp": false,
+  "otp_value": null,
+  "pii_spans": [
+   "000069095",
+   "0000495758"
+  ],
+  "expected_masked": "HDBank: TK [MASKED] +19,500,000VND ND: NGUYEN VAN DEMO chuyen khoan SDT [MASKED]"
+ },
+ {
+  "id": "NT-012",
+  "bank": "VIB",
+  "category": "OTP",
+  "text": "VIB SmartOTP: Ma 933723 xac nhan GD 1,800,000VND tai TK 000058763. Tuyet doi khong chia se ma nay.",
+  "is_disbursement": false,
+  "contains_otp": true,
+  "otp_value": "933723",
+  "pii_spans": [
+   "000058763"
+  ],
+  "expected_masked": "VIB SmartOTP: Ma [OTP] xac nhan GD 1,800,000VND tai TK [MASKED]. Tuyet doi khong chia se ma nay."
+ },
+ {
+  "id": "NT-013",
+  "bank": "SHB",
+  "category": "DISBURSEMENT",
+  "text": "SHB: TK 000054996 +19,500,000VND LUC 08:53 ND: CTY TC TNHH MTV DEMO FINCO GIAI NGAN HD 000080364453",
+  "is_disbursement": true,
+  "contains_otp": false,
+  "otp_value": null,
+  "pii_spans": [
+   "000054996",
+   "000080364453"
+  ],
+  "expected_masked": "SHB: TK [MASKED] +19,500,000VND LUC 08:53 ND: CTY TC TNHH MTV DEMO FINCO GIAI NGAN HD [MASKED]"
+ },
+ {
+  "id": "NT-014",
+  "bank": "MoMo",
+  "category": "DISBURSEMENT",
+  "text": "MoMo +10,000,000VND TK 000035974. ND: GIAI NGAN KHOAN VAY DEMOCREDIT SDT 0000363354",
+  "is_disbursement": true,
+  "contains_otp": false,
+  "otp_value": null,
+  "pii_spans": [
+   "000035974",
+   "0000363354"
+  ],
+  "expected_masked": "MoMo +10,000,000VND TK [MASKED]. ND: GIAI NGAN KHOAN VAY DEMOCREDIT SDT [MASKED]"
+ },
+ {
+  "id": "NT-015",
+  "bank": "ZaloPay",
+  "category": "SALARY_P2P",
+  "text": "ZaloPay: TK 000083002 +4,000,000VND ND: NGUYEN VAN DEMO chuyen khoan SDT 0000893499",
+  "is_disbursement": false,
+  "contains_otp": false,
+  "otp_value": null,
+  "pii_spans": [
+   "000083002",
+   "0000893499"
+  ],
+  "expected_masked": "ZaloPay: TK [MASKED] +4,000,000VND ND: NGUYEN VAN DEMO chuyen khoan SDT [MASKED]"
+ },
+ {
+  "id": "NT-016",
+  "bank": "Vietcombank",
+  "category": "SALARY_P2P",
+  "text": "Vietcombank: TK 000086612 +17,500,000VND LUC 10:12 ND: CTY MAY DEMO TRA LUONG THANG 12",
+  "is_disbursement": false,
+  "contains_otp": false,
+  "otp_value": null,
+  "pii_spans": [
+   "000086612"
+  ],
+  "expected_masked": "Vietcombank: TK [MASKED] +17,500,000VND LUC 10:12 ND: CTY MAY DEMO TRA LUONG THANG 12"
+ },
+ {
+  "id": "NT-017",
+  "bank": "VietinBank",
+  "category": "OTP",
+  "text": "VietinBank SMS OTP: Ma 627624 xac nhan GD 1,300,000VND tai TK 000094780. Tuyet doi khong chia se ma nay.",
+  "is_disbursement": false,
+  "contains_otp": true,
+  "otp_value": "627624",
+  "pii_spans": [
+   "000094780"
+  ],
+  "expected_masked": "VietinBank SMS OTP: Ma [OTP] xac nhan GD 1,300,000VND tai TK [MASKED]. Tuyet doi khong chia se ma nay."
+ },
+ {
+  "id": "NT-018",
+  "bank": "BIDV",
+  "category": "DISBURSEMENT",
+  "text": "[BIDV] So du TK 000023427 tang 12,500,000VND luc 09:51. ND: GIAI NGAN CCCD 000027340923",
+  "is_disbursement": true,
+  "contains_otp": false,
+  "otp_value": null,
+  "pii_spans": [
+   "000023427",
+   "000027340923"
+  ],
+  "expected_masked": "[BIDV] So du TK [MASKED] tang 12,500,000VND luc 09:51. ND: GIAI NGAN CCCD [MASKED]"
+ },
+ {
+  "id": "NT-019",
+  "bank": "Agribank",
+  "category": "DISBURSEMENT",
+  "text": "Agribank: TK 000040822 +12,500,000VND LUC 03:46 ND: CTY TC TNHH MTV DEMO FINCO GIAI NGAN HD 000088008923",
+  "is_disbursement": true,
+  "contains_otp": false,
+  "otp_value": null,
+  "pii_spans": [
+   "000040822",
+   "000088008923"
+  ],
+  "expected_masked": "Agribank: TK [MASKED] +12,500,000VND LUC 03:46 ND: CTY TC TNHH MTV DEMO FINCO GIAI NGAN HD [MASKED]"
+ },
+ {
+  "id": "NT-020",
+  "bank": "MB Bank",
+  "category": "DISBURSEMENT",
+  "text": "MB Bank +5,000,000VND TK 000059964. ND: GIAI NGAN KHOAN VAY DEMOCREDIT SDT 0000593699",
+  "is_disbursement": true,
+  "contains_otp": false,
+  "otp_value": null,
+  "pii_spans": [
+   "000059964",
+   "0000593699"
+  ],
+  "expected_masked": "MB Bank +5,000,000VND TK [MASKED]. ND: GIAI NGAN KHOAN VAY DEMOCREDIT SDT [MASKED]"
+ },
+ {
+  "id": "NT-021",
+  "bank": "Techcombank",
+  "category": "OTP",
+  "text": "Techcombank SMS OTP: Ma 582795 xac nhan GD 50,000VND tai TK 000046065. Tuyet doi khong chia se ma nay.",
+  "is_disbursement": false,
+  "contains_otp": true,
+  "otp_value": "582795",
+  "pii_spans": [
+   "000046065"
+  ],
+  "expected_masked": "Techcombank SMS OTP: Ma [OTP] xac nhan GD 50,000VND tai TK [MASKED]. Tuyet doi khong chia se ma nay."
+ },
+ {
+  "id": "NT-022",
+  "bank": "ACB",
+  "category": "SALARY_P2P",
+  "text": "ACB: TK 000098641 +3,000,000VND LUC 09:37 ND: CTY MAY DEMO TRA LUONG THANG 6",
+  "is_disbursement": false,
+  "contains_otp": false,
+  "otp_value": null,
+  "pii_spans": [
+   "000098641"
+  ],
+  "expected_masked": "ACB: TK [MASKED] +3,000,000VND LUC 09:37 ND: CTY MAY DEMO TRA LUONG THANG 6"
+ },
+ {
+  "id": "NT-023",
+  "bank": "VPBank",
+  "category": "DEBIT_REFUND",
+  "text": "VPBank: TK 000066756 +600,000VND ND: HOAN TIEN GIAO DICH LOI",
+  "is_disbursement": false,
+  "contains_otp": false,
+  "otp_value": null,
+  "pii_spans": [
+   "000066756"
+  ],
+  "expected_masked": "VPBank: TK [MASKED] +600,000VND ND: HOAN TIEN GIAO DICH LOI"
+ },
+ {
+  "id": "NT-024",
+  "bank": "TPBank",
+  "category": "OTP",
+  "text": "TPBank SmartOTP: Ma 415093 xac nhan GD 1,950,000VND tai TK 000066666. Tuyet doi khong chia se ma nay.",
+  "is_disbursement": false,
+  "contains_otp": true,
+  "otp_value": "415093",
+  "pii_spans": [
+   "000066666"
+  ],
+  "expected_masked": "TPBank SmartOTP: Ma [OTP] xac nhan GD 1,950,000VND tai TK [MASKED]. Tuyet doi khong chia se ma nay."
+ },
+ {
+  "id": "NT-025",
+  "bank": "Sacombank",
+  "category": "DEBIT_REFUND",
+  "text": "Sacombank: TK 000040535 +850,000VND ND: HOAN TIEN GIAO DICH LOI",
+  "is_disbursement": false,
+  "contains_otp": false,
+  "otp_value": null,
+  "pii_spans": [
+   "000040535"
+  ],
+  "expected_masked": "Sacombank: TK [MASKED] +850,000VND ND: HOAN TIEN GIAO DICH LOI"
+ },
+ {
+  "id": "NT-026",
+  "bank": "HDBank",
+  "category": "DEBIT_REFUND",
+  "text": "HDBank: TK 000023105 -450,000VND LUC 23:34 ND: THANH TOAN QR SHOP DEMO",
+  "is_disbursement": false,
+  "contains_otp": false,
+  "otp_value": null,
+  "pii_spans": [
+   "000023105"
+  ],
+  "expected_masked": "HDBank: TK [MASKED] -450,000VND LUC 23:34 ND: THANH TOAN QR SHOP DEMO"
+ },
+ {
+  "id": "NT-027",
+  "bank": "VIB",
+  "category": "DEBIT_REFUND",
+  "text": "VIB: TK 000035071 +900,000VND ND: HOAN TIEN GIAO DICH LOI",
+  "is_disbursement": false,
+  "contains_otp": false,
+  "otp_value": null,
+  "pii_spans": [
+   "000035071"
+  ],
+  "expected_masked": "VIB: TK [MASKED] +900,000VND ND: HOAN TIEN GIAO DICH LOI"
+ },
+ {
+  "id": "NT-028",
+  "bank": "SHB",
+  "category": "DEBIT_REFUND",
+  "text": "SHB: TK 000040507 -150,000VND LUC 18:22 ND: THANH TOAN QR SHOP DEMO",
+  "is_disbursement": false,
+  "contains_otp": false,
+  "otp_value": null,
+  "pii_spans": [
+   "000040507"
+  ],
+  "expected_masked": "SHB: TK [MASKED] -150,000VND LUC 18:22 ND: THANH TOAN QR SHOP DEMO"
+ },
+ {
+  "id": "NT-029",
+  "bank": "MoMo",
+  "category": "OTP",
+  "text": "MoMo SMS OTP: Ma 690901 xac nhan GD 300,000VND tai TK 000025413. Tuyet doi khong chia se ma nay.",
+  "is_disbursement": false,
+  "contains_otp": true,
+  "otp_value": "690901",
+  "pii_spans": [
+   "000025413"
+  ],
+  "expected_masked": "MoMo SMS OTP: Ma [OTP] xac nhan GD 300,000VND tai TK [MASKED]. Tuyet doi khong chia se ma nay."
+ },
+ {
+  "id": "NT-030",
+  "bank": "ZaloPay",
+  "category": "DEBIT_REFUND",
+  "text": "ZaloPay: TK 000065773 -1,500,000VND LUC 05:38 ND: THANH TOAN QR SHOP DEMO",
+  "is_disbursement": false,
+  "contains_otp": false,
+  "otp_value": null,
+  "pii_spans": [
+   "000065773"
+  ],
+  "expected_masked": "ZaloPay: TK [MASKED] -1,500,000VND LUC 05:38 ND: THANH TOAN QR SHOP DEMO"
+ },
+ {
+  "id": "NT-031",
+  "bank": "Vietcombank",
+  "category": "SALARY_P2P",
+  "text": "Vietcombank: TK 000070582 +15,500,000VND ND: NGUYEN VAN DEMO chuyen khoan SDT 0000686410",
+  "is_disbursement": false,
+  "contains_otp": false,
+  "otp_value": null,
+  "pii_spans": [
+   "000070582",
+   "0000686410"
+  ],
+  "expected_masked": "Vietcombank: TK [MASKED] +15,500,000VND ND: NGUYEN VAN DEMO chuyen khoan SDT [MASKED]"
+ },
+ {
+  "id": "NT-032",
+  "bank": "VietinBank",
+  "category": "SALARY_P2P",
+  "text": "VietinBank: TK 000068927 +5,000,000VND LUC 14:08 ND: CTY MAY DEMO TRA LUONG THANG 8",
+  "is_disbursement": false,
+  "contains_otp": false,
+  "otp_value": null,
+  "pii_spans": [
+   "000068927"
+  ],
+  "expected_masked": "VietinBank: TK [MASKED] +5,000,000VND LUC 14:08 ND: CTY MAY DEMO TRA LUONG THANG 8"
+ },
+ {
+  "id": "NT-033",
+  "bank": "BIDV",
+  "category": "DISBURSEMENT",
+  "text": "[BIDV] So du TK 000058685 tang 15,000,000VND luc 09:12. ND: GIAI NGAN CCCD 000092984020",
+  "is_disbursement": true,
+  "contains_otp": false,
+  "otp_value": null,
+  "pii_spans": [
+   "000058685",
+   "000092984020"
+  ],
+  "expected_masked": "[BIDV] So du TK [MASKED] tang 15,000,000VND luc 09:12. ND: GIAI NGAN CCCD [MASKED]"
+ },
+ {
+  "id": "NT-034",
+  "bank": "Agribank",
+  "category": "OTP",
+  "text": "Agribank SmartOTP: Ma 123017 xac nhan GD 750,000VND tai TK 000027495. Tuyet doi khong chia se ma nay.",
+  "is_disbursement": false,
+  "contains_otp": true,
+  "otp_value": "123017",
+  "pii_spans": [
+   "000027495"
+  ],
+  "expected_masked": "Agribank SmartOTP: Ma [OTP] xac nhan GD 750,000VND tai TK [MASKED]. Tuyet doi khong chia se ma nay."
+ },
+ {
+  "id": "NT-035",
+  "bank": "MB Bank",
+  "category": "DISBURSEMENT",
+  "text": "MB Bank +15,000,000VND TK 000069956. ND: GIAI NGAN KHOAN VAY DEMOCREDIT SDT 0000396688",
+  "is_disbursement": true,
+  "contains_otp": false,
+  "otp_value": null,
+  "pii_spans": [
+   "000069956",
+   "0000396688"
+  ],
+  "expected_masked": "MB Bank +15,000,000VND TK [MASKED]. ND: GIAI NGAN KHOAN VAY DEMOCREDIT SDT [MASKED]"
+ },
+ {
+  "id": "NT-036",
+  "bank": "Techcombank",
+  "category": "DISBURSEMENT",
+  "text": "[Techcombank] So du TK 000099548 tang 7,000,000VND luc 18:04. ND: GIAI NGAN CCCD 000081227496",
+  "is_disbursement": true,
+  "contains_otp": false,
+  "otp_value": null,
+  "pii_spans": [
+   "000099548",
+   "000081227496"
+  ],
+  "expected_masked": "[Techcombank] So du TK [MASKED] tang 7,000,000VND luc 18:04. ND: GIAI NGAN CCCD [MASKED]"
+ },
+ {
+  "id": "NT-037",
+  "bank": "ACB",
+  "category": "SALARY_P2P",
+  "text": "ACB: TK 000024234 +8,000,000VND ND: NGUYEN VAN DEMO chuyen khoan SDT 0000519680",
+  "is_disbursement": false,
+  "contains_otp": false,
+  "otp_value": null,
+  "pii_spans": [
+   "000024234",
+   "0000519680"
+  ],
+  "expected_masked": "ACB: TK [MASKED] +8,000,000VND ND: NGUYEN VAN DEMO chuyen khoan SDT [MASKED]"
+ },
+ {
+  "id": "NT-038",
+  "bank": "VPBank",
+  "category": "OTP",
+  "text": "VPBank SmartOTP: Ma 354817 xac nhan GD 500,000VND tai TK 000076753. Tuyet doi khong chia se ma nay.",
+  "is_disbursement": false,
+  "contains_otp": true,
+  "otp_value": "354817",
+  "pii_spans": [
+   "000076753"
+  ],
+  "expected_masked": "VPBank SmartOTP: Ma [OTP] xac nhan GD 500,000VND tai TK [MASKED]. Tuyet doi khong chia se ma nay."
+ },
+ {
+  "id": "NT-039",
+  "bank": "TPBank",
+  "category": "DISBURSEMENT",
+  "text": "[TPBank] So du TK 000058908 tang 5,000,000VND luc 20:52. ND: GIAI NGAN CCCD 000030369135",
+  "is_disbursement": true,
+  "contains_otp": false,
+  "otp_value": null,
+  "pii_spans": [
+   "000058908",
+   "000030369135"
+  ],
+  "expected_masked": "[TPBank] So du TK [MASKED] tang 5,000,000VND luc 20:52. ND: GIAI NGAN CCCD [MASKED]"
+ },
+ {
+  "id": "NT-040",
+  "bank": "Sacombank",
+  "category": "DEBIT_REFUND",
+  "text": "Sacombank: TK 000026126 -1,950,000VND LUC 22:38 ND: THANH TOAN QR SHOP DEMO",
+  "is_disbursement": false,
+  "contains_otp": false,
+  "otp_value": null,
+  "pii_spans": [
+   "000026126"
+  ],
+  "expected_masked": "Sacombank: TK [MASKED] -1,950,000VND LUC 22:38 ND: THANH TOAN QR SHOP DEMO"
+ },
+ {
+  "id": "NT-041",
+  "bank": "HDBank",
+  "category": "SALARY_P2P",
+  "text": "HDBank: TK 000036204 +10,000,000VND ND: NGUYEN VAN DEMO chuyen khoan SDT 0000292151",
+  "is_disbursement": false,
+  "contains_otp": false,
+  "otp_value": null,
+  "pii_spans": [
+   "000036204",
+   "0000292151"
+  ],
+  "expected_masked": "HDBank: TK [MASKED] +10,000,000VND ND: NGUYEN VAN DEMO chuyen khoan SDT [MASKED]"
+ },
+ {
+  "id": "NT-042",
+  "bank": "VIB",
+  "category": "DEBIT_REFUND",
+  "text": "VIB: TK 000011673 -1,800,000VND LUC 18:04 ND: THANH TOAN QR SHOP DEMO",
+  "is_disbursement": false,
+  "contains_otp": false,
+  "otp_value": null,
+  "pii_spans": [
+   "000011673"
+  ],
+  "expected_masked": "VIB: TK [MASKED] -1,800,000VND LUC 18:04 ND: THANH TOAN QR SHOP DEMO"
+ },
+ {
+  "id": "NT-043",
+  "bank": "SHB",
+  "category": "DEBIT_REFUND",
+  "text": "SHB: TK 000072628 +1,400,000VND ND: HOAN TIEN GIAO DICH LOI",
+  "is_disbursement": false,
+  "contains_otp": false,
+  "otp_value": null,
+  "pii_spans": [
+   "000072628"
+  ],
+  "expected_masked": "SHB: TK [MASKED] +1,400,000VND ND: HOAN TIEN GIAO DICH LOI"
+ },
+ {
+  "id": "NT-044",
+  "bank": "MoMo",
+  "category": "SALARY_P2P",
+  "text": "MoMo: TK 000063275 +9,000,000VND LUC 08:08 ND: CTY MAY DEMO TRA LUONG THANG 3",
+  "is_disbursement": false,
+  "contains_otp": false,
+  "otp_value": null,
+  "pii_spans": [
+   "000063275"
+  ],
+  "expected_masked": "MoMo: TK [MASKED] +9,000,000VND LUC 08:08 ND: CTY MAY DEMO TRA LUONG THANG 3"
+ },
+ {
+  "id": "NT-045",
+  "bank": "ZaloPay",
+  "category": "DISBURSEMENT",
+  "text": "[ZaloPay] So du TK 000089723 tang 9,000,000VND luc 12:25. ND: GIAI NGAN CCCD 000086853506",
+  "is_disbursement": true,
+  "contains_otp": false,
+  "otp_value": null,
+  "pii_spans": [
+   "000089723",
+   "000086853506"
+  ],
+  "expected_masked": "[ZaloPay] So du TK [MASKED] tang 9,000,000VND luc 12:25. ND: GIAI NGAN CCCD [MASKED]"
+ },
+ {
+  "id": "NT-046",
+  "bank": "Vietcombank",
+  "category": "SALARY_P2P",
+  "text": "Vietcombank: TK 000039858 +14,000,000VND LUC 01:25 ND: CTY MAY DEMO TRA LUONG THANG 11",
+  "is_disbursement": false,
+  "contains_otp": false,
+  "otp_value": null,
+  "pii_spans": [
+   "000039858"
+  ],
+  "expected_masked": "Vietcombank: TK [MASKED] +14,000,000VND LUC 01:25 ND: CTY MAY DEMO TRA LUONG THANG 11"
+ },
+ {
+  "id": "NT-047",
+  "bank": "VietinBank",
+  "category": "DISBURSEMENT",
+  "text": "VietinBank +8,000,000VND TK 000050967. ND: GIAI NGAN KHOAN VAY DEMOCREDIT SDT 0000863892",
+  "is_disbursement": true,
+  "contains_otp": false,
+  "otp_value": null,
+  "pii_spans": [
+   "000050967",
+   "0000863892"
+  ],
+  "expected_masked": "VietinBank +8,000,000VND TK [MASKED]. ND: GIAI NGAN KHOAN VAY DEMOCREDIT SDT [MASKED]"
+ },
+ {
+  "id": "NT-048",
+  "bank": "BIDV",
+  "category": "OTP",
+  "text": "BIDV SmartOTP: Ma 387614 xac nhan GD 550,000VND tai TK 000073963. Tuyet doi khong chia se ma nay.",
+  "is_disbursement": false,
+  "contains_otp": true,
+  "otp_value": "387614",
+  "pii_spans": [
+   "000073963"
+  ],
+  "expected_masked": "BIDV SmartOTP: Ma [OTP] xac nhan GD 550,000VND tai TK [MASKED]. Tuyet doi khong chia se ma nay."
+ },
+ {
+  "id": "NT-049",
+  "bank": "Agribank",
+  "category": "OTP",
+  "text": "Agribank SMS OTP: Ma 205778 xac nhan GD 1,300,000VND tai TK 000065227. Tuyet doi khong chia se ma nay.",
+  "is_disbursement": false,
+  "contains_otp": true,
+  "otp_value": "205778",
+  "pii_spans": [
+   "000065227"
+  ],
+  "expected_masked": "Agribank SMS OTP: Ma [OTP] xac nhan GD 1,300,000VND tai TK [MASKED]. Tuyet doi khong chia se ma nay."
+ },
+ {
+  "id": "NT-050",
+  "bank": "MB Bank",
+  "category": "DISBURSEMENT",
+  "text": "MB Bank +15,000,000VND TK 000043029. ND: GIAI NGAN KHOAN VAY DEMOCREDIT SDT 0000186669",
+  "is_disbursement": true,
+  "contains_otp": false,
+  "otp_value": null,
+  "pii_spans": [
+   "000043029",
+   "0000186669"
+  ],
+  "expected_masked": "MB Bank +15,000,000VND TK [MASKED]. ND: GIAI NGAN KHOAN VAY DEMOCREDIT SDT [MASKED]"
+ },
+ {
+  "id": "NT-051",
+  "bank": "Techcombank",
+  "category": "DISBURSEMENT",
+  "text": "[Techcombank] So du TK 000062420 tang 12,000,000VND luc 18:26. ND: GIAI NGAN CCCD 000096097545",
+  "is_disbursement": true,
+  "contains_otp": false,
+  "otp_value": null,
+  "pii_spans": [
+   "000062420",
+   "000096097545"
+  ],
+  "expected_masked": "[Techcombank] So du TK [MASKED] tang 12,000,000VND luc 18:26. ND: GIAI NGAN CCCD [MASKED]"
+ },
+ {
+  "id": "NT-052",
+  "bank": "ACB",
+  "category": "OTP",
+  "text": "ACB SmartOTP: Ma 529676 xac nhan GD 950,000VND tai TK 000049135. Tuyet doi khong chia se ma nay.",
+  "is_disbursement": false,
+  "contains_otp": true,
+  "otp_value": "529676",
+  "pii_spans": [
+   "000049135"
+  ],
+  "expected_masked": "ACB SmartOTP: Ma [OTP] xac nhan GD 950,000VND tai TK [MASKED]. Tuyet doi khong chia se ma nay."
+ },
+ {
+  "id": "NT-053",
+  "bank": "VPBank",
+  "category": "OTP",
+  "text": "VPBank SMS OTP: Ma 133556 xac nhan GD 1,100,000VND tai TK 000057328. Tuyet doi khong chia se ma nay.",
+  "is_disbursement": false,
+  "contains_otp": true,
+  "otp_value": "133556",
+  "pii_spans": [
+   "000057328"
+  ],
+  "expected_masked": "VPBank SMS OTP: Ma [OTP] xac nhan GD 1,100,000VND tai TK [MASKED]. Tuyet doi khong chia se ma nay."
+ },
+ {
+  "id": "NT-054",
+  "bank": "TPBank",
+  "category": "SALARY_P2P",
+  "text": "TPBank: TK 000031716 +12,500,000VND LUC 11:22 ND: CTY MAY DEMO TRA LUONG THANG 1",
+  "is_disbursement": false,
+  "contains_otp": false,
+  "otp_value": null,
+  "pii_spans": [
+   "000031716"
+  ],
+  "expected_masked": "TPBank: TK [MASKED] +12,500,000VND LUC 11:22 ND: CTY MAY DEMO TRA LUONG THANG 1"
+ },
+ {
+  "id": "NT-055",
+  "bank": "Sacombank",
+  "category": "DEBIT_REFUND",
+  "text": "Sacombank: TK 000031496 +1,850,000VND ND: HOAN TIEN GIAO DICH LOI",
+  "is_disbursement": false,
+  "contains_otp": false,
+  "otp_value": null,
+  "pii_spans": [
+   "000031496"
+  ],
+  "expected_masked": "Sacombank: TK [MASKED] +1,850,000VND ND: HOAN TIEN GIAO DICH LOI"
+ },
+ {
+  "id": "NT-056",
+  "bank": "HDBank",
+  "category": "OTP",
+  "text": "HDBank SmartOTP: Ma 378618 xac nhan GD 1,250,000VND tai TK 000094135. Tuyet doi khong chia se ma nay.",
+  "is_disbursement": false,
+  "contains_otp": true,
+  "otp_value": "378618",
+  "pii_spans": [
+   "000094135"
+  ],
+  "expected_masked": "HDBank SmartOTP: Ma [OTP] xac nhan GD 1,250,000VND tai TK [MASKED]. Tuyet doi khong chia se ma nay."
+ },
+ {
+  "id": "NT-057",
+  "bank": "VIB",
+  "category": "DISBURSEMENT",
+  "text": "[VIB] So du TK 000018608 tang 9,500,000VND luc 07:32. ND: GIAI NGAN CCCD 000046678456",
+  "is_disbursement": true,
+  "contains_otp": false,
+  "otp_value": null,
+  "pii_spans": [
+   "000018608",
+   "000046678456"
+  ],
+  "expected_masked": "[VIB] So du TK [MASKED] tang 9,500,000VND luc 07:32. ND: GIAI NGAN CCCD [MASKED]"
+ },
+ {
+  "id": "NT-058",
+  "bank": "SHB",
+  "category": "SALARY_P2P",
+  "text": "SHB: TK 000016277 +17,500,000VND LUC 05:40 ND: CTY MAY DEMO TRA LUONG THANG 7",
+  "is_disbursement": false,
+  "contains_otp": false,
+  "otp_value": null,
+  "pii_spans": [
+   "000016277"
+  ],
+  "expected_masked": "SHB: TK [MASKED] +17,500,000VND LUC 05:40 ND: CTY MAY DEMO TRA LUONG THANG 7"
+ },
+ {
+  "id": "NT-059",
+  "bank": "MoMo",
+  "category": "SALARY_P2P",
+  "text": "MoMo: TK 000050869 +12,500,000VND ND: NGUYEN VAN DEMO chuyen khoan SDT 0000757438",
+  "is_disbursement": false,
+  "contains_otp": false,
+  "otp_value": null,
+  "pii_spans": [
+   "000050869",
+   "0000757438"
+  ],
+  "expected_masked": "MoMo: TK [MASKED] +12,500,000VND ND: NGUYEN VAN DEMO chuyen khoan SDT [MASKED]"
+ },
+ {
+  "id": "NT-060",
+  "bank": "ZaloPay",
+  "category": "OTP",
+  "text": "ZaloPay SmartOTP: Ma 561574 xac nhan GD 1,950,000VND tai TK 000091445. Tuyet doi khong chia se ma nay.",
+  "is_disbursement": false,
+  "contains_otp": true,
+  "otp_value": "561574",
+  "pii_spans": [
+   "000091445"
+  ],
+  "expected_masked": "ZaloPay SmartOTP: Ma [OTP] xac nhan GD 1,950,000VND tai TK [MASKED]. Tuyet doi khong chia se ma nay."
+ },
+ {
+  "id": "NT-061",
+  "bank": "Vietcombank",
+  "category": "OTP",
+  "text": "Vietcombank SMS OTP: Ma 569646 xac nhan GD 1,800,000VND tai TK 000015722. Tuyet doi khong chia se ma nay.",
+  "is_disbursement": false,
+  "contains_otp": true,
+  "otp_value": "569646",
+  "pii_spans": [
+   "000015722"
+  ],
+  "expected_masked": "Vietcombank SMS OTP: Ma [OTP] xac nhan GD 1,800,000VND tai TK [MASKED]. Tuyet doi khong chia se ma nay."
+ },
+ {
+  "id": "NT-062",
+  "bank": "VietinBank",
+  "category": "DEBIT_REFUND",
+  "text": "VietinBank: TK 000010485 -150,000VND LUC 08:31 ND: THANH TOAN QR SHOP DEMO",
+  "is_disbursement": false,
+  "contains_otp": false,
+  "otp_value": null,
+  "pii_spans": [
+   "000010485"
+  ],
+  "expected_masked": "VietinBank: TK [MASKED] -150,000VND LUC 08:31 ND: THANH TOAN QR SHOP DEMO"
+ },
+ {
+  "id": "NT-063",
+  "bank": "BIDV",
+  "category": "SALARY_P2P",
+  "text": "BIDV: TK 000022911 +1,500,000VND ND: NGUYEN VAN DEMO chuyen khoan SDT 0000140361",
+  "is_disbursement": false,
+  "contains_otp": false,
+  "otp_value": null,
+  "pii_spans": [
+   "000022911",
+   "0000140361"
+  ],
+  "expected_masked": "BIDV: TK [MASKED] +1,500,000VND ND: NGUYEN VAN DEMO chuyen khoan SDT [MASKED]"
+ },
+ {
+  "id": "NT-064",
+  "bank": "Agribank",
+  "category": "SALARY_P2P",
+  "text": "Agribank: TK 000038062 +7,500,000VND LUC 23:38 ND: CTY MAY DEMO TRA LUONG THANG 4",
+  "is_disbursement": false,
+  "contains_otp": false,
+  "otp_value": null,
+  "pii_spans": [
+   "000038062"
+  ],
+  "expected_masked": "Agribank: TK [MASKED] +7,500,000VND LUC 23:38 ND: CTY MAY DEMO TRA LUONG THANG 4"
+ },
+ {
+  "id": "NT-065",
+  "bank": "MB Bank",
+  "category": "DISBURSEMENT",
+  "text": "MB Bank +13,000,000VND TK 000018249. ND: GIAI NGAN KHOAN VAY DEMOCREDIT SDT 0000852670",
+  "is_disbursement": true,
+  "contains_otp": false,
+  "otp_value": null,
+  "pii_spans": [
+   "000018249",
+   "0000852670"
+  ],
+  "expected_masked": "MB Bank +13,000,000VND TK [MASKED]. ND: GIAI NGAN KHOAN VAY DEMOCREDIT SDT [MASKED]"
+ },
+ {
+  "id": "NT-066",
+  "bank": "Techcombank",
+  "category": "OTP",
+  "text": "Techcombank SmartOTP: Ma 500473 xac nhan GD 400,000VND tai TK 000053532. Tuyet doi khong chia se ma nay.",
+  "is_disbursement": false,
+  "contains_otp": true,
+  "otp_value": "500473",
+  "pii_spans": [
+   "000053532"
+  ],
+  "expected_masked": "Techcombank SmartOTP: Ma [OTP] xac nhan GD 400,000VND tai TK [MASKED]. Tuyet doi khong chia se ma nay."
+ },
+ {
+  "id": "NT-067",
+  "bank": "ACB",
+  "category": "DISBURSEMENT",
+  "text": "ACB: TK 000055523 +4,500,000VND LUC 06:36 ND: CTY TC TNHH MTV DEMO FINCO GIAI NGAN HD 000051685118",
+  "is_disbursement": true,
+  "contains_otp": false,
+  "otp_value": null,
+  "pii_spans": [
+   "000055523",
+   "000051685118"
+  ],
+  "expected_masked": "ACB: TK [MASKED] +4,500,000VND LUC 06:36 ND: CTY TC TNHH MTV DEMO FINCO GIAI NGAN HD [MASKED]"
+ },
+ {
+  "id": "NT-068",
+  "bank": "VPBank",
+  "category": "DISBURSEMENT",
+  "text": "VPBank +19,500,000VND TK 000074853. ND: GIAI NGAN KHOAN VAY DEMOCREDIT SDT 0000994841",
+  "is_disbursement": true,
+  "contains_otp": false,
+  "otp_value": null,
+  "pii_spans": [
+   "000074853",
+   "0000994841"
+  ],
+  "expected_masked": "VPBank +19,500,000VND TK [MASKED]. ND: GIAI NGAN KHOAN VAY DEMOCREDIT SDT [MASKED]"
+ },
+ {
+  "id": "NT-069",
+  "bank": "TPBank",
+  "category": "DEBIT_REFUND",
+  "text": "TPBank: TK 000063866 +1,450,000VND ND: HOAN TIEN GIAO DICH LOI",
+  "is_disbursement": false,
+  "contains_otp": false,
+  "otp_value": null,
+  "pii_spans": [
+   "000063866"
+  ],
+  "expected_masked": "TPBank: TK [MASKED] +1,450,000VND ND: HOAN TIEN GIAO DICH LOI"
+ },
+ {
+  "id": "NT-070",
+  "bank": "Sacombank",
+  "category": "DISBURSEMENT",
+  "text": "Sacombank: TK 000080411 +2,000,000VND LUC 16:21 ND: CTY TC TNHH MTV DEMO FINCO GIAI NGAN HD 000077089565",
+  "is_disbursement": true,
+  "contains_otp": false,
+  "otp_value": null,
+  "pii_spans": [
+   "000080411",
+   "000077089565"
+  ],
+  "expected_masked": "Sacombank: TK [MASKED] +2,000,000VND LUC 16:21 ND: CTY TC TNHH MTV DEMO FINCO GIAI NGAN HD [MASKED]"
+ },
+ {
+  "id": "NT-071",
+  "bank": "HDBank",
+  "category": "DISBURSEMENT",
+  "text": "HDBank +4,500,000VND TK 000088804. ND: GIAI NGAN KHOAN VAY DEMOCREDIT SDT 0000397160",
+  "is_disbursement": true,
+  "contains_otp": false,
+  "otp_value": null,
+  "pii_spans": [
+   "000088804",
+   "0000397160"
+  ],
+  "expected_masked": "HDBank +4,500,000VND TK [MASKED]. ND: GIAI NGAN KHOAN VAY DEMOCREDIT SDT [MASKED]"
+ },
+ {
+  "id": "NT-072",
+  "bank": "VIB",
+  "category": "DEBIT_REFUND",
+  "text": "VIB: TK 000071177 -700,000VND LUC 17:34 ND: THANH TOAN QR SHOP DEMO",
+  "is_disbursement": false,
+  "contains_otp": false,
+  "otp_value": null,
+  "pii_spans": [
+   "000071177"
+  ],
+  "expected_masked": "VIB: TK [MASKED] -700,000VND LUC 17:34 ND: THANH TOAN QR SHOP DEMO"
+ },
+ {
+  "id": "NT-073",
+  "bank": "SHB",
+  "category": "OTP",
+  "text": "SHB SMS OTP: Ma 557235 xac nhan GD 1,650,000VND tai TK 000019810. Tuyet doi khong chia se ma nay.",
+  "is_disbursement": false,
+  "contains_otp": true,
+  "otp_value": "557235",
+  "pii_spans": [
+   "000019810"
+  ],
+  "expected_masked": "SHB SMS OTP: Ma [OTP] xac nhan GD 1,650,000VND tai TK [MASKED]. Tuyet doi khong chia se ma nay."
+ },
+ {
+  "id": "NT-074",
+  "bank": "MoMo",
+  "category": "DISBURSEMENT",
+  "text": "MoMo +1,500,000VND TK 000038790. ND: GIAI NGAN KHOAN VAY DEMOCREDIT SDT 0000193761",
+  "is_disbursement": true,
+  "contains_otp": false,
+  "otp_value": null,
+  "pii_spans": [
+   "000038790",
+   "0000193761"
+  ],
+  "expected_masked": "MoMo +1,500,000VND TK [MASKED]. ND: GIAI NGAN KHOAN VAY DEMOCREDIT SDT [MASKED]"
+ },
+ {
+  "id": "NT-075",
+  "bank": "ZaloPay",
+  "category": "DISBURSEMENT",
+  "text": "[ZaloPay] So du TK 000067080 tang 16,000,000VND luc 19:04. ND: GIAI NGAN CCCD 000094236476",
+  "is_disbursement": true,
+  "contains_otp": false,
+  "otp_value": null,
+  "pii_spans": [
+   "000067080",
+   "000094236476"
+  ],
+  "expected_masked": "[ZaloPay] So du TK [MASKED] tang 16,000,000VND luc 19:04. ND: GIAI NGAN CCCD [MASKED]"
+ },
+ {
+  "id": "NT-076",
+  "bank": "Vietcombank",
+  "category": "DEBIT_REFUND",
+  "text": "Vietcombank: TK 000044345 -1,400,000VND LUC 03:59 ND: THANH TOAN QR SHOP DEMO",
+  "is_disbursement": false,
+  "contains_otp": false,
+  "otp_value": null,
+  "pii_spans": [
+   "000044345"
+  ],
+  "expected_masked": "Vietcombank: TK [MASKED] -1,400,000VND LUC 03:59 ND: THANH TOAN QR SHOP DEMO"
+ },
+ {
+  "id": "NT-077",
+  "bank": "VietinBank",
+  "category": "DISBURSEMENT",
+  "text": "VietinBank +18,000,000VND TK 000092462. ND: GIAI NGAN KHOAN VAY DEMOCREDIT SDT 0000784413",
+  "is_disbursement": true,
+  "contains_otp": false,
+  "otp_value": null,
+  "pii_spans": [
+   "000092462",
+   "0000784413"
+  ],
+  "expected_masked": "VietinBank +18,000,000VND TK [MASKED]. ND: GIAI NGAN KHOAN VAY DEMOCREDIT SDT [MASKED]"
+ },
+ {
+  "id": "NT-078",
+  "bank": "BIDV",
+  "category": "SALARY_P2P",
+  "text": "BIDV: TK 000083417 +13,000,000VND LUC 17:32 ND: CTY MAY DEMO TRA LUONG THANG 12",
+  "is_disbursement": false,
+  "contains_otp": false,
+  "otp_value": null,
+  "pii_spans": [
+   "000083417"
+  ],
+  "expected_masked": "BIDV: TK [MASKED] +13,000,000VND LUC 17:32 ND: CTY MAY DEMO TRA LUONG THANG 12"
+ },
+ {
+  "id": "NT-079",
+  "bank": "Agribank",
+  "category": "SALARY_P2P",
+  "text": "Agribank: TK 000029470 +15,500,000VND ND: NGUYEN VAN DEMO chuyen khoan SDT 0000327729",
+  "is_disbursement": false,
+  "contains_otp": false,
+  "otp_value": null,
+  "pii_spans": [
+   "000029470",
+   "0000327729"
+  ],
+  "expected_masked": "Agribank: TK [MASKED] +15,500,000VND ND: NGUYEN VAN DEMO chuyen khoan SDT [MASKED]"
+ },
+ {
+  "id": "NT-080",
+  "bank": "MB Bank",
+  "category": "DISBURSEMENT",
+  "text": "MB Bank +12,500,000VND TK 000054566. ND: GIAI NGAN KHOAN VAY DEMOCREDIT SDT 0000318720",
+  "is_disbursement": true,
+  "contains_otp": false,
+  "otp_value": null,
+  "pii_spans": [
+   "000054566",
+   "0000318720"
+  ],
+  "expected_masked": "MB Bank +12,500,000VND TK [MASKED]. ND: GIAI NGAN KHOAN VAY DEMOCREDIT SDT [MASKED]"
+ },
+ {
+  "id": "NT-081",
+  "bank": "Techcombank",
+  "category": "SALARY_P2P",
+  "text": "Techcombank: TK 000044680 +14,000,000VND ND: NGUYEN VAN DEMO chuyen khoan SDT 0000436677",
+  "is_disbursement": false,
+  "contains_otp": false,
+  "otp_value": null,
+  "pii_spans": [
+   "000044680",
+   "0000436677"
+  ],
+  "expected_masked": "Techcombank: TK [MASKED] +14,000,000VND ND: NGUYEN VAN DEMO chuyen khoan SDT [MASKED]"
+ },
+ {
+  "id": "NT-082",
+  "bank": "ACB",
+  "category": "DEBIT_REFUND",
+  "text": "ACB: TK 000085928 -250,000VND LUC 22:20 ND: THANH TOAN QR SHOP DEMO",
+  "is_disbursement": false,
+  "contains_otp": false,
+  "otp_value": null,
+  "pii_spans": [
+   "000085928"
+  ],
+  "expected_masked": "ACB: TK [MASKED] -250,000VND LUC 22:20 ND: THANH TOAN QR SHOP DEMO"
+ },
+ {
+  "id": "NT-083",
+  "bank": "VPBank",
+  "category": "DISBURSEMENT",
+  "text": "VPBank +4,500,000VND TK 000025298. ND: GIAI NGAN KHOAN VAY DEMOCREDIT SDT 0000377629",
+  "is_disbursement": true,
+  "contains_otp": false,
+  "otp_value": null,
+  "pii_spans": [
+   "000025298",
+   "0000377629"
+  ],
+  "expected_masked": "VPBank +4,500,000VND TK [MASKED]. ND: GIAI NGAN KHOAN VAY DEMOCREDIT SDT [MASKED]"
+ },
+ {
+  "id": "NT-084",
+  "bank": "TPBank",
+  "category": "SALARY_P2P",
+  "text": "TPBank: TK 000088753 +4,000,000VND LUC 21:24 ND: CTY MAY DEMO TRA LUONG THANG 1",
+  "is_disbursement": false,
+  "contains_otp": false,
+  "otp_value": null,
+  "pii_spans": [
+   "000088753"
+  ],
+  "expected_masked": "TPBank: TK [MASKED] +4,000,000VND LUC 21:24 ND: CTY MAY DEMO TRA LUONG THANG 1"
+ },
+ {
+  "id": "NT-085",
+  "bank": "Sacombank",
+  "category": "DISBURSEMENT",
+  "text": "Sacombank: TK 000012934 +8,000,000VND LUC 06:47 ND: CTY TC TNHH MTV DEMO FINCO GIAI NGAN HD 000098707706",
+  "is_disbursement": true,
+  "contains_otp": false,
+  "otp_value": null,
+  "pii_spans": [
+   "000012934",
+   "000098707706"
+  ],
+  "expected_masked": "Sacombank: TK [MASKED] +8,000,000VND LUC 06:47 ND: CTY TC TNHH MTV DEMO FINCO GIAI NGAN HD [MASKED]"
+ },
+ {
+  "id": "NT-086",
+  "bank": "HDBank",
+  "category": "DEBIT_REFUND",
+  "text": "HDBank: TK 000054090 -300,000VND LUC 04:29 ND: THANH TOAN QR SHOP DEMO",
+  "is_disbursement": false,
+  "contains_otp": false,
+  "otp_value": null,
+  "pii_spans": [
+   "000054090"
+  ],
+  "expected_masked": "HDBank: TK [MASKED] -300,000VND LUC 04:29 ND: THANH TOAN QR SHOP DEMO"
+ },
+ {
+  "id": "NT-087",
+  "bank": "VIB",
+  "category": "SALARY_P2P",
+  "text": "VIB: TK 000062143 +8,500,000VND ND: NGUYEN VAN DEMO chuyen khoan SDT 0000208250",
+  "is_disbursement": false,
+  "contains_otp": false,
+  "otp_value": null,
+  "pii_spans": [
+   "000062143",
+   "0000208250"
+  ],
+  "expected_masked": "VIB: TK [MASKED] +8,500,000VND ND: NGUYEN VAN DEMO chuyen khoan SDT [MASKED]"
+ },
+ {
+  "id": "NT-088",
+  "bank": "SHB",
+  "category": "OTP",
+  "text": "SHB SmartOTP: Ma 483343 xac nhan GD 1,450,000VND tai TK 000013777. Tuyet doi khong chia se ma nay.",
+  "is_disbursement": false,
+  "contains_otp": true,
+  "otp_value": "483343",
+  "pii_spans": [
+   "000013777"
+  ],
+  "expected_masked": "SHB SmartOTP: Ma [OTP] xac nhan GD 1,450,000VND tai TK [MASKED]. Tuyet doi khong chia se ma nay."
+ },
+ {
+  "id": "NT-089",
+  "bank": "MoMo",
+  "category": "OTP",
+  "text": "MoMo SMS OTP: Ma 657757 xac nhan GD 700,000VND tai TK 000091152. Tuyet doi khong chia se ma nay.",
+  "is_disbursement": false,
+  "contains_otp": true,
+  "otp_value": "657757",
+  "pii_spans": [
+   "000091152"
+  ],
+  "expected_masked": "MoMo SMS OTP: Ma [OTP] xac nhan GD 700,000VND tai TK [MASKED]. Tuyet doi khong chia se ma nay."
+ },
+ {
+  "id": "NT-090",
+  "bank": "ZaloPay",
+  "category": "SALARY_P2P",
+  "text": "ZaloPay: TK 000026224 +6,000,000VND LUC 19:46 ND: CTY MAY DEMO TRA LUONG THANG 7",
+  "is_disbursement": false,
+  "contains_otp": false,
+  "otp_value": null,
+  "pii_spans": [
+   "000026224"
+  ],
+  "expected_masked": "ZaloPay: TK [MASKED] +6,000,000VND LUC 19:46 ND: CTY MAY DEMO TRA LUONG THANG 7"
+ },
+ {
+  "id": "NT-091",
+  "bank": "Vietcombank",
+  "category": "SALARY_P2P",
+  "text": "Vietcombank: TK 000043386 +18,500,000VND ND: NGUYEN VAN DEMO chuyen khoan SDT 0000802755",
+  "is_disbursement": false,
+  "contains_otp": false,
+  "otp_value": null,
+  "pii_spans": [
+   "000043386",
+   "0000802755"
+  ],
+  "expected_masked": "Vietcombank: TK [MASKED] +18,500,000VND ND: NGUYEN VAN DEMO chuyen khoan SDT [MASKED]"
+ },
+ {
+  "id": "NT-092",
+  "bank": "VietinBank",
+  "category": "DISBURSEMENT",
+  "text": "VietinBank +18,000,000VND TK 000039719. ND: GIAI NGAN KHOAN VAY DEMOCREDIT SDT 0000173977",
+  "is_disbursement": true,
+  "contains_otp": false,
+  "otp_value": null,
+  "pii_spans": [
+   "000039719",
+   "0000173977"
+  ],
+  "expected_masked": "VietinBank +18,000,000VND TK [MASKED]. ND: GIAI NGAN KHOAN VAY DEMOCREDIT SDT [MASKED]"
+ },
+ {
+  "id": "NT-093",
+  "bank": "BIDV",
+  "category": "DEBIT_REFUND",
+  "text": "BIDV: TK 000022747 +400,000VND ND: HOAN TIEN GIAO DICH LOI",
+  "is_disbursement": false,
+  "contains_otp": false,
+  "otp_value": null,
+  "pii_spans": [
+   "000022747"
+  ],
+  "expected_masked": "BIDV: TK [MASKED] +400,000VND ND: HOAN TIEN GIAO DICH LOI"
+ },
+ {
+  "id": "NT-094",
+  "bank": "Agribank",
+  "category": "DISBURSEMENT",
+  "text": "Agribank: TK 000045497 +16,000,000VND LUC 12:43 ND: CTY TC TNHH MTV DEMO FINCO GIAI NGAN HD 000020289852",
+  "is_disbursement": true,
+  "contains_otp": false,
+  "otp_value": null,
+  "pii_spans": [
+   "000045497",
+   "000020289852"
+  ],
+  "expected_masked": "Agribank: TK [MASKED] +16,000,000VND LUC 12:43 ND: CTY TC TNHH MTV DEMO FINCO GIAI NGAN HD [MASKED]"
+ },
+ {
+  "id": "NT-095",
+  "bank": "MB Bank",
+  "category": "DISBURSEMENT",
+  "text": "MB Bank +11,500,000VND TK 000052989. ND: GIAI NGAN KHOAN VAY DEMOCREDIT SDT 0000258654",
+  "is_disbursement": true,
+  "contains_otp": false,
+  "otp_value": null,
+  "pii_spans": [
+   "000052989",
+   "0000258654"
+  ],
+  "expected_masked": "MB Bank +11,500,000VND TK [MASKED]. ND: GIAI NGAN KHOAN VAY DEMOCREDIT SDT [MASKED]"
+ },
+ {
+  "id": "NT-096",
+  "bank": "Techcombank",
+  "category": "SALARY_P2P",
+  "text": "Techcombank: TK 000097447 +9,000,000VND LUC 04:00 ND: CTY MAY DEMO TRA LUONG THANG 5",
+  "is_disbursement": false,
+  "contains_otp": false,
+  "otp_value": null,
+  "pii_spans": [
+   "000097447"
+  ],
+  "expected_masked": "Techcombank: TK [MASKED] +9,000,000VND LUC 04:00 ND: CTY MAY DEMO TRA LUONG THANG 5"
+ },
+ {
+  "id": "NT-097",
+  "bank": "ACB",
+  "category": "DISBURSEMENT",
+  "text": "ACB: TK 000028261 +9,000,000VND LUC 09:52 ND: CTY TC TNHH MTV DEMO FINCO GIAI NGAN HD 000011331649",
+  "is_disbursement": true,
+  "contains_otp": false,
+  "otp_value": null,
+  "pii_spans": [
+   "000028261",
+   "000011331649"
+  ],
+  "expected_masked": "ACB: TK [MASKED] +9,000,000VND LUC 09:52 ND: CTY TC TNHH MTV DEMO FINCO GIAI NGAN HD [MASKED]"
+ },
+ {
+  "id": "NT-098",
+  "bank": "VPBank",
+  "category": "DEBIT_REFUND",
+  "text": "VPBank: TK 000079210 -1,150,000VND LUC 20:04 ND: THANH TOAN QR SHOP DEMO",
+  "is_disbursement": false,
+  "contains_otp": false,
+  "otp_value": null,
+  "pii_spans": [
+   "000079210"
+  ],
+  "expected_masked": "VPBank: TK [MASKED] -1,150,000VND LUC 20:04 ND: THANH TOAN QR SHOP DEMO"
+ },
+ {
+  "id": "NT-099",
+  "bank": "TPBank",
+  "category": "DISBURSEMENT",
+  "text": "[TPBank] So du TK 000017303 tang 9,000,000VND luc 01:10. ND: GIAI NGAN CCCD 000057489368",
+  "is_disbursement": true,
+  "contains_otp": false,
+  "otp_value": null,
+  "pii_spans": [
+   "000017303",
+   "000057489368"
+  ],
+  "expected_masked": "[TPBank] So du TK [MASKED] tang 9,000,000VND luc 01:10. ND: GIAI NGAN CCCD [MASKED]"
+ },
+ {
+  "id": "NT-100",
+  "bank": "Sacombank",
+  "category": "DEBIT_REFUND",
+  "text": "Sacombank: TK 000018388 -1,000,000VND LUC 08:56 ND: THANH TOAN QR SHOP DEMO",
+  "is_disbursement": false,
+  "contains_otp": false,
+  "otp_value": null,
+  "pii_spans": [
+   "000018388"
+  ],
+  "expected_masked": "Sacombank: TK [MASKED] -1,000,000VND LUC 08:56 ND: THANH TOAN QR SHOP DEMO"
+ }
+]

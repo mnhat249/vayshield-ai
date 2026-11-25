@@ -1,0 +1,181 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "VS-Contract-80 sample",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "id",
+    "group",
+    "images",
+    "brand",
+    "principal_vnd",
+    "cashflows",
+    "expected_apr_percent",
+    "verdict",
+    "flags",
+    "qr_codes",
+    "injection_text"
+  ],
+  "properties": {
+    "id": {
+      "type": "string",
+      "pattern": "^CT-\\d{3}$"
+    },
+    "group": {
+      "enum": [
+        "REAL_FINCO",
+        "P2P_SANDBOX",
+        "BLACK_CREDIT",
+        "FAKE_LOGO_BILL",
+        "DUAL_QR_CHAT",
+        "DARK_STAMP_LONG",
+        "BNPL_CASHOUT",
+        "INJECTION"
+      ]
+    },
+    "images": {
+      "type": "array",
+      "minItems": 1,
+      "maxItems": 4,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "file",
+          "kind"
+        ],
+        "properties": {
+          "file": {
+            "type": "string",
+            "pattern": "^images/contract/.+\\.png$"
+          },
+          "kind": {
+            "enum": [
+              "contract",
+              "chat",
+              "bill",
+              "app_screen"
+            ]
+          }
+        }
+      }
+    },
+    "brand": {
+      "type": "string"
+    },
+    "principal_vnd": {
+      "type": "integer",
+      "minimum": 1
+    },
+    "cashflows": {
+      "type": "array",
+      "minItems": 2,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "day",
+          "amount_vnd"
+        ],
+        "properties": {
+          "day": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "amount_vnd": {
+            "type": "integer"
+          }
+        }
+      }
+    },
+    "expected_apr_percent": {
+      "type": "number",
+      "minimum": 0
+    },
+    "verdict": {
+      "enum": [
+        "SAFE",
+        "CAUTION",
+        "DANGER",
+        "BLOCK"
+      ]
+    },
+    "flags": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "advance_fee",
+        "spoof",
+        "dark_mode",
+        "red_stamp_overlap",
+        "long_scroll",
+        "bnpl_cashout",
+        "p2p_over_cap",
+        "injection"
+      ],
+      "properties": {
+        "advance_fee": {
+          "type": "boolean"
+        },
+        "spoof": {
+          "type": "boolean"
+        },
+        "dark_mode": {
+          "type": "boolean"
+        },
+        "red_stamp_overlap": {
+          "type": "boolean"
+        },
+        "long_scroll": {
+          "type": "boolean"
+        },
+        "bnpl_cashout": {
+          "type": "boolean"
+        },
+        "p2p_over_cap": {
+          "type": "boolean"
+        },
+        "injection": {
+          "type": "boolean"
+        }
+      }
+    },
+    "qr_codes": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "bank_bin",
+          "account",
+          "sender"
+        ],
+        "properties": {
+          "bank_bin": {
+            "type": "string",
+            "pattern": "^\\d{6}$"
+          },
+          "account": {
+            "type": "string",
+            "pattern": "^0000\\d{6,}$"
+          },
+          "sender": {
+            "enum": [
+              "victim",
+              "scammer"
+            ]
+          },
+          "memo": {
+            "type": "string"
+          }
+        }
+      }
+    },
+    "injection_text": {
+      "type": [
+        "string",
+        "null"
+      ]
+    }
+  }
+}

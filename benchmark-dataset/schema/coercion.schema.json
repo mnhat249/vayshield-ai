@@ -1,0 +1,69 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "VS-Coercion-120 sample",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "id",
+    "audio_mode",
+    "media_projection",
+    "time_since_disb_min",
+    "user_utterance",
+    "amount_vnd",
+    "label",
+    "axes",
+    "coached",
+    "expected_action"
+  ],
+  "properties": {
+    "id": {
+      "type": "string",
+      "pattern": "^CO-\\d{3}$"
+    },
+    "audio_mode": {
+      "enum": [
+        "NORMAL",
+        "IN_CALL",
+        "SPEAKERPHONE"
+      ]
+    },
+    "media_projection": {
+      "type": "boolean"
+    },
+    "time_since_disb_min": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "user_utterance": {
+      "type": "string",
+      "minLength": 1
+    },
+    "amount_vnd": {
+      "type": "integer",
+      "minimum": 1
+    },
+    "label": {
+      "enum": [
+        "SCAM",
+        "ROUTINE"
+      ]
+    },
+    "axes": {
+      "type": "array",
+      "uniqueItems": true,
+      "items": {
+        "type": "string",
+        "pattern": "^C(10|[1-9])$"
+      }
+    },
+    "coached": {
+      "type": "boolean"
+    },
+    "expected_action": {
+      "enum": [
+        "RED_ESCALATION",
+        "ALLOW"
+      ]
+    }
+  }
+}
