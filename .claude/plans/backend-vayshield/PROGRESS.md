@@ -34,8 +34,8 @@ Plan: [`../backend-vayshield.md`](../backend-vayshield.md) · Cập nhật %: `n
 |----|----|------|------|-----|-----------|---------:|-----------|--------|--------|--------|----------|---------|
 | T00 | WP1-06 | Khung FastAPI + contracts M0 | 0 | M0 | – | 2 | merged | task/backend-vayshield/T00 | pass (95✓ 1 skip pg) | approve (sau 1 vòng sửa) | 2026-11-25 | Cần Nhóm 2 duyệt contract |
 | T01 | WP1-01 | PostgreSQL schema + RLS + hash-chain | 1 | M1 | T00 | 10 | verified | task/backend-vayshield/T01 | pass local + CI pg (PR#1) | changes (2 major) | – | |
-| T02 | WP1-03 | Kernel tài chính APR/XIRR/khoảng/MIRR | 1 | M1 | T00 | 8 | verified | task/backend-vayshield/T02 | pass (177✓) | – | – | ≥35 pytest |
-| T03 | WP1-04 | Thị giác đối kháng + VietQR | 1 | M1 | T00 | 10 | verified | task/backend-vayshield/T03 | pass (196✓) | – | – | |
+| T02 | WP1-03 | Kernel tài chính APR/XIRR/khoảng/MIRR | 1 | M1 | T00 | 8 | verified | task/backend-vayshield/T02 | pass (177✓) | changes (1 major) | – | ≥35 pytest |
+| T03 | WP1-04 | Thị giác đối kháng + VietQR | 1 | M1 | T00 | 10 | verified | task/backend-vayshield/T03 | pass (196✓) | changes (1 blocker, 4 major) | – | |
 | T04 | WP1-05 | Trích xuất LLM + Conformal + Voice | 1 | M1 | T00 | 12 | running | task/backend-vayshield/T04 | – | – | – | |
 | T05 | WP1-07 | Redis HSM + Lua smurf + idempotency | 1 | M2 | T00 | 8 | running | task/backend-vayshield/T05 | – | – | – | |
 | T06 | WP1-11 | Dataset Bench-340 (data + nhãn) | 1 | M3 | T00 | 2 | implemented | task/backend-vayshield/T06 | validate pass | changes (nhãn lệch spec) | – | |
@@ -63,3 +63,5 @@ Plan: [`../backend-vayshield.md`](../backend-vayshield.md) · Cập nhật %: `n
 | 2026-11-25 | Giới hạn API 5h làm dừng T02–T06 + review T01 → đã resume. T07 review: 9 major (báo động giả do đồng âm không dấu) → đang sửa |
 | 2026-11-25 | T02/T03 verified. T01 CI pg xanh, review 2 major → đang sửa. T06 nhãn dùng BLOCK/DANGER + XIRR thay vì 9 mã V_* + APR_VN_365 → đang sửa. T02 báo 3 số trong spec không khớp công thức (chờ xác nhận) |
 | 2026-11-25 | T07 merged (approve (sau 1 vòng sửa)) |
+| 2026-11-25 | T01 sửa xong (d58df8e), CI pg đang chạy lại. Reviewer T02 xác nhận 3 số trong spec sai (XIRR 6539,1%; S2-EC12 333,2%; §1.3 ~100%). T03 review: 1 blocker (bỏ lọt QR kẻ gian) → đang sửa |
+| 2026-11-25 | Người dùng dừng toàn bộ agent. Handoff: .claude/handoff/2026-11-25-backend-vayshield-wave1.md |
