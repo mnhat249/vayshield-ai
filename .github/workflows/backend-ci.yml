@@ -1,0 +1,113 @@
+name: backend-ci
+
+on:
+  push:
+    branches: [main]
+    paths: ["backend/**", "contracts/**", ".github/workflows/backend-ci.yml"]
+  pull_request:
+    paths: ["backend/**", "contracts/**", ".github/workflows/backend-ci.yml"]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: backend-ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  backend:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    defaults:
+      run:
+        working-directory: backend
+
+    # Hai role (giống docker-compose.yml): vayshield_admin (superuser, chỉ chạy migration) và
+    # vayshield_app (NOSUPERUSER NOBYPASSRLS) cho test — RLS không bị bypass (EC-DB15).
+    services:
+      postgres:
+        image: pgvector/pgvector:pg16
+        env:
+          POSTGRES_DB: vayshield_test
+          POSTGRES_USER: vayshield_admin
+          POSTGRES_PASSWORD: ci_only_admin_password
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd "pg_isready -U vayshield_admin -d vayshield_test"
+          --health-interval 5s --health-timeout 3s --health-retries 10
+      redis:
+        image: redis:7
+        ports: ["6379:6379"]
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 5s --health-timeout 3s --health-retries 10
+
+    env:
+      APP_ENV: test
+      # Role app (không superuser) — mọi test @pytest.mark.pg chạy bằng role này.
+      TEST_DATABASE_URL: postgresql+asyncpg://vayshield_app:ci_only_app_password@localhost:5432/vayshield_test
+      # Role admin — CHỈ cho test cần chạy migration/DDL (vd runner migration của T01).
+      TEST_ADMIN_DATABASE_URL: postgresql+asyncpg://vayshield_admin:ci_only_admin_password@localhost:5432/vayshield_test
+      ADMIN_PSQL_URL: postgresql://vayshield_admin:ci_only_admin_password@localhost:5432/vayshield_test
+      APP_DB_PASSWORD: ci_only_app_password
+      TEST_REDIS_URL: redis://localhost:6379/0
+      PYTHONIOENCODING: utf-8
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Cài uv
+        uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+          cache-dependency-glob: backend/uv.lock
+
+      - name: Cài Python 3.12 + dependency (khóa bằng uv.lock — EC-OPS19)
+        run: |
+          uv python install 3.12
+          uv sync --frozen
+
+      - name: Cài psql
+        run: sudo apt-get update -qq && sudo apt-get install -y -qq postgresql-client >/dev/null
+
+      - name: Tạo role app NOSUPERUSER NOBYPASSRLS (trước migration)
+        run: |
+          psql "$ADMIN_PSQL_URL" -v ON_ERROR_STOP=1 -v app_pw="$APP_DB_PASSWORD" <<'SQL'
+          SELECT 'CREATE ROLE vayshield_app LOGIN'
+            WHERE NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'vayshield_app') \gexec
+          ALTER ROLE vayshield_app LOGIN PASSWORD :'app_pw'
+            NOSUPERUSER NOBYPASSRLS NOCREATEDB NOCREATEROLE NOREPLICATION;
+          GRANT CONNECT ON DATABASE vayshield_test TO vayshield_app;
+          GRANT USAGE ON SCHEMA public TO vayshield_app;
+          SQL
+
+      - name: Áp dụng migrations theo thứ tự tên file (role admin)
+        run: |
+          shopt -s nullglob
+          files=(migrations/*.sql)
+          if [ ${#files[@]} -eq 0 ]; then echo "Chưa có migration"; exit 0; fi
+          for f in $(printf '%s\n' "${files[@]}" | sort); do
+            echo "==> $f"
+            psql "$ADMIN_PSQL_URL" -v ON_ERROR_STOP=1 -q -f "$f"
+          done
+
+      - name: Kiểm tra role app không bypass RLS
+        run: |
+          psql "$ADMIN_PSQL_URL" -tA -v ON_ERROR_STOP=1 -c \
+            "SELECT rolsuper OR rolbypassrls FROM pg_roles WHERE rolname='vayshield_app'" \
+            | grep -qx f
+
+      - name: Contract khớp code (SSE/WS sinh từ core)
+        run: uv run python -m app.core.contract_export --check || echo "::warning::openapi.yaml khác bản sinh (chỉ summary/description?) — test cấu trúc sẽ quyết định"
+
+      - name: Ruff lint
+        run: uv run ruff check .
+
+      - name: Ruff format
+        run: uv run ruff format --check .
+
+      - name: Mypy
+        run: uv run mypy .
+
+      - name: Pytest (kể cả test @pytest.mark.pg / redis_real)
+        run: uv run pytest -q

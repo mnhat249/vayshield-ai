@@ -1,0 +1,741 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "vayshield/contracts/sse-events.schema.json",
+  "title": "VayShield AI — Sự kiện Server-Sent Events",
+  "description": "Hợp đồng SSE (File 4 §4.2(A)). 5 pha phát ĐÚNG thứ tự x-phase-order; 'ping' có thể chen giữa bất kỳ lúc nào (EC-DB22, mỗi x-transport.keepalive_interval_s giây, client bỏ qua); 'audit.error' nếu có luôn là event cuối và kèm gợi ý fallback (File 2 §3.1 Tầng 4: form 3 ô → POST /api/v1/audits/{audit_id}/recalculate).",
+  "x-phase-order": [
+    "audit.sanitized",
+    "audit.vietqr_decoded",
+    "audit.fields_extracted",
+    "audit.verdict_computed",
+    "audit.legal_explained"
+  ],
+  "x-transport": {
+    "content_type": "text/event-stream; charset=utf-8",
+    "required_headers": {
+      "Cache-Control": "no-cache, no-transform",
+      "X-Accel-Buffering": "no"
+    },
+    "keepalive_event": "ping",
+    "keepalive_interval_s": 2.5,
+    "first_event_sla_ms": 200,
+    "full_stream_sla_ms": 3500,
+    "port": 443
+  },
+  "oneOf": [
+    {
+      "$ref": "#/$defs/ContractAuditStream"
+    },
+    {
+      "$ref": "#/$defs/OpsLiveFeedStream"
+    }
+  ],
+  "$defs": {
+    "AuditError": {
+      "description": "Lỗi giữa luồng (không thể đổi HTTP status sau khi đã stream) — luôn là event cuối.",
+      "properties": {
+        "code": {
+          "$ref": "#/$defs/ErrorCode"
+        },
+        "message_vi": {
+          "title": "Message Vi",
+          "type": "string"
+        },
+        "trace_id": {
+          "title": "Trace Id",
+          "type": "string"
+        },
+        "retryable": {
+          "title": "Retryable",
+          "type": "boolean"
+        },
+        "fallback": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/FallbackMode"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        }
+      },
+      "required": [
+        "code",
+        "message_vi",
+        "trace_id",
+        "retryable"
+      ],
+      "title": "AuditError",
+      "type": "object"
+    },
+    "AuditFieldsExtracted": {
+      "properties": {
+        "claimed_lender": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Claimed Lender"
+        },
+        "nominal_principal_vnd": {
+          "anyOf": [
+            {
+              "description": "Số tiền VND (đồng, int)",
+              "maximum": 1000000000000,
+              "minimum": 0,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Nominal Principal Vnd"
+        },
+        "net_disbursed_vnd": {
+          "anyOf": [
+            {
+              "description": "Số tiền VND (đồng, int)",
+              "maximum": 1000000000000,
+              "minimum": 0,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Net Disbursed Vnd"
+        },
+        "upfront_fee_demanded": {
+          "title": "Upfront Fee Demanded",
+          "type": "boolean"
+        },
+        "upfront_fee_amount_vnd": {
+          "anyOf": [
+            {
+              "description": "Số tiền VND (đồng, int)",
+              "maximum": 1000000000000,
+              "minimum": 0,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Upfront Fee Amount Vnd"
+        },
+        "upfront_reason": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Upfront Reason"
+        },
+        "confidence": {
+          "maximum": 1,
+          "minimum": 0,
+          "title": "Confidence",
+          "type": "number"
+        }
+      },
+      "required": [
+        "upfront_fee_demanded",
+        "confidence"
+      ],
+      "title": "AuditFieldsExtracted",
+      "type": "object"
+    },
+    "AuditLegalExplained": {
+      "properties": {
+        "headline_vi": {
+          "title": "Headline Vi",
+          "type": "string"
+        },
+        "tts_voice_script": {
+          "title": "Tts Voice Script",
+          "type": "string"
+        },
+        "cited_clauses": {
+          "items": {
+            "$ref": "#/$defs/CitedClause"
+          },
+          "title": "Cited Clauses",
+          "type": "array"
+        }
+      },
+      "required": [
+        "headline_vi",
+        "tts_voice_script"
+      ],
+      "title": "AuditLegalExplained",
+      "type": "object"
+    },
+    "AuditSanitized": {
+      "properties": {
+        "audit_id": {
+          "format": "uuid",
+          "title": "Audit Id",
+          "type": "string"
+        },
+        "image_count": {
+          "maximum": 4,
+          "minimum": 1,
+          "title": "Image Count",
+          "type": "integer"
+        },
+        "blur_ok": {
+          "title": "Blur Ok",
+          "type": "boolean"
+        },
+        "elapsed_ms": {
+          "minimum": 0,
+          "title": "Elapsed Ms",
+          "type": "integer"
+        }
+      },
+      "required": [
+        "audit_id",
+        "image_count",
+        "blur_ok",
+        "elapsed_ms"
+      ],
+      "title": "AuditSanitized",
+      "type": "object"
+    },
+    "AuditVerdictComputed": {
+      "properties": {
+        "verdict_code": {
+          "$ref": "#/$defs/VerdictCode"
+        },
+        "severity": {
+          "$ref": "#/$defs/Severity"
+        },
+        "kernel_signal": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/KernelSignal"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "apr_vn_365": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Apr Vn 365"
+        },
+        "apr_min_bound": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Apr Min Bound"
+        },
+        "apr_max_bound": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Apr Max Bound"
+        },
+        "ear_xirr": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Ear Xirr"
+        },
+        "lost_workdays": {
+          "anyOf": [
+            {
+              "minimum": 0,
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Lost Workdays"
+        },
+        "official_hotline_verify": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Official Hotline Verify"
+        },
+        "contradictions": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Contradictions",
+          "type": "array"
+        }
+      },
+      "required": [
+        "verdict_code",
+        "severity"
+      ],
+      "title": "AuditVerdictComputed",
+      "type": "object"
+    },
+    "AuditVietqrDecoded": {
+      "properties": {
+        "found": {
+          "title": "Found",
+          "type": "boolean"
+        },
+        "bank_bin": {
+          "anyOf": [
+            {
+              "pattern": "^\\d{6}$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Bank Bin"
+        },
+        "masked_account": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Masked Account"
+        },
+        "mule_quorum_hit": {
+          "default": false,
+          "title": "Mule Quorum Hit",
+          "type": "boolean"
+        },
+        "preset_amount_vnd": {
+          "anyOf": [
+            {
+              "description": "Số tiền VND (đồng, int)",
+              "maximum": 1000000000000,
+              "minimum": 0,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Preset Amount Vnd"
+        }
+      },
+      "required": [
+        "found"
+      ],
+      "title": "AuditVietqrDecoded",
+      "type": "object"
+    },
+    "CitedClause": {
+      "properties": {
+        "code": {
+          "description": "Mã điều khoản, vd BLHS_2015_D174",
+          "title": "Code",
+          "type": "string"
+        },
+        "title": {
+          "title": "Title",
+          "type": "string"
+        }
+      },
+      "required": [
+        "code",
+        "title"
+      ],
+      "title": "CitedClause",
+      "type": "object"
+    },
+    "ErrorCode": {
+      "enum": [
+        "VALIDATION_ERROR",
+        "MALFORMED_REQUEST",
+        "UNAUTHORIZED",
+        "SIGNATURE_INVALID",
+        "TIMESTAMP_OUT_OF_WINDOW",
+        "FORBIDDEN",
+        "NOT_FOUND",
+        "METHOD_NOT_ALLOWED",
+        "CONFLICT",
+        "IDEMPOTENCY_CONFLICT",
+        "TICKET_INVALID_OR_CONSUMED",
+        "PAIRING_CODE_INVALID",
+        "PAIRING_LOCKED",
+        "PAYLOAD_TOO_LARGE",
+        "UNSUPPORTED_MEDIA_TYPE",
+        "RATE_LIMITED",
+        "BUDGET_EXCEEDED",
+        "UPSTREAM_TIMEOUT",
+        "SERVICE_DEGRADED",
+        "INTERNAL_ERROR"
+      ],
+      "title": "ErrorCode",
+      "type": "string"
+    },
+    "FallbackMode": {
+      "enum": [
+        "MANUAL_3_FIELD_FORM",
+        "RETAKE_PHOTO",
+        "VOICE_TERMS"
+      ],
+      "title": "FallbackMode",
+      "type": "string"
+    },
+    "KernelSignal": {
+      "description": "Tín hiệu đặc biệt của kernel tài chính (File 2 §4.1, bất biến phí ứng trước).\n\nKhi ``F_upfront > 0`` và ``P_disbursed == 0`` kernel dừng bộ giải lãi và trả tín hiệu này;\nAPR/XIRR khi đó là ``null`` trong mọi payload.",
+      "enum": [
+        "INFINITE_APR_ADVANCE_FEE_SCAM"
+      ],
+      "title": "KernelSignal",
+      "type": "string"
+    },
+    "OpsThreatSignal": {
+      "properties": {
+        "signal_id": {
+          "format": "uuid",
+          "title": "Signal Id",
+          "type": "string"
+        },
+        "kind": {
+          "enum": [
+            "MULE_REPORTED",
+            "QUORUM_REACHED",
+            "CLUSTER_ESCALATED",
+            "B2B_SHIELD_ARMED"
+          ],
+          "title": "Kind",
+          "type": "string"
+        },
+        "cluster_id": {
+          "anyOf": [
+            {
+              "format": "uuid",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Cluster Id"
+        },
+        "mule_node_id": {
+          "anyOf": [
+            {
+              "format": "uuid",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Mule Node Id"
+        },
+        "bank_bin": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Bank Bin"
+        },
+        "masked_account_display": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Masked Account Display"
+        },
+        "severity_level": {
+          "enum": [
+            "WATCH",
+            "ELEVATED",
+            "CRITICAL_WAVE"
+          ],
+          "title": "Severity Level",
+          "type": "string"
+        },
+        "occurred_at": {
+          "format": "date-time",
+          "title": "Occurred At",
+          "type": "string"
+        },
+        "summary_vi": {
+          "title": "Summary Vi",
+          "type": "string"
+        }
+      },
+      "required": [
+        "signal_id",
+        "kind",
+        "severity_level",
+        "occurred_at",
+        "summary_vi"
+      ],
+      "title": "OpsThreatSignal",
+      "type": "object"
+    },
+    "Ping": {
+      "properties": {
+        "elapsed_ms": {
+          "minimum": 0,
+          "title": "Elapsed Ms",
+          "type": "integer"
+        }
+      },
+      "required": [
+        "elapsed_ms"
+      ],
+      "title": "Ping",
+      "type": "object"
+    },
+    "Severity": {
+      "description": "Mức màu hiển thị của phán quyết (File 2 §4.4 cột \"Nhãn màu\").",
+      "enum": [
+        "CRITICAL_RED",
+        "RED",
+        "DEEP_ORANGE",
+        "ORANGE",
+        "YELLOW_ORANGE",
+        "AMBER",
+        "GREEN"
+      ],
+      "title": "Severity",
+      "type": "string"
+    },
+    "VerdictCode": {
+      "description": "9 nhãn phán quyết tất định (File 2 §4.4). Thứ tự = thứ tự trong đặc tả.",
+      "enum": [
+        "V_RED_ADVANCE_FEE",
+        "V_RED_BRAND_SPOOF",
+        "V_RED_BNPL_OR_STRAW_SCAM",
+        "V_RED_CRIMINAL_USURY",
+        "V_ORANGE_CIVIL_CAP_EXCEEDED",
+        "V_ORANGE_PAWN_HIGH_FEE",
+        "V_YELLOW_HIGH_COST_LICENSED",
+        "V_AMBER_INCOMPLETE_DOC",
+        "V_GREEN_TRANSPARENT"
+      ],
+      "title": "VerdictCode",
+      "type": "string"
+    },
+    "ContractAuditStream": {
+      "description": "Một khung SSE của POST /api/v1/audits/contract-stream. 'event' = dòng 'event:', 'data' = JSON 1 dòng ở dòng 'data:'.",
+      "oneOf": [
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "event",
+            "data"
+          ],
+          "properties": {
+            "event": {
+              "const": "audit.sanitized"
+            },
+            "data": {
+              "$ref": "#/$defs/AuditSanitized"
+            }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "event",
+            "data"
+          ],
+          "properties": {
+            "event": {
+              "const": "audit.vietqr_decoded"
+            },
+            "data": {
+              "$ref": "#/$defs/AuditVietqrDecoded"
+            }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "event",
+            "data"
+          ],
+          "properties": {
+            "event": {
+              "const": "audit.fields_extracted"
+            },
+            "data": {
+              "$ref": "#/$defs/AuditFieldsExtracted"
+            }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "event",
+            "data"
+          ],
+          "properties": {
+            "event": {
+              "const": "audit.verdict_computed"
+            },
+            "data": {
+              "$ref": "#/$defs/AuditVerdictComputed"
+            }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "event",
+            "data"
+          ],
+          "properties": {
+            "event": {
+              "const": "audit.legal_explained"
+            },
+            "data": {
+              "$ref": "#/$defs/AuditLegalExplained"
+            }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "event",
+            "data"
+          ],
+          "properties": {
+            "event": {
+              "const": "ping"
+            },
+            "data": {
+              "$ref": "#/$defs/Ping"
+            }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "event",
+            "data"
+          ],
+          "properties": {
+            "event": {
+              "const": "audit.error"
+            },
+            "data": {
+              "$ref": "#/$defs/AuditError"
+            }
+          }
+        }
+      ]
+    },
+    "OpsLiveFeedStream": {
+      "description": "Một khung SSE của GET /api/v1/ops/live-feed.",
+      "oneOf": [
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "event",
+            "data"
+          ],
+          "properties": {
+            "event": {
+              "const": "ops.threat_signal"
+            },
+            "data": {
+              "$ref": "#/$defs/OpsThreatSignal"
+            }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "event",
+            "data"
+          ],
+          "properties": {
+            "event": {
+              "const": "ping"
+            },
+            "data": {
+              "$ref": "#/$defs/Ping"
+            }
+          }
+        }
+      ]
+    }
+  }
+}

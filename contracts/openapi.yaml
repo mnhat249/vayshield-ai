@@ -1,0 +1,3779 @@
+# SINH TỰ ĐỘNG bởi `uv run python -m app.core.contract_export` — KHÓA ở mốc M0.
+# Đổi contract = task riêng có người duyệt (CLAUDE.md §5).
+openapi: 3.1.0
+info:
+  title: VayShield AI API
+  description: 'VayShield AI — bảo vệ người đi vay khỏi app vay lừa đảo, lãi cắt cổ, chiếm đoạt OTP. Lỗi
+    luôn là JSON {error:{code,message_vi,trace_id}}. Tiền tệ: số nguyên VND. SSE: contracts/sse-events.schema.json.
+    WebSocket: contracts/ws-protocol.json.'
+  version: 1.0.0
+paths:
+  /api/v1/devices/register:
+    post:
+      tags:
+      - edge-policy
+      summary: Đăng ký thiết bị ẩn danh + khóa ECDSA (Public + PoW / RateLimit, < 80ms)
+      operationId: devicesRegister
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/DeviceRegisterRequest'
+        required: true
+      responses:
+        '201':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DeviceRegisterResponse'
+        '400':
+          description: Yêu cầu hỏng
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '422':
+          description: Dữ liệu không hợp lệ
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '429':
+          description: Vượt giới hạn tần suất / ngân sách
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '500':
+          description: Lỗi nội bộ (JSON, không bao giờ HTML — EC-OPS23)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+  /api/v1/devices/me:
+    delete:
+      tags:
+      - edge-policy
+      summary: Xóa toàn bộ dữ liệu & hủy liên kết người thân (Luật 91/2025, EC-DB21)
+      operationId: devicesDeleteMe
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DeviceWipeResponse'
+        '401':
+          description: Thiếu/sai xác thực
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '422':
+          description: Dữ liệu không hợp lệ
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '429':
+          description: Vượt giới hạn tần suất / ngân sách
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '500':
+          description: Lỗi nội bộ (JSON, không bao giờ HTML — EC-OPS23)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+      security:
+      - DeviceSignature: []
+  /api/v1/policies/latest:
+    get:
+      tags:
+      - edge-policy
+      summary: Đồng bộ gói quy tắc ký số Ed25519 (ETag, < 40ms)
+      operationId: policiesLatest
+      security:
+      - DeviceSignature: []
+      - SandboxSession: []
+      parameters:
+      - name: If-None-Match
+        in: header
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: If-None-Match
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PolicyBundle'
+        '304':
+          description: Không đổi (ETag khớp)
+        '401':
+          description: Thiếu/sai xác thực
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '422':
+          description: Dữ liệu không hợp lệ
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '429':
+          description: Vượt giới hạn tần suất / ngân sách
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '500':
+          description: Lỗi nội bộ (JSON, không bao giờ HTML — EC-OPS23)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+  /api/v1/audits/apk-verify:
+    post:
+      tags:
+      - audits
+      summary: 'Trạm 1: kiểm định chữ ký APK & quyền nguy hiểm (< 90ms)'
+      operationId: auditsApkVerify
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ApkVerifyRequest'
+        required: true
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApkVerifyResponse'
+        '401':
+          description: Thiếu/sai xác thực
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '422':
+          description: Dữ liệu không hợp lệ
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '429':
+          description: Vượt giới hạn tần suất / ngân sách
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '500':
+          description: Lỗi nội bộ (JSON, không bao giờ HTML — EC-OPS23)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '503':
+          description: Dịch vụ hạ cấp (SERVICE_DEGRADED) — dùng đường hạ cấp, vd form 3 ô
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '504':
+          description: Dịch vụ phân tích quá thời gian (UPSTREAM_TIMEOUT) — có thể thử lại
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+      security:
+      - DeviceSignature: []
+  /api/v1/audits/contract-stream:
+    post:
+      tags:
+      - audits
+      summary: 'Trạm 2: soi 1–4 ảnh hợp đồng → SSE 5 pha (first event < 200ms, full < 3.5s)'
+      operationId: auditsContractStream
+      requestBody:
+        content:
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/Body_auditsContractStream'
+        required: true
+      responses:
+        '200':
+          description: 'Luồng SSE: audit.sanitized → audit.vietqr_decoded → audit.fields_extracted → audit.verdict_computed
+            → audit.legal_explained; ping mỗi 2.5s; audit.error (nếu có) luôn là event cuối. Schema: contracts/sse-events.schema.json.'
+          headers:
+            X-Accel-Buffering:
+              schema:
+                type: string
+                enum:
+                - 'no'
+            Cache-Control:
+              schema:
+                type: string
+                enum:
+                - no-cache, no-transform
+          content:
+            text/event-stream:
+              schema:
+                type: string
+              x-sse-schema: contracts/sse-events.schema.json#/$defs/ContractAuditStream
+        '401':
+          description: Thiếu/sai xác thực
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '413':
+          description: Payload quá lớn
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '415':
+          description: Định dạng không hỗ trợ
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '422':
+          description: Dữ liệu không hợp lệ
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '429':
+          description: Vượt giới hạn tần suất / ngân sách
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '500':
+          description: Lỗi nội bộ (JSON, không bao giờ HTML — EC-OPS23)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '503':
+          description: Dịch vụ hạ cấp (SERVICE_DEGRADED) — dùng đường hạ cấp, vd form 3 ô
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '504':
+          description: Dịch vụ phân tích quá thời gian (UPSTREAM_TIMEOUT) — có thể thử lại
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+      security:
+      - DeviceSignature: []
+      - SandboxSession: []
+  /api/v1/audits/voice-terms:
+    post:
+      tags:
+      - audits
+      summary: 'Trạm 2: đọc miệng điều khoản khi app vay chặn chụp màn hình (< 1.8s)'
+      operationId: auditsVoiceTerms
+      requestBody:
+        content:
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/Body_auditsVoiceTerms'
+        required: true
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/VoiceTermsResponse'
+        '401':
+          description: Thiếu/sai xác thực
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '413':
+          description: Payload quá lớn
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '415':
+          description: Định dạng không hỗ trợ
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '422':
+          description: Dữ liệu không hợp lệ
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '429':
+          description: Vượt giới hạn tần suất / ngân sách
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '500':
+          description: Lỗi nội bộ (JSON, không bao giờ HTML — EC-OPS23)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '503':
+          description: Dịch vụ hạ cấp (SERVICE_DEGRADED) — dùng đường hạ cấp, vd form 3 ô
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '504':
+          description: Dịch vụ phân tích quá thời gian (UPSTREAM_TIMEOUT) — có thể thử lại
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+      security:
+      - DeviceSignature: []
+      - SandboxSession: []
+  /api/v1/audits/{audit_id}/recalculate:
+    post:
+      tags:
+      - audits
+      summary: 'Trạm 2: giải lại dòng tiền tất định khi người dùng sửa số (< 15ms, 0 LLM)'
+      operationId: auditsRecalculate
+      security:
+      - DeviceSignature: []
+      - SandboxSession: []
+      parameters:
+      - name: audit_id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+          title: Audit Id
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RecalculateRequest'
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RecalculateResponse'
+        '401':
+          description: Thiếu/sai xác thực
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '404':
+          description: Không tìm thấy
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '422':
+          description: Dữ liệu không hợp lệ
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '429':
+          description: Vượt giới hạn tần suất / ngân sách
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '500':
+          description: Lỗi nội bộ (JSON, không bao giờ HTML — EC-OPS23)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '503':
+          description: Dịch vụ hạ cấp (SERVICE_DEGRADED) — dùng đường hạ cấp, vd form 3 ô
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '504':
+          description: Dịch vụ phân tích quá thời gian (UPSTREAM_TIMEOUT) — có thể thử lại
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+  /api/v1/shield/arm:
+    post:
+      tags:
+      - shield
+      summary: Đồng bộ kích hoạt Khiên 24h (< 60ms)
+      operationId: shieldArm
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ShieldArmRequest'
+        required: true
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ShieldArmResponse'
+        '401':
+          description: Thiếu/sai xác thực
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '409':
+          description: Xung đột trạng thái / Idempotency
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '422':
+          description: Dữ liệu không hợp lệ
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '429':
+          description: Vượt giới hạn tần suất / ngân sách
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '500':
+          description: Lỗi nội bộ (JSON, không bao giờ HTML — EC-OPS23)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+      security:
+      - DeviceSignature: []
+      - SandboxSession: []
+  /api/v1/shield/evaluate-response:
+    post:
+      tags:
+      - shield
+      summary: Phân tích câu trả lời theo 10 trục ontology & chống mớm lời (< 900ms)
+      operationId: shieldEvaluateResponse
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/EvaluateResponseRequest'
+        required: true
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/EvaluateResponseResult'
+        '401':
+          description: Thiếu/sai xác thực
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '404':
+          description: Không tìm thấy
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '422':
+          description: Dữ liệu không hợp lệ
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '429':
+          description: Vượt giới hạn tần suất / ngân sách
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '500':
+          description: Lỗi nội bộ (JSON, không bao giờ HTML — EC-OPS23)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '503':
+          description: Dịch vụ hạ cấp (SERVICE_DEGRADED) — dùng đường hạ cấp, vd form 3 ô
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '504':
+          description: Dịch vụ phân tích quá thời gian (UPSTREAM_TIMEOUT) — có thể thử lại
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+      security:
+      - DeviceSignature: []
+      - SandboxSession: []
+  /api/v1/shield/escalate:
+    post:
+      tags:
+      - shield
+      summary: Leo thang WS → Push → SMS tới người thân (Zero-Amount, WS < 250ms)
+      operationId: shieldEscalate
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/EscalateRequest'
+        required: true
+      responses:
+        '202':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/EscalateResponse'
+        '401':
+          description: Thiếu/sai xác thực
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '404':
+          description: Không tìm thấy
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '409':
+          description: Xung đột trạng thái / Idempotency
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '422':
+          description: Dữ liệu không hợp lệ
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '429':
+          description: Vượt giới hạn tần suất / ngân sách
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '500':
+          description: Lỗi nội bộ (JSON, không bao giờ HTML — EC-OPS23)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '503':
+          description: Dịch vụ hạ cấp (SERVICE_DEGRADED) — dùng đường hạ cấp, vd form 3 ô
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '504':
+          description: Dịch vụ phân tích quá thời gian (UPSTREAM_TIMEOUT) — có thể thử lại
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+      security:
+      - DeviceSignature: []
+      - SandboxSession: []
+  /api/v1/family/pair-init:
+    post:
+      tags:
+      - family
+      summary: Người vay tạo mã ghép đôi 6 ký tự (TTL 10 phút, tối đa 3 lần sai)
+      operationId: familyPairInit
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PairInitRequest'
+        required: true
+      responses:
+        '201':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PairInitResponse'
+        '401':
+          description: Thiếu/sai xác thực
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '422':
+          description: Dữ liệu không hợp lệ
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '429':
+          description: Vượt giới hạn tần suất / ngân sách
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '500':
+          description: Lỗi nội bộ (JSON, không bao giờ HTML — EC-OPS23)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+      security:
+      - DeviceSignature: []
+      - SandboxSession: []
+  /api/v1/family/pair-confirm:
+    post:
+      tags:
+      - family
+      summary: Người thân xác nhận mã ghép đôi → nhận guardian session token
+      operationId: familyPairConfirm
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PairConfirmRequest'
+        required: true
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PairConfirmResponse'
+        '404':
+          description: Không tìm thấy
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '422':
+          description: Dữ liệu không hợp lệ
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '423':
+          description: Đã khóa (quá số lần thử)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '429':
+          description: Vượt giới hạn tần suất / ngân sách
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '500':
+          description: Lỗi nội bộ (JSON, không bao giờ HTML — EC-OPS23)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+  /api/v1/family/send-rescue-card:
+    post:
+      tags:
+      - family
+      summary: Người thân bắn Thẻ Giải cứu lên máy người vay (WS reverse push < 150ms)
+      operationId: familySendRescueCard
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SendRescueCardRequest'
+        required: true
+      responses:
+        '202':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SendRescueCardResponse'
+        '401':
+          description: Thiếu/sai xác thực
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '404':
+          description: Không tìm thấy
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '422':
+          description: Dữ liệu không hợp lệ
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '429':
+          description: Vượt giới hạn tần suất / ngân sách
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '500':
+          description: Lỗi nội bộ (JSON, không bao giờ HTML — EC-OPS23)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+      security:
+      - GuardianSession: []
+  /api/v1/ws-ticket:
+    get:
+      tags:
+      - realtime
+      summary: Cấp vé WebSocket 1 lần (TTL 45s) — gọi lại mỗi lần reconnect (EC-DB12)
+      operationId: wsTicket
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/WsTicketResponse'
+        '401':
+          description: Thiếu/sai xác thực
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '422':
+          description: Dữ liệu không hợp lệ
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '429':
+          description: Vượt giới hạn tần suất / ngân sách
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '500':
+          description: Lỗi nội bộ (JSON, không bao giờ HTML — EC-OPS23)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+      security:
+      - DeviceSignature: []
+      - SandboxSession: []
+      - GuardianSession: []
+  /api/v1/triage/golden-hour-dossier:
+    post:
+      tags:
+      - triage
+      summary: Xuất hotline phong tỏa & đơn trình báo Giờ Vàng (JSON/PDF, < 120ms)
+      operationId: triageGoldenHourDossier
+      security:
+      - DeviceSignature: []
+      - SandboxSession: []
+      parameters:
+      - name: format
+        in: query
+        required: false
+        schema:
+          enum:
+          - json
+          - pdf
+          type: string
+          default: json
+          title: Format
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/GoldenHourDossierRequest'
+      responses:
+        '200':
+          description: JSON hồ sơ; hoặc PDF đơn trình báo khi format=pdf
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GoldenHourDossierResponse'
+            application/pdf:
+              schema:
+                type: string
+                format: binary
+        '401':
+          description: Thiếu/sai xác thực
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '422':
+          description: Dữ liệu không hợp lệ
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '429':
+          description: Vượt giới hạn tần suất / ngân sách
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '500':
+          description: Lỗi nội bộ (JSON, không bao giờ HTML — EC-OPS23)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+  /api/v1/tts/synthesize-vi:
+    post:
+      tags:
+      - triage
+      summary: Chuẩn hóa & tổng hợp giọng nói tiếng Việt (fallback cho Web Speech API)
+      operationId: ttsSynthesizeVi
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/TtsRequest'
+        required: true
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TtsResponse'
+        '401':
+          description: Thiếu/sai xác thực
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '422':
+          description: Dữ liệu không hợp lệ
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '429':
+          description: Vượt giới hạn tần suất / ngân sách
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '500':
+          description: Lỗi nội bộ (JSON, không bao giờ HTML — EC-OPS23)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+      security:
+      - DeviceSignature: []
+      - SandboxSession: []
+  /api/v1/b2b/disbursement-shield:
+    post:
+      tags:
+      - b2b
+      summary: Đối tác giải ngân → bật Khiên 24h trên thiết bị người vay (< 70ms)
+      operationId: b2bDisbursementShield
+      security:
+      - PartnerKey: []
+        PartnerHmacSignature: []
+      parameters:
+      - name: X-VayShield-Timestamp
+        in: header
+        required: true
+        schema:
+          type: integer
+          description: Unix giây; |now - ts| ≤ 300
+          title: X-Vayshield-Timestamp
+        description: Unix giây; |now - ts| ≤ 300
+      - name: Idempotency-Key
+        in: header
+        required: true
+        schema:
+          type: string
+          minLength: 8
+          maxLength: 128
+          title: Idempotency-Key
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/DisbursementShieldRequest'
+      responses:
+        '202':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DisbursementShieldResponse'
+        '401':
+          description: Thiếu/sai xác thực
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '409':
+          description: Xung đột trạng thái / Idempotency
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '422':
+          description: Dữ liệu không hợp lệ
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '429':
+          description: Vượt giới hạn tần suất / ngân sách
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '500':
+          description: Lỗi nội bộ (JSON, không bao giờ HTML — EC-OPS23)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+  /api/v1/ops/auth/token:
+    post:
+      tags:
+      - ops
+      summary: Cấp JWT Fraud Ops (password / refresh 30 ngày / đăng nhập nhanh giám khảo)
+      operationId: opsAuthToken
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/OpsTokenRequest'
+        required: true
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OpsTokenResponse'
+        '401':
+          description: Thiếu/sai xác thực
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '422':
+          description: Dữ liệu không hợp lệ
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '429':
+          description: Vượt giới hạn tần suất / ngân sách
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '500':
+          description: Lỗi nội bộ (JSON, không bao giờ HTML — EC-OPS23)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+  /api/v1/ops/mule-clusters:
+    get:
+      tags:
+      - ops
+      summary: Danh sách cụm tài khoản mồi (RBAC FRAUD_ANALYST)
+      operationId: opsMuleClusters
+      security:
+      - OpsJwt: []
+      parameters:
+      - name: severity
+        in: query
+        required: false
+        schema:
+          anyOf:
+          - $ref: '#/components/schemas/SeverityLevel'
+          - type: 'null'
+          title: Severity
+      - name: limit
+        in: query
+        required: false
+        schema:
+          type: integer
+          maximum: 100
+          minimum: 1
+          default: 20
+          title: Limit
+      - name: cursor
+        in: query
+        required: false
+        schema:
+          anyOf:
+          - type: string
+            maxLength: 200
+          - type: 'null'
+          title: Cursor
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MuleClusterPage'
+        '401':
+          description: Thiếu/sai xác thực
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '403':
+          description: Không đủ quyền
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '422':
+          description: Dữ liệu không hợp lệ
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '429':
+          description: Vượt giới hạn tần suất / ngân sách
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '500':
+          description: Lỗi nội bộ (JSON, không bao giờ HTML — EC-OPS23)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+  /api/v1/ops/simo-dossier:
+    get:
+      tags:
+      - ops
+      summary: Hồ sơ SIMO cho 1 tài khoản mồi (unseal được ghi chuỗi băm kiểm toán)
+      operationId: opsSimoDossier
+      security:
+      - OpsJwt: []
+      parameters:
+      - name: mule_node_id
+        in: query
+        required: true
+        schema:
+          type: string
+          format: uuid
+          title: Mule Node Id
+      - name: unseal
+        in: query
+        required: false
+        schema:
+          type: boolean
+          default: false
+          title: Unseal
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SimoDossier'
+        '401':
+          description: Thiếu/sai xác thực
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '403':
+          description: Không đủ quyền
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '404':
+          description: Không tìm thấy
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '422':
+          description: Dữ liệu không hợp lệ
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '429':
+          description: Vượt giới hạn tần suất / ngân sách
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '500':
+          description: Lỗi nội bộ (JSON, không bao giờ HTML — EC-OPS23)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+  /api/v1/ops/stream-ticket:
+    get:
+      tags:
+      - ops
+      summary: Cấp vé 1 lần (TTL 45s) để mở SSE live feed bằng EventSource
+      operationId: opsStreamTicket
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OpsStreamTicketResponse'
+        '401':
+          description: Thiếu/sai xác thực
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '403':
+          description: Không đủ quyền
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '422':
+          description: Dữ liệu không hợp lệ
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '429':
+          description: Vượt giới hạn tần suất / ngân sách
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '500':
+          description: Lỗi nội bộ (JSON, không bao giờ HTML — EC-OPS23)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+      security:
+      - OpsJwt: []
+  /api/v1/ops/live-feed:
+    get:
+      tags:
+      - ops
+      summary: SSE Live Threat Feed (xác thực bằng ?ticket= từ /ops/stream-ticket)
+      operationId: opsLiveFeed
+      parameters:
+      - name: ticket
+        in: query
+        required: true
+        schema:
+          type: string
+          minLength: 16
+          maxLength: 128
+          description: Vé 1 lần từ GET /api/v1/ops/stream-ticket (sai/đã dùng → 401 JSON)
+          title: Ticket
+        description: Vé 1 lần từ GET /api/v1/ops/stream-ticket (sai/đã dùng → 401 JSON)
+      responses:
+        '200':
+          description: 'SSE live threat feed (ops.threat_signal, ping). Schema: contracts/sse-events.schema.json#/$defs/OpsLiveFeedStream'
+          content:
+            text/event-stream:
+              schema:
+                type: string
+        '401':
+          description: Thiếu/sai xác thực
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '422':
+          description: Dữ liệu không hợp lệ
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '429':
+          description: Vượt giới hạn tần suất / ngân sách
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '500':
+          description: Lỗi nội bộ (JSON, không bao giờ HTML — EC-OPS23)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+  /api/v1/sandbox/sessions:
+    post:
+      tags:
+      - sandbox
+      summary: Tạo phiên Sandbox ephemeral (mỗi tab 1 namespace; vip_code → JUDGE_VIP)
+      operationId: sandboxCreateSession
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SandboxSessionCreateRequest'
+        required: true
+      responses:
+        '201':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SandboxSessionCreateResponse'
+        '422':
+          description: Dữ liệu không hợp lệ
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '429':
+          description: Vượt giới hạn tần suất / ngân sách
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '500':
+          description: Lỗi nội bộ (JSON, không bao giờ HTML — EC-OPS23)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+  /api/v1/sandbox/simulate-event:
+    post:
+      tags:
+      - sandbox
+      summary: Bắn sự kiện ngoại vi giả lập chạy xuyên lõi thật trong namespace cô lập
+      operationId: sandboxSimulateEvent
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SimulateEventRequest'
+        required: true
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SimulateEventResponse'
+        '401':
+          description: Thiếu/sai xác thực
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '422':
+          description: Dữ liệu không hợp lệ
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '429':
+          description: Vượt giới hạn tần suất / ngân sách
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '500':
+          description: Lỗi nội bộ (JSON, không bao giờ HTML — EC-OPS23)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+      security:
+      - SandboxSession: []
+  /healthz:
+    get:
+      tags:
+      - ops-health
+      summary: Healthcheck FastAPI → PostgreSQL → Redis (luôn 200; status=degraded nếu hỏng)
+      operationId: healthz
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HealthResponse'
+  /ws/v1/guardian:
+    get:
+      tags:
+      - realtime
+      summary: WebSocket hub người vay ↔ người thân (nâng cấp 101)
+      description: 'Kết nối WebSocket hai chiều. Lấy vé bằng GET /api/v1/ws-ticket (TTL 45s, dùng 1 lần).
+        Ping 20s, ACK bắt buộc cho EVENT_EMERGENCY_ALERT trong 10s. Khung tin: contracts/ws-protocol.json.
+        Vé sai/hết hạn/đã dùng: server LUÔN accept rồi đóng với close code 4401 (không trả HTTP 403) để
+        client phân biệt được lý do.'
+      operationId: wsGuardian
+      parameters:
+      - name: ticket
+        in: query
+        required: true
+        schema:
+          type: string
+          minLength: 16
+          maxLength: 128
+        description: Vé một lần từ /api/v1/ws-ticket
+      responses:
+        '101':
+          description: Switching Protocols — đã nâng cấp WebSocket. Vé không hợp lệ → đóng 4401 ngay sau
+            accept.
+      x-websocket-protocol: contracts/ws-protocol.json
+components:
+  schemas:
+    AmountBucketTier:
+      type: string
+      enum:
+      - TIER_UNDER_3M
+      - TIER_3M_10M
+      - TIER_10M_30M
+      - TIER_30M_100M
+      - TIER_OVER_100M
+      title: AmountBucketTier
+      description: 'Khoảng số tiền (không lưu số lẻ — Zero-PII). File 4 chỉ nêu TIER_10M_30M; các bậc
+        khác
+
+        là giả định T00.'
+    AndroidPackageSig:
+      properties:
+        pkg:
+          type: string
+          title: Pkg
+        sha256:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Sha256
+          description: SHA-256 chứng chỉ ký APK (hex)
+      type: object
+      required:
+      - pkg
+      title: AndroidPackageSig
+    ApkVerdict:
+      type: string
+      enum:
+      - OFFICIAL_LICENSED
+      - LOOKALIKE_SPOOF
+      - UNLICENSED_HIGH_RISK
+      - UNKNOWN_LOW_RISK
+      title: ApkVerdict
+    ApkVerifyRequest:
+      properties:
+        package_name:
+          type: string
+          maxLength: 255
+          minLength: 1
+          pattern: ^[A-Za-z0-9_.]+$
+          title: Package Name
+        signing_cert_sha256:
+          type: string
+          pattern: ^[0-9a-fA-F]{64}$
+          title: Signing Cert Sha256
+        app_label:
+          anyOf:
+          - type: string
+            maxLength: 120
+          - type: 'null'
+          title: App Label
+        version_code:
+          anyOf:
+          - type: integer
+            minimum: 0.0
+          - type: 'null'
+          title: Version Code
+        installer_package:
+          anyOf:
+          - type: string
+            maxLength: 255
+          - type: 'null'
+          title: Installer Package
+          description: InstallSourceInfo; null = cài ngoài luồng
+        requested_permissions:
+          items:
+            type: string
+          type: array
+          maxItems: 300
+          title: Requested Permissions
+      additionalProperties: false
+      type: object
+      required:
+      - package_name
+      - signing_cert_sha256
+      title: ApkVerifyRequest
+    ApkVerifyResponse:
+      properties:
+        audit_id:
+          type: string
+          format: uuid
+          title: Audit Id
+        apk_verdict:
+          $ref: '#/components/schemas/ApkVerdict'
+        severity:
+          $ref: '#/components/schemas/Severity'
+        matched_lender:
+          anyOf:
+          - $ref: '#/components/schemas/MatchedLender'
+          - type: 'null'
+        lookalike_of:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Lookalike Of
+          description: Tên thương hiệu bị nhái
+        dangerous_permissions:
+          items:
+            type: string
+          type: array
+          title: Dangerous Permissions
+        reasons_vi:
+          items:
+            type: string
+          type: array
+          title: Reasons Vi
+        recommend_contract_scan:
+          type: boolean
+          title: Recommend Contract Scan
+      type: object
+      required:
+      - audit_id
+      - apk_verdict
+      - severity
+      - recommend_contract_scan
+      title: ApkVerifyResponse
+    AudioCallState:
+      type: string
+      enum:
+      - ACTIVE_CELLULAR
+      - ACTIVE_VOIP
+      - ENDED_WITHIN_180S
+      - NONE
+      title: AudioCallState
+    B2BShieldStatus:
+      type: string
+      enum:
+      - ARMED_ON_DEVICE
+      - PENDING_USER_ONLINE
+      - NO_DEVICE_OPTED_IN
+      title: B2BShieldStatus
+    BankFreezeHotline:
+      properties:
+        bank_bin:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Bank Bin
+        bank_short_name:
+          type: string
+          title: Bank Short Name
+        hotline:
+          type: string
+          title: Hotline
+        verified:
+          type: boolean
+          title: Verified
+          description: False nếu hotline chưa được người kiểm chứng
+      type: object
+      required:
+      - bank_short_name
+      - hotline
+      - verified
+      title: BankFreezeHotline
+    Body_auditsContractStream:
+      properties:
+        images:
+          items:
+            type: string
+            contentMediaType: application/octet-stream
+          type: array
+          title: Images
+          description: 1–4 ảnh webp/jpeg, ≤ 1.5MB/ảnh
+        metadata_json:
+          type: string
+          title: Metadata Json
+          description: JSON theo ContractStreamMetadata
+      type: object
+      required:
+      - images
+      - metadata_json
+      title: Body_auditsContractStream
+    Body_auditsVoiceTerms:
+      properties:
+        metadata_json:
+          type: string
+          title: Metadata Json
+          description: JSON theo VoiceTermsMetadata
+        audio:
+          anyOf:
+          - type: string
+            contentMediaType: application/octet-stream
+          - type: 'null'
+          title: Audio
+          description: Âm thanh ≤ 5MB
+        transcript_text:
+          anyOf:
+          - type: string
+            maxLength: 2000
+          - type: 'null'
+          title: Transcript Text
+          description: Bản ghi STT trên máy (nếu có)
+      type: object
+      required:
+      - metadata_json
+      title: Body_auditsVoiceTerms
+    CaptureSource:
+      enum:
+      - SCREENSHOT
+      - CAMERA
+      - SHARE_INTENT
+      - GALLERY
+      - SANDBOX_SAMPLE
+      title: CaptureSource
+      type: string
+    Challenge:
+      properties:
+        challenge_id:
+          type: string
+          title: Challenge Id
+        prompt_vi:
+          type: string
+          title: Prompt Vi
+        choices:
+          items:
+            $ref: '#/components/schemas/ChallengeChoice'
+          type: array
+          title: Choices
+      type: object
+      required:
+      - challenge_id
+      - prompt_vi
+      - choices
+      title: Challenge
+    ChallengeChoice:
+      properties:
+        choice_id:
+          type: string
+          title: Choice Id
+        label_vi:
+          type: string
+          title: Label Vi
+      type: object
+      required:
+      - choice_id
+      - label_vi
+      title: ChallengeChoice
+    ChallengeChoiceTemplate:
+      properties:
+        choice_id:
+          type: string
+          title: Choice Id
+        label_vi:
+          type: string
+          title: Label Vi
+      type: object
+      required:
+      - choice_id
+      - label_vi
+      title: ChallengeChoiceTemplate
+    ChallengeTemplate:
+      properties:
+        challenge_id:
+          type: string
+          title: Challenge Id
+        prompt_vi:
+          type: string
+          title: Prompt Vi
+        choices:
+          items:
+            $ref: '#/components/schemas/ChallengeChoiceTemplate'
+          type: array
+          title: Choices
+      type: object
+      required:
+      - challenge_id
+      - prompt_vi
+      - choices
+      title: ChallengeTemplate
+      description: Câu hỏi bất đối xứng Trạm 3 (File 3 §3.2). Client trộn thứ tự lựa chọn theo phiên.
+    CitedClause:
+      properties:
+        code:
+          type: string
+          title: Code
+          description: Mã điều khoản, vd BLHS_2015_D174
+        title:
+          type: string
+          title: Title
+      type: object
+      required:
+      - code
+      - title
+      title: CitedClause
+    ConsentToggles:
+      properties:
+        contract_scan:
+          type: boolean
+          title: Contract Scan
+          description: (a) Soi hợp đồng khi chủ động gửi ảnh
+        shield_monitoring:
+          type: boolean
+          title: Shield Monitoring
+          description: (b) Bật Khiên theo dõi giải ngân cục bộ
+        family_link:
+          type: boolean
+          title: Family Link
+          description: (c) Ghép đôi người thân — mặc định Tắt
+          default: false
+      additionalProperties: false
+      type: object
+      required:
+      - contract_scan
+      - shield_monitoring
+      title: ConsentToggles
+      description: 3 công tắc đồng thuận tách biệt theo mục đích (Luật 91/2025, File 4 §5.2).
+    ContractStreamMetadata:
+      additionalProperties: false
+      description: Nội dung trường multipart ``metadata_json`` của /audits/contract-stream.
+      properties:
+        capture_source:
+          $ref: '#/components/schemas/CaptureSource'
+        linked_apk_audit_id:
+          anyOf:
+          - format: uuid
+            type: string
+          - type: 'null'
+          default: null
+          title: Linked Apk Audit Id
+        fiber_key:
+          default: default
+          maxLength: 80
+          pattern: ^[A-Za-z0-9_\-:.]+$
+          title: Fiber Key
+          type: string
+        client_compressed:
+          default: true
+          title: Client Compressed
+          type: boolean
+        sandbox_sample_id:
+          anyOf:
+          - maxLength: 64
+            type: string
+          - type: 'null'
+          default: null
+          title: Sandbox Sample Id
+      required:
+      - capture_source
+      title: ContractStreamMetadata
+      type: object
+    DetectedAxis:
+      properties:
+        axis:
+          $ref: '#/components/schemas/OntologyAxis'
+        name:
+          type: string
+          title: Name
+        confidence:
+          type: number
+          maximum: 1.0
+          minimum: 0.0
+          title: Confidence
+      type: object
+      required:
+      - axis
+      - name
+      - confidence
+      title: DetectedAxis
+    DeviceRegisterRequest:
+      properties:
+        public_key_spki_b64:
+          type: string
+          maxLength: 600
+          minLength: 40
+          title: Public Key Spki B64
+          description: Khóa công khai ECDSA P-256 (SPKI DER, base64)
+        platform_type:
+          $ref: '#/components/schemas/PlatformType'
+        app_version:
+          type: string
+          maxLength: 32
+          minLength: 1
+          title: App Version
+        daily_wage_vnd:
+          anyOf:
+          - type: integer
+            maximum: 10000000.0
+            minimum: 50000.0
+          - type: 'null'
+          title: Daily Wage Vnd
+        consents:
+          $ref: '#/components/schemas/ConsentToggles'
+        phone_e164_optin:
+          anyOf:
+          - type: string
+            pattern: ^\+[1-9]\d{7,14}$
+          - type: 'null'
+          title: Phone E164 Optin
+          description: SĐT E.164 tùy chọn để khớp webhook B2B; server chỉ lưu blind index HMAC
+        proof_of_work:
+          anyOf:
+          - $ref: '#/components/schemas/ProofOfWork'
+          - type: 'null'
+      additionalProperties: false
+      type: object
+      required:
+      - public_key_spki_b64
+      - platform_type
+      - app_version
+      - consents
+      title: DeviceRegisterRequest
+    DeviceRegisterResponse:
+      properties:
+        device_id:
+          type: string
+          format: uuid
+          title: Device Id
+        policy_version:
+          type: integer
+          title: Policy Version
+        daily_wage_vnd:
+          type: integer
+          title: Daily Wage Vnd
+        phone_optin_expires_at:
+          anyOf:
+          - type: string
+            format: date-time
+          - type: 'null'
+          title: Phone Optin Expires At
+        server_epoch:
+          $ref: '#/components/schemas/SignedEpochOffset'
+      type: object
+      required:
+      - device_id
+      - policy_version
+      - daily_wage_vnd
+      - server_epoch
+      title: DeviceRegisterResponse
+    DeviceWipeResponse:
+      properties:
+        status:
+          type: string
+          const: WIPED
+          title: Status
+        wiped_at:
+          type: string
+          format: date-time
+          title: Wiped At
+        family_links_revoked:
+          type: integer
+          minimum: 0.0
+          title: Family Links Revoked
+        mule_edges_tombstoned:
+          type: integer
+          minimum: 0.0
+          title: Mule Edges Tombstoned
+      type: object
+      required:
+      - status
+      - wiped_at
+      - family_links_revoked
+      - mule_edges_tombstoned
+      title: DeviceWipeResponse
+      description: Kết quả xóa dữ liệu 1 chạm (EC-DB21).
+    DisbursementShieldRequest:
+      properties:
+        borrower_phone_blind_hmac:
+          type: string
+          pattern: ^[0-9a-f]{64}$
+          title: Borrower Phone Blind Hmac
+          description: HMAC-SHA256(pepper chia sẻ, SĐT E.164) — không bao giờ gửi SĐT thô
+        amount_bucket_tier:
+          $ref: '#/components/schemas/AmountBucketTier'
+        product_type:
+          $ref: '#/components/schemas/LoanProductType'
+        shield_duration_hours:
+          type: integer
+          maximum: 72.0
+          minimum: 1.0
+          title: Shield Duration Hours
+          default: 24
+        elevated_campaign_watch:
+          type: boolean
+          title: Elevated Campaign Watch
+          default: false
+      additionalProperties: false
+      type: object
+      required:
+      - borrower_phone_blind_hmac
+      - amount_bucket_tier
+      - product_type
+      title: DisbursementShieldRequest
+    DisbursementShieldResponse:
+      properties:
+        shield_id:
+          type: string
+          format: uuid
+          title: Shield Id
+        status:
+          $ref: '#/components/schemas/B2BShieldStatus'
+        shield_expires_at:
+          type: string
+          format: date-time
+          title: Shield Expires At
+        pre_simo_active_wave_warning:
+          $ref: '#/components/schemas/PreSimoWaveWarning'
+      type: object
+      required:
+      - shield_id
+      - status
+      - shield_expires_at
+      - pre_simo_active_wave_warning
+      title: DisbursementShieldResponse
+    DossierEvidence:
+      properties:
+        channel:
+          $ref: '#/components/schemas/EvidenceChannel'
+        reported_at:
+          type: string
+          format: date-time
+          title: Reported At
+        masked_snippet_vi:
+          type: string
+          title: Masked Snippet Vi
+      type: object
+      required:
+      - channel
+      - reported_at
+      - masked_snippet_vi
+      title: DossierEvidence
+    ErrorBody:
+      properties:
+        code:
+          $ref: '#/components/schemas/ErrorCode'
+        message_vi:
+          type: string
+          title: Message Vi
+        trace_id:
+          type: string
+          title: Trace Id
+        details:
+          anyOf:
+          - items:
+              $ref: '#/components/schemas/ErrorDetail'
+            type: array
+          - type: 'null'
+          title: Details
+      type: object
+      required:
+      - code
+      - message_vi
+      - trace_id
+      title: ErrorBody
+    ErrorCode:
+      type: string
+      enum:
+      - VALIDATION_ERROR
+      - MALFORMED_REQUEST
+      - UNAUTHORIZED
+      - SIGNATURE_INVALID
+      - TIMESTAMP_OUT_OF_WINDOW
+      - FORBIDDEN
+      - NOT_FOUND
+      - METHOD_NOT_ALLOWED
+      - CONFLICT
+      - IDEMPOTENCY_CONFLICT
+      - TICKET_INVALID_OR_CONSUMED
+      - PAIRING_CODE_INVALID
+      - PAIRING_LOCKED
+      - PAYLOAD_TOO_LARGE
+      - UNSUPPORTED_MEDIA_TYPE
+      - RATE_LIMITED
+      - BUDGET_EXCEEDED
+      - UPSTREAM_TIMEOUT
+      - SERVICE_DEGRADED
+      - INTERNAL_ERROR
+      title: ErrorCode
+    ErrorDetail:
+      properties:
+        field:
+          type: string
+          title: Field
+          description: Đường dẫn trường lỗi, vd 'body.images'
+        issue:
+          type: string
+          title: Issue
+          description: Mô tả ngắn (không chứa dữ liệu người dùng)
+      type: object
+      required:
+      - field
+      - issue
+      title: ErrorDetail
+    ErrorResponse:
+      properties:
+        error:
+          $ref: '#/components/schemas/ErrorBody'
+      type: object
+      required:
+      - error
+      title: ErrorResponse
+    EscalateRequest:
+      properties:
+        session_id:
+          type: string
+          format: uuid
+          title: Session Id
+        reason:
+          $ref: '#/components/schemas/EscalationReason'
+        hsm_state:
+          $ref: '#/components/schemas/HsmState'
+        detected_axes:
+          items:
+            $ref: '#/components/schemas/OntologyAxis'
+          type: array
+          maxItems: 10
+          title: Detected Axes
+        client_event_id:
+          type: string
+          maxLength: 128
+          minLength: 8
+          title: Client Event Id
+        occurred_at:
+          type: string
+          format: date-time
+          title: Occurred At
+      additionalProperties: false
+      type: object
+      required:
+      - session_id
+      - reason
+      - hsm_state
+      - client_event_id
+      - occurred_at
+      title: EscalateRequest
+      description: 'Zero-Amount Safe Envelope: KHÔNG có số tiền, tên công ty vay, STK.'
+    EscalateResponse:
+      properties:
+        escalation_id:
+          type: string
+          format: uuid
+          title: Escalation Id
+        status:
+          type: string
+          title: Status
+          description: PENDING_ACK | NO_ACTIVE_GUARDIAN
+        channels_attempted:
+          items:
+            $ref: '#/components/schemas/EscalationChannel'
+          type: array
+          title: Channels Attempted
+        guardians_targeted:
+          type: integer
+          minimum: 0.0
+          title: Guardians Targeted
+        ack_deadline_at:
+          type: string
+          format: date-time
+          title: Ack Deadline At
+      type: object
+      required:
+      - escalation_id
+      - status
+      - channels_attempted
+      - guardians_targeted
+      - ack_deadline_at
+      title: EscalateResponse
+    EscalationChannel:
+      type: string
+      enum:
+      - WEBSOCKET
+      - WEB_PUSH
+      - SMS
+      - EMAIL
+      title: EscalationChannel
+    EscalationReason:
+      type: string
+      enum:
+      - COERCION_DETECTED
+      - SMURF_BYPASS_ATTEMPT
+      - USER_CONFIRMED_SCAM
+      - USER_ALREADY_TRANSFERRED
+      title: EscalationReason
+    EvaluateResponseRequest:
+      properties:
+        session_id:
+          type: string
+          format: uuid
+          title: Session Id
+        challenge_id:
+          type: string
+          maxLength: 64
+          minLength: 1
+          title: Challenge Id
+        choice_id:
+          anyOf:
+          - type: string
+            maxLength: 64
+          - type: 'null'
+          title: Choice Id
+        utterance_text:
+          anyOf:
+          - type: string
+            maxLength: 1000
+          - type: 'null'
+          title: Utterance Text
+          description: Lời khai (đã che SĐT/tên trên máy)
+        sensors:
+          $ref: '#/components/schemas/SensorSnapshot'
+      additionalProperties: false
+      type: object
+      required:
+      - session_id
+      - challenge_id
+      - sensors
+      title: EvaluateResponseRequest
+    EvaluateResponseResult:
+      properties:
+        session_id:
+          type: string
+          format: uuid
+          title: Session Id
+        action:
+          $ref: '#/components/schemas/OntologyAction'
+        detected_axes:
+          items:
+            $ref: '#/components/schemas/DetectedAxis'
+          type: array
+          title: Detected Axes
+        computed_scam_prob:
+          type: number
+          maximum: 1.0
+          minimum: 0.0
+          title: Computed Scam Prob
+        next_hsm_state:
+          $ref: '#/components/schemas/HsmState'
+        message_vi:
+          type: string
+          title: Message Vi
+        tts_script_vi:
+          type: string
+          title: Tts Script Vi
+        callback_hotline_hint_vi:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Callback Hotline Hint Vi
+          description: 'S2-EC47: gợi ý tự gọi lại hotline chính thức'
+        escalate_recommended:
+          type: boolean
+          title: Escalate Recommended
+        follow_up_challenge:
+          anyOf:
+          - $ref: '#/components/schemas/Challenge'
+          - type: 'null'
+      type: object
+      required:
+      - session_id
+      - action
+      - computed_scam_prob
+      - next_hsm_state
+      - message_vi
+      - tts_script_vi
+      - escalate_recommended
+      title: EvaluateResponseResult
+    EvidenceChannel:
+      type: string
+      enum:
+      - VIETQR_CRYPTO_DECODED
+      - OCR_RECEIPT_EXTRACTED
+      - VOICE_CHAT_REPORTED
+      title: EvidenceChannel
+    FallbackContact:
+      properties:
+        channel:
+          type: string
+          enum:
+          - SMS
+          - EMAIL
+          title: Channel
+        value:
+          type: string
+          maxLength: 254
+          minLength: 3
+          title: Value
+      additionalProperties: false
+      type: object
+      required:
+      - channel
+      - value
+      title: FallbackContact
+    GoldenHourDossierRequest:
+      properties:
+        session_id:
+          anyOf:
+          - type: string
+            format: uuid
+          - type: 'null'
+          title: Session Id
+        victim_bank_bin:
+          anyOf:
+          - type: string
+            pattern: ^\d{6}$
+          - type: 'null'
+          title: Victim Bank Bin
+          description: BIN ngân hàng nạn nhân đã chuyển tiền đi
+        mule_bank_bin:
+          anyOf:
+          - type: string
+            pattern: ^\d{6}$
+          - type: 'null'
+          title: Mule Bank Bin
+        mule_masked_account:
+          anyOf:
+          - type: string
+            maxLength: 32
+          - type: 'null'
+          title: Mule Masked Account
+        transferred_at:
+          type: string
+          format: date-time
+          title: Transferred At
+        amount_bucket_tier:
+          anyOf:
+          - $ref: '#/components/schemas/AmountBucketTier'
+          - type: 'null'
+        scam_channel:
+          $ref: '#/components/schemas/ScamChannel'
+      additionalProperties: false
+      type: object
+      required:
+      - transferred_at
+      - scam_channel
+      title: GoldenHourDossierRequest
+    GoldenHourDossierResponse:
+      properties:
+        dossier_id:
+          type: string
+          format: uuid
+          title: Dossier Id
+        minutes_since_transfer:
+          type: integer
+          minimum: 0.0
+          title: Minutes Since Transfer
+        golden_hour_remaining_minutes:
+          type: integer
+          minimum: 0.0
+          title: Golden Hour Remaining Minutes
+        bank_freeze_hotlines:
+          items:
+            $ref: '#/components/schemas/BankFreezeHotline'
+          type: array
+          title: Bank Freeze Hotlines
+        police_hotline:
+          type: string
+          title: Police Hotline
+        steps_vi:
+          items:
+            type: string
+          type: array
+          title: Steps Vi
+        police_report_draft_vi:
+          type: string
+          title: Police Report Draft Vi
+        pdf_available:
+          type: boolean
+          title: Pdf Available
+      type: object
+      required:
+      - dossier_id
+      - minutes_since_transfer
+      - golden_hour_remaining_minutes
+      - bank_freeze_hotlines
+      - police_hotline
+      - steps_vi
+      - police_report_draft_vi
+      - pdf_available
+      title: GoldenHourDossierResponse
+    HealthChecks:
+      properties:
+        database:
+          type: string
+          enum:
+          - ok
+          - down
+          - skipped
+          title: Database
+        redis:
+          type: string
+          enum:
+          - ok
+          - down
+          - skipped
+          title: Redis
+      type: object
+      required:
+      - database
+      - redis
+      title: HealthChecks
+    HealthResponse:
+      properties:
+        status:
+          type: string
+          enum:
+          - ok
+          - degraded
+          title: Status
+        version:
+          type: string
+          title: Version
+        environment:
+          type: string
+          title: Environment
+        checks:
+          $ref: '#/components/schemas/HealthChecks'
+      type: object
+      required:
+      - status
+      - version
+      - environment
+      - checks
+      title: HealthResponse
+    HsmState:
+      type: string
+      enum:
+      - S0_IDLE
+      - S1_LOAN_EXPLORATION
+      - S2_CONTRACT_AUDITING
+      - S3_ADVANCE_FEE_HARD_STOP
+      - S4_SHIELD_ARMED_24H
+      - S5_CRITICAL_INTERCEPTION
+      - S6_COOLING_OFF_LOCK
+      - S7_ESCALATED_SCAM_CONFIRMED
+      - S8_SAFE_ROUTINE_TX
+      - S9_GOLDEN_HOUR_TRIAGE
+      title: HsmState
+      description: 10 trạng thái HSM (File 2 §2.1).
+    KernelSignal:
+      type: string
+      enum:
+      - INFINITE_APR_ADVANCE_FEE_SCAM
+      title: KernelSignal
+      description: 'Tín hiệu đặc biệt của kernel tài chính (File 2 §4.1, bất biến phí ứng trước).
+
+
+        Khi ``F_upfront > 0`` và ``P_disbursed == 0`` kernel dừng bộ giải lãi và trả tín hiệu này;
+
+        APR/XIRR khi đó là ``null`` trong mọi payload.'
+    LegalCategory:
+      type: string
+      enum:
+      - COMMERCIAL_BANK
+      - LICENSED_FINCO
+      - P2P_SANDBOX
+      - LICENSED_PAWN_CHAIN
+      - BNPL_WALLET_PROVIDER
+      - UNLICENSED_OR_UNKNOWN
+      title: LegalCategory
+    LoanProductType:
+      type: string
+      enum:
+      - CASH_CONSUMER_LOAN
+      - POS_INSTALLMENT_LOAN
+      - BNPL_CREDIT_LINE
+      - CREDIT_CARD_CASH_ADVANCE
+      - ASSET_SECURED_LOAN
+      - OTHER
+      title: LoanProductType
+      description: File 4 chỉ nêu CASH_CONSUMER_LOAN; các loại còn lại là giả định T00.
+    MatchedLender:
+      properties:
+        entity_code:
+          type: string
+          title: Entity Code
+        official_short_name:
+          type: string
+          title: Official Short Name
+        legal_category:
+          $ref: '#/components/schemas/LegalCategory'
+        official_hotlines:
+          items:
+            type: string
+          type: array
+          title: Official Hotlines
+      type: object
+      required:
+      - entity_code
+      - official_short_name
+      - legal_category
+      title: MatchedLender
+    MuleCluster:
+      properties:
+        cluster_id:
+          type: string
+          format: uuid
+          title: Cluster Id
+        campaign_label:
+          type: string
+          title: Campaign Label
+        impersonated_lender:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Impersonated Lender
+        dominant_scam_trap:
+          $ref: '#/components/schemas/ScamTrap'
+        severity_level:
+          $ref: '#/components/schemas/SeverityLevel'
+        is_simulated_seed:
+          type: boolean
+          title: Is Simulated Seed
+          description: 'EC-OPS16: nhãn [Dữ liệu Mô phỏng Thực tiễn]'
+        first_seen_at:
+          type: string
+          format: date-time
+          title: First Seen At
+        last_seen_at:
+          type: string
+          format: date-time
+          title: Last Seen At
+        nodes:
+          items:
+            $ref: '#/components/schemas/MuleNode'
+          type: array
+          title: Nodes
+        links:
+          items:
+            $ref: '#/components/schemas/MuleLink'
+          type: array
+          title: Links
+      type: object
+      required:
+      - cluster_id
+      - campaign_label
+      - dominant_scam_trap
+      - severity_level
+      - is_simulated_seed
+      - first_seen_at
+      - last_seen_at
+      - nodes
+      title: MuleCluster
+    MuleClusterPage:
+      properties:
+        items:
+          items:
+            $ref: '#/components/schemas/MuleCluster'
+          type: array
+          title: Items
+        next_cursor:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Next Cursor
+      type: object
+      required:
+      - items
+      title: MuleClusterPage
+    MuleLink:
+      properties:
+        source_node_id:
+          type: string
+          format: uuid
+          title: Source Node Id
+        target_node_id:
+          type: string
+          format: uuid
+          title: Target Node Id
+        relation:
+          type: string
+          enum:
+          - SAME_VA_PREFIX
+          - SHARED_SCAM_SCRIPT
+          - SHARED_REPORTER_WAVE
+          title: Relation
+      type: object
+      required:
+      - source_node_id
+      - target_node_id
+      - relation
+      title: MuleLink
+    MuleNode:
+      properties:
+        node_id:
+          type: string
+          format: uuid
+          title: Node Id
+        bank_bin:
+          type: string
+          title: Bank Bin
+        masked_account_display:
+          type: string
+          title: Masked Account Display
+        distinct_device_quorum:
+          type: integer
+          minimum: 0.0
+          title: Distinct Device Quorum
+        threat_confidence:
+          type: number
+          maximum: 1.0
+          minimum: 0.0
+          title: Threat Confidence
+        simo_dossier_status:
+          $ref: '#/components/schemas/SimoDossierStatus'
+        is_dynamic_va_range:
+          type: boolean
+          title: Is Dynamic Va Range
+      type: object
+      required:
+      - node_id
+      - bank_bin
+      - masked_account_display
+      - distinct_device_quorum
+      - threat_confidence
+      - simo_dossier_status
+      - is_dynamic_va_range
+      title: MuleNode
+    NormalizedTerms:
+      properties:
+        nominal_principal_vnd:
+          anyOf:
+          - type: integer
+            maximum: 1000000000000.0
+            exclusiveMinimum: 0.0
+            description: Số tiền VND > 0
+          - type: 'null'
+          title: Nominal Principal Vnd
+        net_disbursed_vnd:
+          anyOf:
+          - type: integer
+            maximum: 1000000000000.0
+            minimum: 0.0
+            description: Số tiền VND (đồng, int)
+          - type: 'null'
+          title: Net Disbursed Vnd
+        total_repayment_vnd:
+          anyOf:
+          - type: integer
+            maximum: 1000000000000.0
+            exclusiveMinimum: 0.0
+            description: Số tiền VND > 0
+          - type: 'null'
+          title: Total Repayment Vnd
+        tenure_days:
+          anyOf:
+          - type: integer
+            maximum: 3650.0
+            minimum: 1.0
+          - type: 'null'
+          title: Tenure Days
+        upfront_fee_amount_vnd:
+          anyOf:
+          - type: integer
+            maximum: 1000000000000.0
+            minimum: 0.0
+            description: Số tiền VND (đồng, int)
+          - type: 'null'
+          title: Upfront Fee Amount Vnd
+      type: object
+      title: NormalizedTerms
+    OntologyAction:
+      type: string
+      enum:
+      - RED
+      - ORANGE_RED
+      - PASS
+      title: OntologyAction
+    OntologyAxis:
+      type: string
+      enum:
+      - C1
+      - C2
+      - C3
+      - C4
+      - C5
+      - C6
+      - C7
+      - C8
+      - C9
+      - C10
+      title: OntologyAxis
+      description: 10 trục thao túng (File 3 §3.3).
+    OpsStreamTicketResponse:
+      properties:
+        ticket:
+          type: string
+          maxLength: 128
+          minLength: 16
+          title: Ticket
+        expires_at:
+          type: string
+          format: date-time
+          title: Expires At
+        ttl_seconds:
+          type: integer
+          minimum: 1.0
+          title: Ttl Seconds
+        stream_path:
+          type: string
+          title: Stream Path
+          description: vd /api/v1/ops/live-feed?ticket=<ticket>
+      type: object
+      required:
+      - ticket
+      - expires_at
+      - ttl_seconds
+      - stream_path
+      title: OpsStreamTicketResponse
+      description: Vé 1 lần cho SSE live feed (EventSource không gửi được header Authorization).
+    OpsTokenRequest:
+      properties:
+        grant_type:
+          type: string
+          enum:
+          - password
+          - refresh_token
+          - judge_quick_login
+          title: Grant Type
+        username:
+          anyOf:
+          - type: string
+            maxLength: 254
+          - type: 'null'
+          title: Username
+        password:
+          anyOf:
+          - type: string
+            maxLength: 256
+          - type: 'null'
+          title: Password
+        refresh_token:
+          anyOf:
+          - type: string
+            maxLength: 4096
+          - type: 'null'
+          title: Refresh Token
+        judge_access_code:
+          anyOf:
+          - type: string
+            maxLength: 128
+          - type: 'null'
+          title: Judge Access Code
+      additionalProperties: false
+      type: object
+      required:
+      - grant_type
+      title: OpsTokenRequest
+    OpsTokenResponse:
+      properties:
+        access_token:
+          type: string
+          title: Access Token
+        token_type:
+          type: string
+          const: bearer
+          title: Token Type
+        expires_in:
+          type: integer
+          minimum: 1.0
+          title: Expires In
+        refresh_token:
+          type: string
+          title: Refresh Token
+        refresh_expires_in:
+          type: integer
+          minimum: 1.0
+          title: Refresh Expires In
+        roles:
+          items:
+            type: string
+          type: array
+          title: Roles
+      type: object
+      required:
+      - access_token
+      - token_type
+      - expires_in
+      - refresh_token
+      - refresh_expires_in
+      - roles
+      title: OpsTokenResponse
+    PairConfirmRequest:
+      properties:
+        pairing_code:
+          type: string
+          pattern: ^[A-HJ-NP-Z2-9]{6}$
+          title: Pairing Code
+        consent_accepted:
+          type: boolean
+          title: Consent Accepted
+          description: Phải là true (đồng thuận 2 chiều)
+        webpush_subscription:
+          anyOf:
+          - $ref: '#/components/schemas/WebPushSubscription'
+          - type: 'null'
+        fallback_contact:
+          anyOf:
+          - $ref: '#/components/schemas/FallbackContact'
+          - type: 'null'
+      additionalProperties: false
+      type: object
+      required:
+      - pairing_code
+      - consent_accepted
+      title: PairConfirmRequest
+    PairConfirmResponse:
+      properties:
+        link_id:
+          type: string
+          format: uuid
+          title: Link Id
+        status:
+          type: string
+          const: ACTIVE
+          title: Status
+        guardian_alias:
+          type: string
+          title: Guardian Alias
+        borrower_display_label:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Borrower Display Label
+        guardian_session_token:
+          type: string
+          title: Guardian Session Token
+        guardian_session_expires_at:
+          type: string
+          format: date-time
+          title: Guardian Session Expires At
+      type: object
+      required:
+      - link_id
+      - status
+      - guardian_alias
+      - guardian_session_token
+      - guardian_session_expires_at
+      title: PairConfirmResponse
+    PairInitRequest:
+      properties:
+        guardian_alias:
+          type: string
+          maxLength: 64
+          minLength: 1
+          title: Guardian Alias
+          description: vd 'Con trai'
+        borrower_display_label:
+          anyOf:
+          - type: string
+            maxLength: 32
+          - type: 'null'
+          title: Borrower Display Label
+          description: Nhãn người thân thấy, vd 'Mẹ'
+      additionalProperties: false
+      type: object
+      required:
+      - guardian_alias
+      title: PairInitRequest
+    PairInitResponse:
+      properties:
+        link_id:
+          type: string
+          format: uuid
+          title: Link Id
+        pairing_code:
+          type: string
+          pattern: ^[A-HJ-NP-Z2-9]{6}$
+          title: Pairing Code
+        qr_payload:
+          type: string
+          title: Qr Payload
+        expires_at:
+          type: string
+          format: date-time
+          title: Expires At
+        max_fail_attempts:
+          type: integer
+          minimum: 1.0
+          title: Max Fail Attempts
+      type: object
+      required:
+      - link_id
+      - pairing_code
+      - qr_payload
+      - expires_at
+      - max_fail_attempts
+      title: PairInitResponse
+    PlatformType:
+      type: string
+      enum:
+      - ANDROID_NATIVE
+      - WEB_PWA
+      - JUDGE_SANDBOX
+      title: PlatformType
+    PolicyBundle:
+      properties:
+        policy_version:
+          type: integer
+          minimum: 1.0
+          title: Policy Version
+        issued_at:
+          type: string
+          format: date-time
+          title: Issued At
+        expires_at:
+          type: string
+          format: date-time
+          title: Expires At
+        algorithm:
+          type: string
+          const: Ed25519
+          title: Algorithm
+        key_id:
+          type: string
+          title: Key Id
+        payload:
+          $ref: '#/components/schemas/PolicyPayload'
+        signature_b64:
+          type: string
+          title: Signature B64
+          description: Ed25519 trên JSON chuẩn hóa (sort_keys, separators=(',',':')) của payload
+      type: object
+      required:
+      - policy_version
+      - issued_at
+      - expires_at
+      - algorithm
+      - key_id
+      - payload
+      - signature_b64
+      title: PolicyBundle
+    PolicyPayload:
+      properties:
+        lender_whitelist:
+          items:
+            $ref: '#/components/schemas/WhitelistedLender'
+          type: array
+          title: Lender Whitelist
+        banking_app_packages:
+          items:
+            type: string
+          type: array
+          title: Banking App Packages
+        dangerous_permission_combos:
+          items:
+            items:
+              type: string
+            type: array
+          type: array
+          title: Dangerous Permission Combos
+        blacklist_bloom_b64:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Blacklist Bloom B64
+        thresholds:
+          $ref: '#/components/schemas/PolicyThresholds'
+        challenge_templates:
+          items:
+            $ref: '#/components/schemas/ChallengeTemplate'
+          type: array
+          title: Challenge Templates
+      type: object
+      required:
+      - lender_whitelist
+      - banking_app_packages
+      - dangerous_permission_combos
+      - thresholds
+      - challenge_templates
+      title: PolicyPayload
+    PolicyThresholds:
+      properties:
+        p_scam_watch:
+          type: number
+          maximum: 1.0
+          minimum: 0.0
+          title: P Scam Watch
+        p_scam_cooling_off:
+          type: number
+          maximum: 1.0
+          minimum: 0.0
+          title: P Scam Cooling Off
+        cooling_off_seconds:
+          type: integer
+          minimum: 1.0
+          title: Cooling Off Seconds
+        shield_duration_hours:
+          type: integer
+          maximum: 72.0
+          minimum: 1.0
+          title: Shield Duration Hours
+        smurf_window_minutes:
+          type: integer
+          minimum: 1.0
+          title: Smurf Window Minutes
+      type: object
+      required:
+      - p_scam_watch
+      - p_scam_cooling_off
+      - cooling_off_seconds
+      - shield_duration_hours
+      - smurf_window_minutes
+      title: PolicyThresholds
+    PreSimoWaveWarning:
+      properties:
+        impersonation_wave_active:
+          type: boolean
+          title: Impersonation Wave Active
+        active_clusters_targeting_brand:
+          type: integer
+          minimum: 0.0
+          title: Active Clusters Targeting Brand
+      type: object
+      required:
+      - impersonation_wave_active
+      - active_clusters_targeting_brand
+      title: PreSimoWaveWarning
+    ProofOfWork:
+      properties:
+        timestamp:
+          type: integer
+          minimum: 0.0
+          title: Timestamp
+          description: Unix giây
+        nonce:
+          type: string
+          maxLength: 64
+          minLength: 1
+          title: Nonce
+      additionalProperties: false
+      type: object
+      required:
+      - timestamp
+      - nonce
+      title: ProofOfWork
+      description: 'Hashcash: sha256(public_key_spki_b64 + '':'' + timestamp + '':'' + nonce) có đủ bit
+        0 đầu.'
+    RealtimeRole:
+      type: string
+      enum:
+      - BORROWER
+      - GUARDIAN
+      title: RealtimeRole
+    RecalculateRequest:
+      properties:
+        nominal_principal_vnd:
+          anyOf:
+          - type: integer
+            maximum: 1000000000000.0
+            exclusiveMinimum: 0.0
+            description: Số tiền VND > 0
+          - type: 'null'
+          title: Nominal Principal Vnd
+        net_disbursed_vnd:
+          type: integer
+          maximum: 1000000000000.0
+          minimum: 0.0
+          title: Net Disbursed Vnd
+          description: Số tiền VND (đồng, int)
+        total_repayment_vnd:
+          anyOf:
+          - type: integer
+            maximum: 1000000000000.0
+            exclusiveMinimum: 0.0
+            description: Số tiền VND > 0
+          - type: 'null'
+          title: Total Repayment Vnd
+        tenure_days:
+          anyOf:
+          - type: integer
+            maximum: 3650.0
+            minimum: 1.0
+          - type: 'null'
+          title: Tenure Days
+        repayment_regimes:
+          items:
+            $ref: '#/components/schemas/RepaymentRegime'
+          type: array
+          maxItems: 12
+          title: Repayment Regimes
+        deducted_fees_vnd:
+          type: integer
+          maximum: 1000000000000.0
+          minimum: 0.0
+          title: Deducted Fees Vnd
+          description: Số tiền VND (đồng, int)
+          default: 0
+        upfront_fee_amount_vnd:
+          type: integer
+          maximum: 1000000000000.0
+          minimum: 0.0
+          title: Upfront Fee Amount Vnd
+          description: Số tiền VND (đồng, int)
+          default: 0
+        edited_fields:
+          items:
+            type: string
+          type: array
+          maxItems: 20
+          title: Edited Fields
+      additionalProperties: false
+      type: object
+      required:
+      - net_disbursed_vnd
+      title: RecalculateRequest
+      description: Người dùng sửa số (hoặc form 3 ô khi AI hạ cấp Tầng 4). Không gọi LLM.
+    RecalculateResponse:
+      properties:
+        audit_id:
+          type: string
+          format: uuid
+          title: Audit Id
+        verdict:
+          $ref: '#/components/schemas/VerdictSummary'
+        computed_in_ms:
+          type: number
+          minimum: 0.0
+          title: Computed In Ms
+        llm_calls:
+          type: integer
+          maximum: 0.0
+          minimum: 0.0
+          title: Llm Calls
+          description: Luôn 0 — tính tất định
+      type: object
+      required:
+      - audit_id
+      - verdict
+      - computed_in_ms
+      - llm_calls
+      title: RecalculateResponse
+    RepaymentRegime:
+      properties:
+        period_count:
+          type: integer
+          maximum: 360.0
+          minimum: 1.0
+          title: Period Count
+        period_interval_days:
+          type: integer
+          maximum: 365.0
+          minimum: 1.0
+          title: Period Interval Days
+        amount_per_period_vnd:
+          type: integer
+          maximum: 1000000000000.0
+          minimum: 0.0
+          title: Amount Per Period Vnd
+          description: Số tiền VND (đồng, int)
+      additionalProperties: false
+      type: object
+      required:
+      - period_count
+      - period_interval_days
+      - amount_per_period_vnd
+      title: RepaymentRegime
+    RescueCardType:
+      type: string
+      enum:
+      - CALL_ME_NOW
+      - STOP_TRANSFER_NOW
+      - I_AM_COMING
+      - CALL_BANK_HOTLINE
+      title: RescueCardType
+    SandboxEventParams:
+      properties:
+        amount_bucket_tier:
+          anyOf:
+          - $ref: '#/components/schemas/AmountBucketTier'
+          - type: 'null'
+        call_state:
+          anyOf:
+          - $ref: '#/components/schemas/AudioCallState'
+          - type: 'null'
+        screen_share:
+          anyOf:
+          - type: boolean
+          - type: 'null'
+          title: Screen Share
+        fiber_key:
+          type: string
+          pattern: ^[A-Za-z0-9_\-:.]{1,80}$
+          title: Fiber Key
+          default: default
+      additionalProperties: false
+      type: object
+      title: SandboxEventParams
+    SandboxEventType:
+      type: string
+      enum:
+      - BANK_DISBURSEMENT_NOTIF
+      - INCOMING_SCAM_CALL
+      - CALL_ENDED
+      - BANK_APP_OPENED
+      - B2B_DISBURSEMENT_WEBHOOK
+      - USER_ALREADY_TRANSFERRED
+      - RESET_SCENARIO
+      title: SandboxEventType
+    SandboxSessionCreateRequest:
+      properties:
+        vip_code:
+          anyOf:
+          - type: string
+            maxLength: 64
+          - type: 'null'
+          title: Vip Code
+          description: vd mã ?vip= trên A4
+      additionalProperties: false
+      type: object
+      title: SandboxSessionCreateRequest
+    SandboxSessionCreateResponse:
+      properties:
+        sandbox_session_token:
+          type: string
+          title: Sandbox Session Token
+          description: Gửi lại qua header X-Sandbox-Session
+        sandbox_namespace:
+          type: string
+          title: Sandbox Namespace
+        tier:
+          $ref: '#/components/schemas/SandboxTier'
+        expires_at:
+          type: string
+          format: date-time
+          title: Expires At
+        daily_budget_remaining_usd:
+          type: number
+          minimum: 0.0
+          title: Daily Budget Remaining Usd
+      type: object
+      required:
+      - sandbox_session_token
+      - sandbox_namespace
+      - tier
+      - expires_at
+      - daily_budget_remaining_usd
+      title: SandboxSessionCreateResponse
+    SandboxTier:
+      type: string
+      enum:
+      - PUBLIC
+      - JUDGE_VIP
+      title: SandboxTier
+    ScamChannel:
+      type: string
+      enum:
+      - PHONE_CALL
+      - ZALO_OR_OTT
+      - SMS
+      - FAKE_LOAN_APP
+      - SOCIAL_MEDIA
+      - OTHER
+      title: ScamChannel
+    ScamTrap:
+      type: string
+      enum:
+      - TRAP_1_ADVANCE_FEE
+      - TRAP_2_SHARK_APK
+      - TRAP_3_LOAN_RECALL
+      title: ScamTrap
+    SendRescueCardRequest:
+      properties:
+        escalation_id:
+          anyOf:
+          - type: string
+            format: uuid
+          - type: 'null'
+          title: Escalation Id
+        card_type:
+          $ref: '#/components/schemas/RescueCardType'
+        message_vi:
+          anyOf:
+          - type: string
+            maxLength: 280
+          - type: 'null'
+          title: Message Vi
+      additionalProperties: false
+      type: object
+      required:
+      - card_type
+      title: SendRescueCardRequest
+    SendRescueCardResponse:
+      properties:
+        rescue_card_id:
+          type: string
+          format: uuid
+          title: Rescue Card Id
+        delivered_via:
+          items:
+            $ref: '#/components/schemas/EscalationChannel'
+          type: array
+          title: Delivered Via
+        queued:
+          type: boolean
+          title: Queued
+        sent_at:
+          type: string
+          format: date-time
+          title: Sent At
+      type: object
+      required:
+      - rescue_card_id
+      - delivered_via
+      - queued
+      - sent_at
+      title: SendRescueCardResponse
+    SensorSnapshot:
+      properties:
+        audio_call_state:
+          $ref: '#/components/schemas/AudioCallState'
+        screen_share_detected:
+          type: boolean
+          title: Screen Share Detected
+          default: false
+        hesitation_ms:
+          anyOf:
+          - type: integer
+            maximum: 600000.0
+            minimum: 0.0
+          - type: 'null'
+          title: Hesitation Ms
+        bank_app_reopen_count:
+          type: integer
+          maximum: 1000.0
+          minimum: 0.0
+          title: Bank App Reopen Count
+          default: 0
+        seconds_since_disbursement:
+          anyOf:
+          - type: integer
+            minimum: 0.0
+          - type: 'null'
+          title: Seconds Since Disbursement
+      additionalProperties: false
+      type: object
+      required:
+      - audio_call_state
+      title: SensorSnapshot
+    Severity:
+      type: string
+      enum:
+      - CRITICAL_RED
+      - RED
+      - DEEP_ORANGE
+      - ORANGE
+      - YELLOW_ORANGE
+      - AMBER
+      - GREEN
+      title: Severity
+      description: Mức màu hiển thị của phán quyết (File 2 §4.4 cột "Nhãn màu").
+    SeverityLevel:
+      type: string
+      enum:
+      - WATCH
+      - ELEVATED
+      - CRITICAL_WAVE
+      title: SeverityLevel
+    ShieldArmRequest:
+      properties:
+        fiber_key:
+          type: string
+          pattern: ^[A-Za-z0-9_\-:.]{1,80}$
+          title: Fiber Key
+          default: default
+        trigger_origin:
+          $ref: '#/components/schemas/TriggerOrigin'
+        amount_bucket_tier:
+          anyOf:
+          - $ref: '#/components/schemas/AmountBucketTier'
+          - type: 'null'
+        disbursement_at:
+          anyOf:
+          - type: string
+            format: date-time
+          - type: 'null'
+          title: Disbursement At
+        shield_duration_hours:
+          type: integer
+          maximum: 72.0
+          minimum: 1.0
+          title: Shield Duration Hours
+          default: 24
+        client_event_id:
+          type: string
+          maxLength: 128
+          minLength: 8
+          title: Client Event Id
+          description: Khóa idempotency
+        notif_dedupe_hash:
+          anyOf:
+          - type: string
+            pattern: ^[0-9a-f]{64}$
+          - type: 'null'
+          title: Notif Dedupe Hash
+          description: SHA-256 thông báo đã che (khử trùng SMS + Push trong 10 phút)
+      additionalProperties: false
+      type: object
+      required:
+      - trigger_origin
+      - client_event_id
+      title: ShieldArmRequest
+    ShieldArmResponse:
+      properties:
+        session_id:
+          type: string
+          format: uuid
+          title: Session Id
+        fiber_key:
+          type: string
+          title: Fiber Key
+        hsm_state:
+          $ref: '#/components/schemas/HsmState'
+        shield_expires_at:
+          type: string
+          format: date-time
+          title: Shield Expires At
+        risk_log_odds:
+          type: number
+          title: Risk Log Odds
+        deduplicated:
+          type: boolean
+          title: Deduplicated
+      type: object
+      required:
+      - session_id
+      - fiber_key
+      - hsm_state
+      - shield_expires_at
+      - risk_log_odds
+      - deduplicated
+      title: ShieldArmResponse
+    SignedEpochOffset:
+      properties:
+        server_time_ms:
+          type: integer
+          title: Server Time Ms
+        key_id:
+          type: string
+          title: Key Id
+        signature_b64:
+          type: string
+          title: Signature B64
+      type: object
+      required:
+      - server_time_ms
+      - key_id
+      - signature_b64
+      title: SignedEpochOffset
+      description: Giờ máy chủ có ký (File 2 §1.1 SignedServerEpochOffset).
+    SimoDossier:
+      properties:
+        dossier_id:
+          type: string
+          format: uuid
+          title: Dossier Id
+        mule_node_id:
+          type: string
+          format: uuid
+          title: Mule Node Id
+        bank_bin:
+          type: string
+          title: Bank Bin
+        masked_account_display:
+          type: string
+          title: Masked Account Display
+        account_holder_masked:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Account Holder Masked
+        unsealed_account_number:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Unsealed Account Number
+          description: Chỉ có khi unseal=true; ghi vào chuỗi băm kiểm toán
+        simo_dossier_status:
+          $ref: '#/components/schemas/SimoDossierStatus'
+        distinct_device_quorum:
+          type: integer
+          minimum: 0.0
+          title: Distinct Device Quorum
+        cluster_label:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Cluster Label
+        evidence:
+          items:
+            $ref: '#/components/schemas/DossierEvidence'
+          type: array
+          title: Evidence
+        advisory_draft_vi:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Advisory Draft Vi
+        generated_at:
+          type: string
+          format: date-time
+          title: Generated At
+        audit_chain_entry_hash:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Audit Chain Entry Hash
+      type: object
+      required:
+      - dossier_id
+      - mule_node_id
+      - bank_bin
+      - masked_account_display
+      - simo_dossier_status
+      - distinct_device_quorum
+      - evidence
+      - generated_at
+      title: SimoDossier
+    SimoDossierStatus:
+      type: string
+      enum:
+      - OBSERVING
+      - QUORUM_REACHED
+      - REVIEWED_CONFIRMED
+      - EXPORTED_TO_SIMO
+      - FALSE_POSITIVE_DISMISSED
+      title: SimoDossierStatus
+    SimulateEventRequest:
+      properties:
+        event_type:
+          $ref: '#/components/schemas/SandboxEventType'
+        params:
+          $ref: '#/components/schemas/SandboxEventParams'
+      additionalProperties: false
+      type: object
+      required:
+      - event_type
+      title: SimulateEventRequest
+    SimulateEventResponse:
+      properties:
+        event_id:
+          type: string
+          format: uuid
+          title: Event Id
+        sandbox_namespace:
+          type: string
+          title: Sandbox Namespace
+        accepted:
+          type: boolean
+          title: Accepted
+        resulting_hsm_state:
+          $ref: '#/components/schemas/HsmState'
+        risk_log_odds:
+          type: number
+          title: Risk Log Odds
+        scam_probability:
+          type: number
+          maximum: 1.0
+          minimum: 0.0
+          title: Scam Probability
+        side_effects:
+          items:
+            type: string
+          type: array
+          title: Side Effects
+      type: object
+      required:
+      - event_id
+      - sandbox_namespace
+      - accepted
+      - resulting_hsm_state
+      - risk_log_odds
+      - scam_probability
+      title: SimulateEventResponse
+    SlangToken:
+      properties:
+        raw:
+          type: string
+          title: Raw
+          description: Cụm từ gốc, vd '5 củ'
+        value_vnd:
+          type: integer
+          maximum: 1000000000000.0
+          minimum: 0.0
+          title: Value Vnd
+          description: Số tiền VND (đồng, int)
+      type: object
+      required:
+      - raw
+      - value_vnd
+      title: SlangToken
+    TriggerOrigin:
+      type: string
+      enum:
+      - STATION_1_APK
+      - STATION_2_SCAN
+      - STATION_2_VOICE
+      - STATION_3_NOTIF
+      - B2B_PARTNER_WEBHOOK
+      - SANDBOX_SIM
+      title: TriggerOrigin
+      description: Nguồn kích hoạt phiên bảo vệ (File 4 §2.2 protection_sessions.trigger_origin).
+    TtsRequest:
+      properties:
+        text_vi:
+          type: string
+          maxLength: 1000
+          minLength: 1
+          title: Text Vi
+        voice:
+          $ref: '#/components/schemas/TtsVoice'
+          default: VI_FEMALE_SOUTH
+        speaking_rate:
+          type: number
+          maximum: 1.5
+          minimum: 0.5
+          title: Speaking Rate
+          default: 0.9
+      additionalProperties: false
+      type: object
+      required:
+      - text_vi
+      title: TtsRequest
+    TtsResponse:
+      properties:
+        normalized_text_vi:
+          type: string
+          title: Normalized Text Vi
+          description: 'EC-AI26: đã đọc đúng viết tắt/số tiền'
+        engine:
+          type: string
+          enum:
+          - SERVER_TTS
+          - CLIENT_FALLBACK
+          title: Engine
+        audio_mime:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Audio Mime
+        audio_base64:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Audio Base64
+      type: object
+      required:
+      - normalized_text_vi
+      - engine
+      title: TtsResponse
+    TtsVoice:
+      type: string
+      enum:
+      - VI_FEMALE_NORTH
+      - VI_FEMALE_SOUTH
+      - VI_MALE_NORTH
+      title: TtsVoice
+    VerdictCode:
+      type: string
+      enum:
+      - V_RED_ADVANCE_FEE
+      - V_RED_BRAND_SPOOF
+      - V_RED_BNPL_OR_STRAW_SCAM
+      - V_RED_CRIMINAL_USURY
+      - V_ORANGE_CIVIL_CAP_EXCEEDED
+      - V_ORANGE_PAWN_HIGH_FEE
+      - V_YELLOW_HIGH_COST_LICENSED
+      - V_AMBER_INCOMPLETE_DOC
+      - V_GREEN_TRANSPARENT
+      title: VerdictCode
+      description: 9 nhãn phán quyết tất định (File 2 §4.4). Thứ tự = thứ tự trong đặc tả.
+    VerdictSummary:
+      properties:
+        verdict_code:
+          $ref: '#/components/schemas/VerdictCode'
+        severity:
+          $ref: '#/components/schemas/Severity'
+        kernel_signal:
+          anyOf:
+          - $ref: '#/components/schemas/KernelSignal'
+          - type: 'null'
+          description: INFINITE_APR_ADVANCE_FEE_SCAM khi phí trước & chưa giải ngân
+        apr_vn_365:
+          anyOf:
+          - type: number
+          - type: 'null'
+          title: Apr Vn 365
+          description: '%/năm Actual/365; null nếu ẩn'
+        apr_min_bound:
+          anyOf:
+          - type: number
+          - type: 'null'
+          title: Apr Min Bound
+        apr_max_bound:
+          anyOf:
+          - type: number
+          - type: 'null'
+          title: Apr Max Bound
+        ear_xirr:
+          anyOf:
+          - type: number
+          - type: 'null'
+          title: Ear Xirr
+          description: '%/năm ghép lãi; null nếu ẩn'
+        lost_workdays:
+          anyOf:
+          - type: number
+            minimum: 0.0
+          - type: 'null'
+          title: Lost Workdays
+        official_hotline_verify:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Official Hotline Verify
+        contradictions:
+          items:
+            type: string
+          type: array
+          title: Contradictions
+        headline_vi:
+          type: string
+          title: Headline Vi
+        tts_voice_script:
+          type: string
+          title: Tts Voice Script
+        cited_clauses:
+          items:
+            $ref: '#/components/schemas/CitedClause'
+          type: array
+          title: Cited Clauses
+      type: object
+      required:
+      - verdict_code
+      - severity
+      - headline_vi
+      - tts_voice_script
+      title: VerdictSummary
+      description: Kết quả phán quyết tất định (kernel + ma trận 9 nhãn). LLM không sinh trường nào ở
+        đây.
+    VoiceTermsMetadata:
+      additionalProperties: false
+      description: Nội dung trường multipart ``metadata_json`` của /audits/voice-terms.
+      properties:
+        fiber_key:
+          default: default
+          maxLength: 80
+          pattern: ^[A-Za-z0-9_\-:.]+$
+          title: Fiber Key
+          type: string
+        locale:
+          default: vi-VN
+          maxLength: 10
+          title: Locale
+          type: string
+        dialect_hint:
+          anyOf:
+          - maxLength: 16
+            type: string
+          - type: 'null'
+          default: null
+          description: BAC/TRUNG/NAM
+          title: Dialect Hint
+      title: VoiceTermsMetadata
+      type: object
+    VoiceTermsResponse:
+      properties:
+        audit_id:
+          type: string
+          format: uuid
+          title: Audit Id
+        transcript_masked:
+          type: string
+          title: Transcript Masked
+          description: Bản ghi lời nói đã che PII
+        normalized_terms:
+          $ref: '#/components/schemas/NormalizedTerms'
+        slang_tokens:
+          items:
+            $ref: '#/components/schemas/SlangToken'
+          type: array
+          title: Slang Tokens
+        needs_confirmation:
+          type: boolean
+          title: Needs Confirmation
+        verdict:
+          $ref: '#/components/schemas/VerdictSummary'
+      type: object
+      required:
+      - audit_id
+      - transcript_masked
+      - normalized_terms
+      - needs_confirmation
+      - verdict
+      title: VoiceTermsResponse
+    WebPushKeys:
+      properties:
+        p256dh:
+          type: string
+          maxLength: 200
+          minLength: 10
+          title: P256Dh
+        auth:
+          type: string
+          maxLength: 100
+          minLength: 8
+          title: Auth
+      additionalProperties: false
+      type: object
+      required:
+      - p256dh
+      - auth
+      title: WebPushKeys
+    WebPushSubscription:
+      properties:
+        endpoint:
+          type: string
+          maxLength: 1000
+          minLength: 10
+          pattern: ^https://
+          title: Endpoint
+        keys:
+          $ref: '#/components/schemas/WebPushKeys'
+      additionalProperties: false
+      type: object
+      required:
+      - endpoint
+      - keys
+      title: WebPushSubscription
+    WhitelistedLender:
+      properties:
+        entity_code:
+          type: string
+          title: Entity Code
+        official_short_name:
+          type: string
+          title: Official Short Name
+        legal_category:
+          $ref: '#/components/schemas/LegalCategory'
+        official_hotlines:
+          items:
+            type: string
+          type: array
+          title: Official Hotlines
+        official_domains:
+          items:
+            type: string
+          type: array
+          title: Official Domains
+        android_packages:
+          items:
+            $ref: '#/components/schemas/AndroidPackageSig'
+          type: array
+          title: Android Packages
+      type: object
+      required:
+      - entity_code
+      - official_short_name
+      - legal_category
+      title: WhitelistedLender
+    WsTicketResponse:
+      properties:
+        ticket:
+          type: string
+          maxLength: 128
+          minLength: 16
+          title: Ticket
+          description: Vé 1 lần, xóa bằng GETDEL khi nâng cấp 101
+        role:
+          $ref: '#/components/schemas/RealtimeRole'
+        expires_at:
+          type: string
+          format: date-time
+          title: Expires At
+        ttl_seconds:
+          type: integer
+          minimum: 1.0
+          title: Ttl Seconds
+        ws_path:
+          type: string
+          title: Ws Path
+          description: 'Đường dẫn WS, client tự suy wss:/ws: (EC-OPS22)'
+      type: object
+      required:
+      - ticket
+      - role
+      - expires_at
+      - ttl_seconds
+      - ws_path
+      title: WsTicketResponse
+  securitySchemes:
+    DeviceSignature:
+      type: apiKey
+      description: Chữ ký ECDSA P-256 của thiết bị ẩn danh (xem mô tả định dạng trong contract).
+      in: header
+      name: X-VayShield-Device-Signature
+    SandboxSession:
+      type: apiKey
+      description: Token phiên Sandbox ephemeral (mỗi tab một namespace, EC-DB16).
+      in: header
+      name: X-Sandbox-Session
+    GuardianSession:
+      type: http
+      description: Guardian session token cấp tại /family/pair-confirm.
+      scheme: bearer
+    PartnerKey:
+      type: apiKey
+      description: Khóa định danh đối tác B2B, vd vsp_live_xxx.
+      in: header
+      name: X-VayShield-Partner-Key
+    PartnerHmacSignature:
+      type: apiKey
+      description: sha256=HEX(HMAC_SHA256(partner_secret, timestamp + '.' + raw_body)).
+      in: header
+      name: X-VayShield-Signature
+    OpsJwt:
+      type: http
+      description: JWT RBAC role FRAUD_ANALYST cho bàn làm việc Fraud Ops.
+      scheme: bearer
+      bearerFormat: JWT
