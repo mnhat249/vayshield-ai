@@ -98,3 +98,19 @@ async def test_pg_select_one(pg: object) -> None:
     assert isinstance(pg, AsyncEngine)
     async with pg.connect() as conn:
         assert (await conn.execute(text("SELECT 1"))).scalar_one() == 1
+
+
+@pytest.mark.pg
+async def test_ec_db15_test_role_cannot_bypass_rls(pg: object) -> None:
+    """Role app/test không được là superuser hay BYPASSRLS, nếu không RLS vô nghĩa."""
+    from sqlalchemy import text
+    from sqlalchemy.ext.asyncio import AsyncEngine
+
+    assert isinstance(pg, AsyncEngine)
+    async with pg.connect() as conn:
+        row = (
+            await conn.execute(
+                text("SELECT rolsuper, rolbypassrls FROM pg_roles WHERE rolname = current_user")
+            )
+        ).one()
+    assert tuple(row) == (False, False)

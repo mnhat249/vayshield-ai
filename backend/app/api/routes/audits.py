@@ -19,7 +19,7 @@ from app.core import mocks
 from app.core.auth_headers import DeviceCaller, DeviceOrSandboxCaller
 from app.core.config import get_settings
 from app.core.errors import AppError, ErrorCode, ErrorDetail
-from app.core.openapi import error_responses
+from app.core.openapi import DEGRADABLE, error_responses
 from app.core.schemas.audits import (
     ApkVerifyRequest,
     ApkVerifyResponse,
@@ -34,7 +34,8 @@ from app.core.stubs import stub
 
 router = APIRouter(prefix="/api/v1/audits", tags=["audits"])
 
-ALLOWED_IMAGE_TYPES: Final = frozenset({"image/jpeg", "image/webp", "image/png"})
+# File 4 §4.2(A): chỉ image/webp hoặc image/jpeg (client đã nén WebP ≤ 1280px).
+ALLOWED_IMAGE_TYPES: Final = frozenset({"image/jpeg", "image/webp"})
 ALLOWED_AUDIO_TYPES: Final = frozenset(
     {"audio/webm", "audio/ogg", "audio/mpeg", "audio/mp4", "audio/wav", "audio/x-wav"}
 )
@@ -90,7 +91,7 @@ def _check_upload(file: UploadFile, allowed: frozenset[str], max_bytes: int, fie
     "/apk-verify",
     operation_id="auditsApkVerify",
     response_model=ApkVerifyResponse,
-    responses=error_responses(401),
+    responses=error_responses(401, *DEGRADABLE),
     summary="Trạm 1: kiểm định chữ ký APK & quyền nguy hiểm (< 90ms)",
 )
 @stub
@@ -102,13 +103,13 @@ async def apk_verify(body: ApkVerifyRequest, _caller: DeviceCaller) -> ApkVerify
     "/contract-stream",
     operation_id="auditsContractStream",
     response_class=StreamingResponse,
-    responses={**_SSE_RESPONSE_DOC, **error_responses(401, 413, 415)},
+    responses={**_SSE_RESPONSE_DOC, **error_responses(401, 413, 415, *DEGRADABLE)},
     summary="Trạm 2: soi 1–4 ảnh hợp đồng → SSE 5 pha (first event < 200ms, full < 3.5s)",
 )
 @stub
 async def contract_stream(
     _caller: DeviceOrSandboxCaller,
-    images: Annotated[list[UploadFile], File(description="1–4 ảnh webp/jpeg/png, ≤ 1.5MB/ảnh")],
+    images: Annotated[list[UploadFile], File(description="1–4 ảnh webp/jpeg, ≤ 1.5MB/ảnh")],
     metadata_json: Annotated[str, Form(description="JSON theo ContractStreamMetadata")],
 ) -> StreamingResponse:
     settings = get_settings()
@@ -142,7 +143,7 @@ async def contract_stream(
     "/voice-terms",
     operation_id="auditsVoiceTerms",
     response_model=VoiceTermsResponse,
-    responses=error_responses(401, 413, 415),
+    responses=error_responses(401, 413, 415, *DEGRADABLE),
     summary="Trạm 2: đọc miệng điều khoản khi app vay chặn chụp màn hình (< 1.8s)",
 )
 @stub
@@ -171,7 +172,7 @@ async def voice_terms(
     "/{audit_id}/recalculate",
     operation_id="auditsRecalculate",
     response_model=RecalculateResponse,
-    responses=error_responses(401, 404),
+    responses=error_responses(401, 404, *DEGRADABLE),
     summary="Trạm 2: giải lại dòng tiền tất định khi người dùng sửa số (< 15ms, 0 LLM)",
 )
 @stub

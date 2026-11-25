@@ -45,6 +45,7 @@ SPEC_SUPPLEMENTS: set[tuple[str, str]] = {
     ("/api/v1/ws-ticket", "get"),  # File 4 EC-DB12
     ("/api/v1/tts/synthesize-vi", "post"),  # team_division WP1-09
     ("/api/v1/ops/live-feed", "get"),  # File 4 §4.1 "SSE Live Threat Feed"
+    ("/api/v1/ops/stream-ticket", "get"),  # vé 1 lần cho EventSource live feed
     ("/api/v1/ops/auth/token", "post"),  # File 6 EC-OPS15
     ("/api/v1/sandbox/sessions", "post"),  # File 4 EC-DB16 + File 6 §1.2 mục 3
     ("/healthz", "get"),  # File 6 §1.2 mục 1
@@ -106,6 +107,43 @@ def test_verdict_codes_in_contract_match_core() -> None:
     assert schemas["VerdictCode"]["enum"] == [c.value for c in VerdictCode]
     assert len(schemas["VerdictCode"]["enum"]) == 9
     assert schemas["KernelSignal"]["enum"] == [KernelSignal.INFINITE_APR_ADVANCE_FEE_SCAM.value]
+
+
+@pytest.mark.parametrize(
+    "op_id",
+    [
+        "auditsContractStream",
+        "auditsVoiceTerms",
+        "auditsRecalculate",
+        "auditsApkVerify",
+        "shieldEvaluateResponse",
+        "shieldEscalate",
+    ],
+)
+def test_degradable_operations_document_503_and_504(op_id: str) -> None:
+    """File 2 §3.1 (hạ cấp 4 tầng): client phải biết SERVICE_DEGRADED / UPSTREAM_TIMEOUT."""
+    op = next(o for o in operations(load_openapi()).values() if o["operationId"] == op_id)
+    for status in ("503", "504"):
+        schema = op["responses"][status]["content"]["application/json"]["schema"]
+        assert schema["$ref"].endswith("/ErrorResponse")
+
+
+def test_ops_live_feed_uses_query_ticket_for_eventsource() -> None:
+    op = load_openapi()["paths"]["/api/v1/ops/live-feed"]["get"]
+    assert "security" not in op
+    ticket = next(p for p in op["parameters"] if p["name"] == "ticket")
+    assert ticket["in"] == "query" and ticket["required"] is True
+    assert (ticket["schema"]["minLength"], ticket["schema"]["maxLength"]) == (16, 128)
+
+
+def test_ws_ticket_length_and_close_code_consistent() -> None:
+    doc = load_openapi()
+    ws = doc["paths"]["/ws/v1/guardian"]["get"]
+    schema = ws["parameters"][0]["schema"]
+    assert (schema["minLength"], schema["maxLength"]) == (16, 128)
+    assert list(ws["responses"]) == ["101"]
+    ticket = doc["components"]["schemas"]["WsTicketResponse"]["properties"]["ticket"]
+    assert (ticket["minLength"], ticket["maxLength"]) == (16, 128)
 
 
 def test_b2b_requires_partner_key_and_hmac_together() -> None:

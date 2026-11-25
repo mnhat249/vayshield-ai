@@ -10,6 +10,11 @@
     },
     "ticket_ttl_s": 45,
     "ticket_single_use": true,
+    "ticket_length": {
+      "min": 16,
+      "max": 128
+    },
+    "invalid_ticket": "Server luôn accept rồi gửi SERVER_ERROR {code: TICKET_INVALID_OR_CONSUMED} và đóng close code 4401 — không bao giờ từ chối bằng HTTP 403 trước khi nâng cấp",
     "reconnect": "Mỗi lần reconnect phải lấy vé mới (EC-DB12)",
     "scheme": "wss khi trang chạy https (EC-OPS22), cổng 443"
   },
@@ -26,6 +31,7 @@
       "Quá ack_timeout_s không ACK (hoặc Push 410/404) → SMS/Email, người vay nhận EVENT_ESCALATION_FALLBACK"
     ],
     "ack_timeout_s": 10,
+    "naming_note": "Tên trường chuẩn là 'escalation_id' (sơ đồ File 4 §4.2(C) viết tắt 'esc_id'; contract KHÔNG dùng 'esc_id').",
     "channels_order": [
       "WEBSOCKET",
       "WEB_PUSH",
@@ -506,6 +512,8 @@
       "properties": {
         "ticket": {
           "description": "Vé 1 lần, xóa bằng GETDEL khi nâng cấp 101",
+          "maxLength": 128,
+          "minLength": 16,
           "title": "Ticket",
           "type": "string"
         },

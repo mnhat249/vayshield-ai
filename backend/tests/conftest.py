@@ -5,7 +5,9 @@
 - ``app`` / ``client``: app FastAPI mới mỗi test + httpx.AsyncClient (ASGITransport).
 - ``fake_clock``: đồng hồ giả, đã override ``get_clock`` trong app.
 - ``pg``: AsyncEngine tới PostgreSQL thật; test đánh dấu ``@pytest.mark.pg`` tự skip nếu thiếu
-  ``TEST_DATABASE_URL``. Tương tự ``@pytest.mark.redis_real`` với ``TEST_REDIS_URL``.
+  ``TEST_DATABASE_URL`` (role app NOSUPERUSER NOBYPASSRLS). ``pg_admin``: role migration
+  (``TEST_ADMIN_DATABASE_URL``) — chỉ cho test DDL.
+- ``@pytest.mark.redis_real`` cần ``TEST_REDIS_URL``.
 """
 
 from __future__ import annotations
@@ -25,6 +27,7 @@ from app.core.config import AppEnv, Settings, get_settings
 from app.main import create_app
 
 TEST_DATABASE_URL = os.environ.get("TEST_DATABASE_URL")
+TEST_ADMIN_DATABASE_URL = os.environ.get("TEST_ADMIN_DATABASE_URL")
 TEST_REDIS_URL = os.environ.get("TEST_REDIS_URL")
 
 
@@ -100,9 +103,22 @@ def sandbox_headers() -> dict[str, str]:
 
 @pytest.fixture
 async def pg() -> AsyncIterator[AsyncEngine]:
+    """Engine bằng role APP (NOSUPERUSER NOBYPASSRLS) — RLS có hiệu lực."""
     if not TEST_DATABASE_URL:
         pytest.skip("cần PostgreSQL thật: đặt TEST_DATABASE_URL")
     engine = create_async_engine(TEST_DATABASE_URL, pool_pre_ping=True)
+    try:
+        yield engine
+    finally:
+        await engine.dispose()
+
+
+@pytest.fixture
+async def pg_admin() -> AsyncIterator[AsyncEngine]:
+    """Engine bằng role ADMIN — CHỈ dùng cho test migration/DDL, không dùng kiểm RLS."""
+    if not TEST_ADMIN_DATABASE_URL:
+        pytest.skip("cần TEST_ADMIN_DATABASE_URL (role chạy migration)")
+    engine = create_async_engine(TEST_ADMIN_DATABASE_URL, pool_pre_ping=True)
     try:
         yield engine
     finally:

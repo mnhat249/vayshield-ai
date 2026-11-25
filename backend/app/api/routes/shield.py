@@ -6,7 +6,7 @@ from fastapi import APIRouter, status
 
 from app.core import mocks
 from app.core.auth_headers import DeviceOrSandboxCaller
-from app.core.openapi import error_responses
+from app.core.openapi import DEGRADABLE, error_responses
 from app.core.schemas.shield import (
     EscalateRequest,
     EscalateResponse,
@@ -36,7 +36,7 @@ async def arm_shield(body: ShieldArmRequest, _caller: DeviceOrSandboxCaller) -> 
     "/evaluate-response",
     operation_id="shieldEvaluateResponse",
     response_model=EvaluateResponseResult,
-    responses=error_responses(401, 404),
+    responses=error_responses(401, 404, *DEGRADABLE),
     summary="Phân tích câu trả lời theo 10 trục ontology & chống mớm lời (< 900ms)",
 )
 @stub
@@ -51,7 +51,7 @@ async def evaluate_response(
     operation_id="shieldEscalate",
     status_code=status.HTTP_202_ACCEPTED,
     response_model=EscalateResponse,
-    responses=error_responses(401, 404, 409),
+    responses=error_responses(401, 404, 409, *DEGRADABLE),
     summary="Leo thang WS → Push → SMS tới người thân (Zero-Amount, WS < 250ms)",
 )
 @stub

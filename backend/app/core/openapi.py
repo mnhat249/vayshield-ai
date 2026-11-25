@@ -28,10 +28,15 @@ _ERROR_DESCRIPTIONS: Final[dict[int, str]] = {
     423: "Đã khóa (quá số lần thử)",
     429: "Vượt giới hạn tần suất / ngân sách",
     500: "Lỗi nội bộ (JSON, không bao giờ HTML — EC-OPS23)",
-    503: "Dịch vụ hạ cấp",
+    503: "Dịch vụ hạ cấp (SERVICE_DEGRADED) — dùng đường hạ cấp, vd form 3 ô",
+    504: "Dịch vụ phân tích quá thời gian (UPSTREAM_TIMEOUT) — có thể thử lại",
 }
 
 WS_GUARDIAN_PATH: Final = "/ws/v1/guardian"
+# Độ dài vé 1 lần (WS + SSE ops) — dùng chung cho contract và route.
+WS_TICKET_MIN_LEN: Final = 16
+WS_TICKET_MAX_LEN: Final = 128
+DEGRADABLE: Final = (503, 504)  # endpoint phụ thuộc AI/Redis có thể hạ cấp
 
 
 def error_responses(*status_codes: int) -> dict[int | str, dict[str, Any]]:
@@ -54,7 +59,8 @@ def _ws_path_item() -> dict[str, Any]:
             "description": (
                 "Kết nối WebSocket hai chiều. Lấy vé bằng GET /api/v1/ws-ticket (TTL 45s, dùng 1 "
                 "lần). Ping 20s, ACK bắt buộc cho EVENT_EMERGENCY_ALERT trong 10s. Khung tin: "
-                "contracts/ws-protocol.json."
+                "contracts/ws-protocol.json. Vé sai/hết hạn/đã dùng: server LUÔN accept rồi đóng "
+                "với close code 4401 (không trả HTTP 403) để client phân biệt được lý do."
             ),
             "operationId": "wsGuardian",
             "parameters": [
@@ -62,13 +68,21 @@ def _ws_path_item() -> dict[str, Any]:
                     "name": "ticket",
                     "in": "query",
                     "required": True,
-                    "schema": {"type": "string", "minLength": 16, "maxLength": 128},
+                    "schema": {
+                        "type": "string",
+                        "minLength": WS_TICKET_MIN_LEN,
+                        "maxLength": WS_TICKET_MAX_LEN,
+                    },
                     "description": "Vé một lần từ /api/v1/ws-ticket",
                 }
             ],
             "responses": {
-                "101": {"description": "Switching Protocols — đã nâng cấp WebSocket"},
-                "403": {"description": "Vé không hợp lệ (đóng với mã 4401 sau khi accept)"},
+                "101": {
+                    "description": (
+                        "Switching Protocols — đã nâng cấp WebSocket. Vé không hợp lệ → đóng 4401 "
+                        "ngay sau accept."
+                    )
+                },
             },
             "x-websocket-protocol": "contracts/ws-protocol.json",
         }

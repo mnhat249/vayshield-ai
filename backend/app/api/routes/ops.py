@@ -12,9 +12,10 @@ from fastapi.responses import StreamingResponse
 from app.core import mocks
 from app.core.auth_headers import OpsCaller
 from app.core.config import get_settings
-from app.core.openapi import error_responses
+from app.core.openapi import WS_TICKET_MAX_LEN, WS_TICKET_MIN_LEN, error_responses
 from app.core.schemas.ops import (
     MuleClusterPage,
+    OpsStreamTicketResponse,
     OpsTokenRequest,
     OpsTokenResponse,
     SeverityLevel,
@@ -80,14 +81,35 @@ async def simo_dossier(
 
 
 @router.get(
+    "/stream-ticket",
+    operation_id="opsStreamTicket",
+    response_model=OpsStreamTicketResponse,
+    responses=error_responses(401, 403),
+    summary="Cấp vé 1 lần (TTL 45s) để mở SSE live feed bằng EventSource",
+)
+@stub
+async def stream_ticket(_ops: OpsCaller) -> OpsStreamTicketResponse:
+    return mocks.OPS_STREAM_TICKET
+
+
+@router.get(
     "/live-feed",
     operation_id="opsLiveFeed",
     response_class=StreamingResponse,
-    responses={**_FEED_DOC, **error_responses(401, 403)},
-    summary="SSE Live Threat Feed cho bàn làm việc Fintech",
+    responses={**_FEED_DOC, **error_responses(401)},
+    summary="SSE Live Threat Feed (xác thực bằng ?ticket= từ /ops/stream-ticket)",
 )
 @stub
-async def live_feed(_ops: OpsCaller) -> StreamingResponse:
+async def live_feed(
+    ticket: Annotated[
+        str,
+        Query(
+            min_length=WS_TICKET_MIN_LEN,
+            max_length=WS_TICKET_MAX_LEN,
+            description="Vé 1 lần từ GET /api/v1/ops/stream-ticket (sai/đã dùng → 401 JSON)",
+        ),
+    ],
+) -> StreamingResponse:
     async def events() -> AsyncIterator[str]:
         yield format_sse("ops.threat_signal", mocks.SSE_OPS_SIGNAL)
 

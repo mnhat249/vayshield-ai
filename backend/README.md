@@ -35,13 +35,36 @@ Quy ước: tiền là **int VND**; `apr_*`/`ear_xirr` là **%/năm**; lỗi lu�
   Khi thay bằng logic thật: **giữ nguyên** path, method, `operation_id`, `response_model`,
   status code, tham số query/path/header và security dependency (`app/core/auth_headers.py`),
   rồi **bỏ `@stub`**. `tests/contract/test_openapi_matches.py` sẽ chặn mọi lệch cấu trúc.
-- Kiểm tra mật mã (ECDSA thiết bị, HMAC B2B, JWT, vé WS) đặt ở `app/security` và đọc
-  `Request`/raw body — **không khai thêm `Header(...)`** (sẽ đổi contract).
+- Xác thực: route **chỉ** dùng các dependency `Security(...)` có sẵn trong
+  `app/core/auth_headers.py` (`DeviceCaller`, `DeviceOrSandboxCaller`, `SandboxCaller`,
+  `GuardianCaller`, `RealtimeCaller`, `OpsCaller`, `PartnerCaller`). Kiểm tra mật mã (ECDSA thiết
+  bị, HMAC B2B, JWT, vé) đặt ở `app/security` và đọc header/raw body qua `Request` —
+  **không khai thêm `Header(...)`, `Security(...)` hay scheme mới** (sẽ lệch contract, test
+  `test_openapi_matches` chặn).
+- Vé 1 lần (WS `/ws/v1/guardian`, SSE `/ops/live-feed`) dài 16..128 ký tự. WS vé sai: accept →
+  `SERVER_ERROR` → close **4401**. SSE live feed vé sai: 401 JSON.
+- Body bị giới hạn ở tầng ASGI (`app/core/body_limit.py`, EC-DB05): mặc định 1 MiB,
+  contract-stream ~6.26 MB, voice-terms ~5.26 MB (Settings `BODY_LIMIT_*`) → 413 JSON.
 - Route SSE không `Depends(get_db)` (EC-DB01): dùng `app.core.db.short_session()`.
 - Dùng `app.core.sse.format_sse` + `with_keepalive` + `SSE_HEADERS` cho mọi luồng SSE.
 - Thời gian: nhận `Clock` (`app.core.clock`); test dùng fixture `fake_clock`.
 - Test đặt trong `tests/<area>/` của task; fixture chung: `client`, `app`, `redis` (fakeredis + Lua),
   `pg` (skip nếu thiếu `TEST_DATABASE_URL`), `fake_clock`, `device_headers`, `sandbox_headers`.
+
+## PostgreSQL: 2 role (bắt buộc cho RLS — EC-DB15)
+
+| Role | Thuộc tính | Dùng cho |
+| --- | --- | --- |
+| `vayshield_admin` | superuser / owner schema | CHỈ chạy migration (`db-init` trong compose, bước CI) |
+| `vayshield_app` | `NOSUPERUSER NOBYPASSRLS NOCREATEDB NOCREATEROLE` | App (`DATABASE_URL`) và test (`TEST_DATABASE_URL`, fixture `pg`) |
+
+- Role `vayshield_app` được tạo TRƯỚC migration (compose `db-init`, CI step), chỉ có
+  `CONNECT` + `USAGE ON SCHEMA public`. **Migration T01 phải tự `GRANT` tường minh** quyền tối
+  thiểu cho `vayshield_app` trên từng bảng/sequence (vd không GRANT UPDATE/DELETE trên
+  `tamper_evident_audit_chain`), và bật `ENABLE` + `FORCE ROW LEVEL SECURITY` trên bảng đa tenant.
+- Test cần DDL/migration dùng fixture `pg_admin` (`TEST_ADMIN_DATABASE_URL`); test RLS luôn dùng
+  `pg` (role app). Test `test_ec_db15_test_role_cannot_bypass_rls` chặn cấu hình sai.
+- Migration chạy theo thứ tự tên file `backend/migrations/*.sql` bằng role admin.
 
 ## Biến môi trường
 

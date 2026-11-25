@@ -25,7 +25,9 @@ class RealtimeRole(StrEnum):
 
 
 class WsTicketResponse(BaseModel):
-    ticket: str = Field(description="Vé 1 lần, xóa bằng GETDEL khi nâng cấp 101")
+    ticket: str = Field(
+        min_length=16, max_length=128, description="Vé 1 lần, xóa bằng GETDEL khi nâng cấp 101"
+    )
     role: RealtimeRole
     expires_at: datetime
     ttl_seconds: int = Field(ge=1)

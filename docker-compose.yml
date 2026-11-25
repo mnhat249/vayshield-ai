@@ -1,24 +1,55 @@
 # Docker Compose DEV cho VayShield AI (T00). Bản prod-ready (Dockerfile, linux/amd64): T18.
 # Chạy: docker compose up -d   →   curl -s localhost:8000/healthz
 # Không cần Dockerfile: backend chạy bằng image uv chính thức, mount mã nguồn (hot reload).
+#
+# Hai role PostgreSQL (RLS không bị bypass — File 4 EC-DB15):
+#   - vayshield_admin : superuser/owner, CHỈ dùng chạy migration (service db-init).
+#   - vayshield_app   : NOSUPERUSER NOBYPASSRLS, app + test dùng role này. Quyền trên bảng do
+#                       migration (T01) GRANT tường minh.
 services:
   postgres-pgvector:
     image: pgvector/pgvector:pg16
     environment:
       POSTGRES_DB: vayshield
-      POSTGRES_USER: vayshield_app
-      POSTGRES_PASSWORD: ${DB_PASSWORD:-vayshield_local_secret}
+      POSTGRES_USER: vayshield_admin
+      POSTGRES_PASSWORD: ${DB_ADMIN_PASSWORD:-vayshield_admin_local_secret}
     ports:
       - "5432:5432"
     volumes:
       - pgdata:/var/lib/postgresql/data
-      # Mọi backend/migrations/*.sql chạy theo thứ tự tên file ở lần khởi tạo đầu tiên.
-      - ./backend/migrations:/docker-entrypoint-initdb.d:ro
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U vayshield_app -d vayshield"]
+      test: ["CMD-SHELL", "pg_isready -U vayshield_admin -d vayshield"]
       interval: 5s
       timeout: 3s
       retries: 10
+
+  # Tạo role app (idempotent) rồi áp mọi backend/migrations/*.sql theo thứ tự tên file.
+  db-init:
+    image: pgvector/pgvector:pg16
+    environment:
+      ADMIN_URL: postgresql://vayshield_admin:${DB_ADMIN_PASSWORD:-vayshield_admin_local_secret}@postgres-pgvector:5432/vayshield
+      APP_DB_PASSWORD: ${DB_PASSWORD:-vayshield_local_secret}
+    volumes:
+      - ./backend/migrations:/migrations:ro
+    entrypoint: ["/bin/sh", "-ec"]
+    command:
+      - |
+        psql "$$ADMIN_URL" -v ON_ERROR_STOP=1 -v app_pw="$$APP_DB_PASSWORD" <<'SQL'
+        SELECT 'CREATE ROLE vayshield_app LOGIN'
+          WHERE NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'vayshield_app') \gexec
+        ALTER ROLE vayshield_app LOGIN PASSWORD :'app_pw'
+          NOSUPERUSER NOBYPASSRLS NOCREATEDB NOCREATEROLE NOREPLICATION;
+        GRANT CONNECT ON DATABASE vayshield TO vayshield_app;
+        GRANT USAGE ON SCHEMA public TO vayshield_app;
+        SQL
+        for f in $$(ls /migrations/*.sql 2>/dev/null | sort); do
+          echo "==> $$f"
+          psql "$$ADMIN_URL" -v ON_ERROR_STOP=1 -q -f "$$f"
+        done
+    depends_on:
+      postgres-pgvector:
+        condition: service_healthy
+    restart: "no"
 
   redis-hub:
     image: redis:7.4-alpine
@@ -53,8 +84,8 @@ services:
     ports:
       - "8000:8000"
     depends_on:
-      postgres-pgvector:
-        condition: service_healthy
+      db-init:
+        condition: service_completed_successfully
       redis-hub:
         condition: service_healthy
 

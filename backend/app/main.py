@@ -12,6 +12,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from app.api.router import api_router
+from app.core.body_limit import BodySizeLimitMiddleware, route_limits
 from app.core.config import Settings, get_settings
 from app.core.db import check_db, dispose_engine
 from app.core.errors import TRACE_HEADER, TraceAndCatchAllMiddleware, install_error_handlers
@@ -46,7 +47,13 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         redoc_url=None,
     )
     install_error_handlers(app)
-    # Thứ tự: middleware thêm sau nằm ngoài. CORS ngoài cùng để cả response lỗi có header CORS.
+    # Thứ tự: middleware thêm sau nằm ngoài. CORS ngoài cùng để cả response lỗi có header CORS;
+    # BodySizeLimit trong cùng (sau trace) để 413 vẫn mang trace_id.
+    app.add_middleware(
+        BodySizeLimitMiddleware,
+        default_limit=cfg.body_limit_default_bytes,
+        per_path=route_limits(cfg),
+    )
     app.add_middleware(TraceAndCatchAllMiddleware)
     app.add_middleware(
         CORSMiddleware,

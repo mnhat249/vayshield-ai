@@ -184,6 +184,18 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/ErrorResponse'
+        '503':
+          description: Dịch vụ hạ cấp (SERVICE_DEGRADED) — dùng đường hạ cấp, vd form 3 ô
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '504':
+          description: Dịch vụ phân tích quá thời gian (UPSTREAM_TIMEOUT) — có thể thử lại
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
       security:
       - DeviceSignature: []
   /api/v1/audits/contract-stream:
@@ -254,6 +266,18 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/ErrorResponse'
+        '503':
+          description: Dịch vụ hạ cấp (SERVICE_DEGRADED) — dùng đường hạ cấp, vd form 3 ô
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '504':
+          description: Dịch vụ phân tích quá thời gian (UPSTREAM_TIMEOUT) — có thể thử lại
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
       security:
       - DeviceSignature: []
       - SandboxSession: []
@@ -308,6 +332,18 @@ paths:
                 $ref: '#/components/schemas/ErrorResponse'
         '500':
           description: Lỗi nội bộ (JSON, không bao giờ HTML — EC-OPS23)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '503':
+          description: Dịch vụ hạ cấp (SERVICE_DEGRADED) — dùng đường hạ cấp, vd form 3 ô
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '504':
+          description: Dịch vụ phân tích quá thời gian (UPSTREAM_TIMEOUT) — có thể thử lại
           content:
             application/json:
               schema:
@@ -371,6 +407,18 @@ paths:
                 $ref: '#/components/schemas/ErrorResponse'
         '500':
           description: Lỗi nội bộ (JSON, không bao giờ HTML — EC-OPS23)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '503':
+          description: Dịch vụ hạ cấp (SERVICE_DEGRADED) — dùng đường hạ cấp, vd form 3 ô
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '504':
+          description: Dịch vụ phân tích quá thời gian (UPSTREAM_TIMEOUT) — có thể thử lại
           content:
             application/json:
               schema:
@@ -476,6 +524,18 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/ErrorResponse'
+        '503':
+          description: Dịch vụ hạ cấp (SERVICE_DEGRADED) — dùng đường hạ cấp, vd form 3 ô
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '504':
+          description: Dịch vụ phân tích quá thời gian (UPSTREAM_TIMEOUT) — có thể thử lại
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
       security:
       - DeviceSignature: []
       - SandboxSession: []
@@ -530,6 +590,18 @@ paths:
                 $ref: '#/components/schemas/ErrorResponse'
         '500':
           description: Lỗi nội bộ (JSON, không bao giờ HTML — EC-OPS23)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '503':
+          description: Dịch vụ hạ cấp (SERVICE_DEGRADED) — dùng đường hạ cấp, vd form 3 ô
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '504':
+          description: Dịch vụ phân tích quá thời gian (UPSTREAM_TIMEOUT) — có thể thử lại
           content:
             application/json:
               schema:
@@ -1081,19 +1153,19 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/ErrorResponse'
-  /api/v1/ops/live-feed:
+  /api/v1/ops/stream-ticket:
     get:
       tags:
       - ops
-      summary: SSE Live Threat Feed cho bàn làm việc Fintech
-      operationId: opsLiveFeed
+      summary: Cấp vé 1 lần (TTL 45s) để mở SSE live feed bằng EventSource
+      operationId: opsStreamTicket
       responses:
         '200':
-          description: 'SSE live threat feed (ops.threat_signal, ping). Schema: contracts/sse-events.schema.json#/$defs/OpsLiveFeedStream'
+          description: Successful Response
           content:
-            text/event-stream:
+            application/json:
               schema:
-                type: string
+                $ref: '#/components/schemas/OpsStreamTicketResponse'
         '401':
           description: Thiếu/sai xác thực
           content:
@@ -1126,6 +1198,54 @@ paths:
                 $ref: '#/components/schemas/ErrorResponse'
       security:
       - OpsJwt: []
+  /api/v1/ops/live-feed:
+    get:
+      tags:
+      - ops
+      summary: SSE Live Threat Feed (xác thực bằng ?ticket= từ /ops/stream-ticket)
+      operationId: opsLiveFeed
+      parameters:
+      - name: ticket
+        in: query
+        required: true
+        schema:
+          type: string
+          minLength: 16
+          maxLength: 128
+          description: Vé 1 lần từ GET /api/v1/ops/stream-ticket (sai/đã dùng → 401 JSON)
+          title: Ticket
+        description: Vé 1 lần từ GET /api/v1/ops/stream-ticket (sai/đã dùng → 401 JSON)
+      responses:
+        '200':
+          description: 'SSE live threat feed (ops.threat_signal, ping). Schema: contracts/sse-events.schema.json#/$defs/OpsLiveFeedStream'
+          content:
+            text/event-stream:
+              schema:
+                type: string
+        '401':
+          description: Thiếu/sai xác thực
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '422':
+          description: Dữ liệu không hợp lệ
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '429':
+          description: Vượt giới hạn tần suất / ngân sách
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '500':
+          description: Lỗi nội bộ (JSON, không bao giờ HTML — EC-OPS23)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
   /api/v1/sandbox/sessions:
     post:
       tags:
@@ -1227,7 +1347,9 @@ paths:
       - realtime
       summary: WebSocket hub người vay ↔ người thân (nâng cấp 101)
       description: 'Kết nối WebSocket hai chiều. Lấy vé bằng GET /api/v1/ws-ticket (TTL 45s, dùng 1 lần).
-        Ping 20s, ACK bắt buộc cho EVENT_EMERGENCY_ALERT trong 10s. Khung tin: contracts/ws-protocol.json.'
+        Ping 20s, ACK bắt buộc cho EVENT_EMERGENCY_ALERT trong 10s. Khung tin: contracts/ws-protocol.json.
+        Vé sai/hết hạn/đã dùng: server LUÔN accept rồi đóng với close code 4401 (không trả HTTP 403) để
+        client phân biệt được lý do.'
       operationId: wsGuardian
       parameters:
       - name: ticket
@@ -1240,9 +1362,8 @@ paths:
         description: Vé một lần từ /api/v1/ws-ticket
       responses:
         '101':
-          description: Switching Protocols — đã nâng cấp WebSocket
-        '403':
-          description: Vé không hợp lệ (đóng với mã 4401 sau khi accept)
+          description: Switching Protocols — đã nâng cấp WebSocket. Vé không hợp lệ → đóng 4401 ngay sau
+            accept.
       x-websocket-protocol: contracts/ws-protocol.json
 components:
   schemas:
@@ -1411,7 +1532,7 @@ components:
             contentMediaType: application/octet-stream
           type: array
           title: Images
-          description: 1–4 ảnh webp/jpeg/png, ≤ 1.5MB/ảnh
+          description: 1–4 ảnh webp/jpeg, ≤ 1.5MB/ảnh
         metadata_json:
           type: string
           title: Metadata Json
@@ -2419,6 +2540,33 @@ components:
       - C10
       title: OntologyAxis
       description: 10 trục thao túng (File 3 §3.3).
+    OpsStreamTicketResponse:
+      properties:
+        ticket:
+          type: string
+          maxLength: 128
+          minLength: 16
+          title: Ticket
+        expires_at:
+          type: string
+          format: date-time
+          title: Expires At
+        ttl_seconds:
+          type: integer
+          minimum: 1.0
+          title: Ttl Seconds
+        stream_path:
+          type: string
+          title: Stream Path
+          description: vd /api/v1/ops/live-feed?ticket=<ticket>
+      type: object
+      required:
+      - ticket
+      - expires_at
+      - ttl_seconds
+      - stream_path
+      title: OpsStreamTicketResponse
+      description: Vé 1 lần cho SSE live feed (EventSource không gửi được header Authorization).
     OpsTokenRequest:
       properties:
         grant_type:
@@ -3573,6 +3721,8 @@ components:
       properties:
         ticket:
           type: string
+          maxLength: 128
+          minLength: 16
           title: Ticket
           description: Vé 1 lần, xóa bằng GETDEL khi nâng cấp 101
         role:

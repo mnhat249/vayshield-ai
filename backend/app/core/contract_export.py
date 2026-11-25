@@ -140,6 +140,11 @@ def build_ws_protocol() -> dict[str, Any]:
             "query": {"ticket": "vé 1 lần từ GET /api/v1/ws-ticket"},
             "ticket_ttl_s": _default("ws_ticket_ttl_s"),
             "ticket_single_use": True,
+            "ticket_length": {"min": 16, "max": 128},
+            "invalid_ticket": (
+                "Server luôn accept rồi gửi SERVER_ERROR {code: TICKET_INVALID_OR_CONSUMED} và "
+                "đóng close code 4401 — không bao giờ từ chối bằng HTTP 403 trước khi nâng cấp"
+            ),
             "reconnect": "Mỗi lần reconnect phải lấy vé mới (EC-DB12)",
             "scheme": "wss khi trang chạy https (EC-OPS22), cổng 443",
         },
@@ -158,6 +163,10 @@ def build_ws_protocol() -> dict[str, Any]:
                 "EVENT_ESCALATION_FALLBACK",
             ],
             "ack_timeout_s": _default("escalation_ack_timeout_s"),
+            "naming_note": (
+                "Tên trường chuẩn là 'escalation_id' (sơ đồ File 4 §4.2(C) viết tắt 'esc_id'; "
+                "contract KHÔNG dùng 'esc_id')."
+            ),
             "channels_order": ["WEBSOCKET", "WEB_PUSH", "SMS", "EMAIL"],
         },
         "x-close-codes": {str(k): v for k, v in realtime.WS_CLOSE_CODES.items()},

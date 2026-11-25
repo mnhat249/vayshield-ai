@@ -96,6 +96,15 @@ class SimoDossier(BaseModel):
     audit_chain_entry_hash: str | None = None
 
 
+class OpsStreamTicketResponse(BaseModel):
+    """Vé 1 lần cho SSE live feed (EventSource không gửi được header Authorization)."""
+
+    ticket: str = Field(min_length=16, max_length=128)
+    expires_at: datetime
+    ttl_seconds: int = Field(ge=1)
+    stream_path: str = Field(description="vd /api/v1/ops/live-feed?ticket=<ticket>")
+
+
 class OpsTokenRequest(RequestModel):
     grant_type: Literal["password", "refresh_token", "judge_quick_login"]
     username: str | None = Field(default=None, max_length=254)

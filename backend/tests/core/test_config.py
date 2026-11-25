@@ -38,7 +38,7 @@ def test_csv_lists_from_env(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv("GEMINI_API_KEYS", "k1, k2,,k3")
     monkeypatch.setenv("CORS_ORIGINS", "https://vayshield.example")
     cfg = Settings()
-    assert cfg.gemini_api_keys == ["k1", "k2", "k3"]
+    assert [k.get_secret_value() for k in cfg.gemini_api_keys] == ["k1", "k2", "k3"]
     assert cfg.cors_origins == ["https://vayshield.example"]
 
 
@@ -48,6 +48,16 @@ def test_secrets_not_leaked_in_repr(monkeypatch: pytest.MonkeyPatch) -> None:
     assert "super-secret-pepper" not in repr(cfg)
     assert cfg.pepper_b2b_phone is not None
     assert cfg.pepper_b2b_phone.get_secret_value() == "super-secret-pepper"
+
+
+def test_gemini_keys_not_leaked_in_repr(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("GEMINI_API_KEYS", "AIzaSyPUBLICKEY111,AIzaSyPUBLICKEY222")
+    monkeypatch.setenv("GEMINI_VIP_KEYS", "AIzaSyVIPKEY333")
+    cfg = Settings()
+    text = repr(cfg) + str(cfg) + cfg.model_dump_json()
+    for key in ("AIzaSyPUBLICKEY111", "AIzaSyPUBLICKEY222", "AIzaSyVIPKEY333"):
+        assert key not in text
+    assert cfg.gemini_vip_keys[0].get_secret_value() == "AIzaSyVIPKEY333"
 
 
 def test_production_requires_secrets() -> None:

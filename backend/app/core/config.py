@@ -15,6 +15,7 @@ from pydantic import Field, SecretStr, field_validator, model_validator
 from pydantic_settings import BaseSettings, NoDecode, SettingsConfigDict
 
 CsvList = Annotated[list[str], NoDecode]
+CsvSecretList = Annotated[list[SecretStr], NoDecode]  # repr không lộ key
 
 
 class AppEnv(StrEnum):
@@ -58,8 +59,8 @@ class Settings(BaseSettings):
     redis_socket_timeout_ms: int = Field(default=80, ge=10)  # EC-DB11: > 80ms → fallback PG
 
     # --- Gemini (File 1 ADR-04, File 6 §1.2 mục 3) ------------------------
-    gemini_api_keys: CsvList = Field(default_factory=list)  # pool công cộng
-    gemini_vip_keys: CsvList = Field(default_factory=list)  # pool riêng giám khảo
+    gemini_api_keys: CsvSecretList = Field(default_factory=list)  # pool công cộng
+    gemini_vip_keys: CsvSecretList = Field(default_factory=list)  # pool riêng giám khảo
     gemini_model_primary: str = "gemini-2.5-flash"
     gemini_model_escalation: str = "gemini-2.5-pro"
     gemini_model_secondary: str = "gemini-2.5-flash-lite"
@@ -139,6 +140,12 @@ class Settings(BaseSettings):
     upload_max_images: int = Field(default=4, ge=1)
     upload_max_image_bytes: int = Field(default=1_500_000, ge=1)
     upload_max_audio_bytes: int = Field(default=5_000_000, ge=1)
+    # Giới hạn body tầng ASGI (EC-DB05): chặn trước khi parser multipart đọc.
+    body_limit_default_bytes: int = Field(default=1_048_576, ge=1024)  # 1 MiB
+    body_limit_contract_stream_bytes: int = Field(
+        default=4 * 1_500_000 + 262_144, ge=1024
+    )  # 4 ảnh × 1.5MB + metadata/overhead multipart
+    body_limit_voice_terms_bytes: int = Field(default=5_000_000 + 262_144, ge=1024)
     image_max_pixels: int = Field(default=25_000_000, ge=1)
 
     @field_validator("gemini_api_keys", "gemini_vip_keys", "cors_origins", mode="before")

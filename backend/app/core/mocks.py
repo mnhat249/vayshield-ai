@@ -441,6 +441,13 @@ OPS_TOKEN: Final = ops.OpsTokenResponse(
     roles=["FRAUD_ANALYST"],
 )
 
+OPS_STREAM_TICKET: Final = ops.OpsStreamTicketResponse(
+    ticket="ost_mock_only_not_a_real_ticket",
+    expires_at=MOCK_NOW + timedelta(seconds=45),
+    ttl_seconds=45,
+    stream_path="/api/v1/ops/live-feed?ticket=ost_mock_only_not_a_real_ticket",
+)
+
 SANDBOX_SESSION: Final = sandbox.SandboxSessionCreateResponse(
     sandbox_session_token="sbx_mock_only_not_a_real_token",
     sandbox_namespace="sbx_019361ac",
