@@ -42,7 +42,7 @@ node .claude/scripts/run-checks.js typecheck  [...]
 node .claude/scripts/run-checks.js all        # lint + typecheck + test
 ```
 Chi tiết từng stack:
-- backend: `cd backend && pytest -q`, `ruff check .`, `ruff format .`, `mypy .`
+- backend: `cd backend && uv run pytest -q`, `uv run ruff check .`, `uv run ruff format .`, `uv run mypy app ai_pipeline`
 - web-portal: `cd web-portal && npm test`, `npm run lint`, `npx tsc --noEmit`, `npm run build`
 - android-app: `cd android-app && ./gradlew testDebugUnitTest lint`
 
@@ -78,6 +78,9 @@ Chi tiết từng stack:
 ```
 Lệnh nhanh: `/test`, `/lint`, `/status`, `/worktrees`.
 
+**Bảng tiến độ:** nếu plan có `.claude/plans/<slug>/PROGRESS.md` thì mọi skill (dispatch/verify/review/integrate) cập nhật trạng thái task **ở file đó** (cột Trạng thái/Verify/Review/Cập nhật + 1 dòng Nhật ký), rồi chạy `node .claude/scripts/progress.js <slug> --write`.
+Plan đang chạy: **`backend-vayshield`** (toàn bộ việc backend, 19 task T00–T18).
+
 ## 8. Báo cáo sau khi xong việc (bắt buộc, không chấp nhận "xong rồi")
 ```
 ## Kết quả
@@ -94,4 +97,4 @@ Chỉ kết nối tool thực sự cần. Hiện tại: không có MCP nào bắ
 Không cấp quyền ghi production cho MCP.
 
 ## 10. Bài học đã rút ra (thêm vào mỗi khi Claude làm sai)
-- (trống)
+- Máy dev không có Docker/Postgres/Redis: dùng `uv` + fakeredis; test Postgres thật chạy trên GitHub Actions (`@pytest.mark.pg`).

@@ -52,6 +52,7 @@ work_packages: [<WP1-03>, <WP2-02>]
 2. Sau mỗi merge: `node .claude/scripts/run-checks.js all`
 
 ## 6. Trạng thái thực thi (orchestrator cập nhật)
+> Plan lớn: tách bảng này ra `.claude/plans/<slug>/PROGRESS.md` (mẫu: `backend-vayshield/PROGRESS.md`) để dùng `node .claude/scripts/progress.js <slug> --write`.
 | ID | Branch | Trạng thái | Verify | Review | Ghi chú |
 |----|--------|-----------|--------|--------|---------|
 | T01 | task/<slug>/T01 | pending | – | – | |

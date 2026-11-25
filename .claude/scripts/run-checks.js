@@ -22,9 +22,9 @@ const stacks = {
   backend: {
     present: () => has("backend") && (has("backend/pyproject.toml") || has("backend/requirements.txt")),
     dir: "backend",
-    test: [["pytest", ["-q"]]],
-    lint: [["ruff", ["check", "."]], ["ruff", ["format", "--check", "."]]],
-    typecheck: [["mypy", ["."]]],
+    test: [["uv", ["run", "pytest", "-q"]]],
+    lint: [["uv", ["run", "ruff", "check", "."]], ["uv", ["run", "ruff", "format", "--check", "."]]],
+    typecheck: [["uv", ["run", "mypy", "app", "ai_pipeline"]]],
   },
   web: {
     present: () => has("web-portal/package.json"),
