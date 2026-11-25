@@ -6,6 +6,7 @@ Dùng ``pg`` (role app, NOBYPASSRLS) cho kiểm tra RLS; ``pg_admin`` chỉ đ�
 
 from __future__ import annotations
 
+import asyncio
 import json
 import uuid
 from collections.abc import AsyncIterator
@@ -173,10 +174,6 @@ async def test_chain_rejects_forged_insert(pg: AsyncEngine) -> None:
             )
 
 
-async def _insert_audit_session(c: object, payload: str) -> None:
-    raise NotImplementedError  # pragma: no cover
-
-
 @pytest.fixture
 async def session_id(pg_admin: AsyncEngine) -> AsyncIterator[str]:
     dev, sess = _uid(), _uid()
@@ -301,3 +298,50 @@ async def test_migration_runs_twice_without_error(pg_admin: AsyncEngine) -> None
         await conn.execute(list_migrations()[0].read_text(encoding="utf-8"))
     finally:
         await conn.close()
+
+
+async def test_audit_chain_rejects_pipe_in_fields(pg: AsyncEngine) -> None:
+    with pytest.raises(DBAPIError, match="ck_audit_no_pipe"):
+        async with pg.begin() as c:
+            await c.execute(text("SELECT append_audit_chain('a|b', 'X', :t)"), {"t": _uid()})
+
+
+async def test_audit_chain_rejects_non_read_committed(pg: AsyncEngine) -> None:
+    for level in ("REPEATABLE READ", "SERIALIZABLE"):
+        with pytest.raises(DBAPIError, match="AUDIT_CHAIN_ISOLATION"):
+            async with pg.connect() as c:
+                await c.execution_options(isolation_level=level)
+                await c.execute(text("SELECT append_audit_chain('ops', 'ISO', :t)"), {"t": _uid()})
+
+
+async def test_audit_chain_concurrent_append_no_fork(pg: AsyncEngine) -> None:
+    async def one() -> None:
+        async with pg.begin() as c:
+            await c.execute(text("SELECT append_audit_chain('ops', 'CONC', :t)"), {"t": _uid()})
+
+    await asyncio.gather(*(one() for _ in range(10)))
+    async with pg.connect() as c:
+        dup = (
+            await c.execute(
+                text(
+                    "SELECT count(*) FROM (SELECT prev_entry_hash FROM tamper_evident_audit_chain"
+                    " GROUP BY 1 HAVING count(*) > 1) d"
+                )
+            )
+        ).scalar_one()
+        assert dup == 0
+        assert (await c.execute(text("SELECT verify_audit_chain()"))).scalar_one() is None
+
+
+async def test_every_uuid_pk_has_v7_default(pg_admin: AsyncEngine) -> None:
+    async with pg_admin.connect() as c:
+        rows = (
+            await c.execute(
+                text(
+                    "SELECT table_name FROM information_schema.columns WHERE table_schema = 'public'"
+                    " AND column_name = 'id' AND data_type = 'uuid'"
+                    " AND (column_default IS NULL OR column_default NOT LIKE '%uuid_generate_v7%')"
+                )
+            )
+        ).all()
+    assert rows == []

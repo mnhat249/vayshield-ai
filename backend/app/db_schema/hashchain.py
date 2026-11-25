@@ -30,6 +30,8 @@ def format_ts(ts: datetime) -> str:
 def compute_entry_hash(
     prev_hash: str, actor_id: str, action_type: str, target_ref_id: UUID, created_at: datetime
 ) -> str:
+    if "|" in actor_id or "|" in action_type:
+        raise ValueError("actor_id/action_type không được chứa '|'")
     payload = "|".join(
         [prev_hash, actor_id, action_type, str(target_ref_id), format_ts(created_at)]
     )

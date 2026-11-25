@@ -11,7 +11,9 @@ from pydantic import AfterValidator
 # Tước 0x00..0x1F trừ \t (0x09) và \n (0x0A).
 _CONTROL_RE = re.compile(r"[\x00-\x08\x0B-\x1F]")
 
-MAX_JSON_BYTES = 64 * 1024  # < 64KB
+# Đo theo định dạng jsonb::text của PG (có dấu cách sau ',' và ':').
+# CHECK SQL nới ở 128KB làm lưới an toàn; Pydantic (ở đây) là chốt chính < 64KB.
+MAX_JSON_BYTES = 64 * 1024
 MAX_JSON_DEPTH = 5
 
 
@@ -45,7 +47,7 @@ def validate_masked_extraction(value: dict[str, Any]) -> dict[str, Any]:
     cleaned = sanitize_json(value)
     if json_depth(cleaned) > MAX_JSON_DEPTH:
         raise ValueError(f"masked_extraction_json sâu quá {MAX_JSON_DEPTH} cấp")
-    size = len(json.dumps(cleaned, ensure_ascii=False, separators=(",", ":")).encode("utf-8"))
+    size = len(json.dumps(cleaned, ensure_ascii=False, separators=(", ", ": ")).encode("utf-8"))
     if size >= MAX_JSON_BYTES:
         raise ValueError("masked_extraction_json nặng từ 64KB trở lên")
     return cleaned  # type: ignore[no-any-return]

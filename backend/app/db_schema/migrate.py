@@ -17,6 +17,7 @@ from pathlib import Path
 import asyncpg  # type: ignore[import-untyped]
 
 MIGRATIONS_DIR = Path(__file__).resolve().parents[2] / "migrations"
+BOOTSTRAP_FILE = "bootstrap_roles.sql"
 _LOCK_KEY = 7_203_001
 
 _CREATE_TABLE = """
@@ -33,7 +34,8 @@ class MigrationError(RuntimeError):
 
 
 def list_migrations(directory: Path = MIGRATIONS_DIR) -> list[Path]:
-    return sorted(directory.glob("*.sql"), key=lambda p: p.name)
+    """Migration đánh số NNNN_*.sql (bootstrap_roles.sql chạy riêng)."""
+    return sorted(directory.glob("[0-9]*.sql"), key=lambda p: p.name)
 
 
 def checksum(path: Path) -> str:
@@ -55,6 +57,9 @@ async def run_migrations(admin_url: str, directory: Path = MIGRATIONS_DIR) -> li
             r["filename"]: r["checksum"]
             for r in await conn.fetch("SELECT * FROM schema_migrations")
         }
+        bootstrap = directory / BOOTSTRAP_FILE
+        if bootstrap.exists():
+            await conn.execute(bootstrap.read_text(encoding="utf-8"))
         for path in list_migrations(directory):
             digest = checksum(path)
             if path.name in done:
@@ -68,9 +73,17 @@ async def run_migrations(admin_url: str, directory: Path = MIGRATIONS_DIR) -> li
                 digest,
             )
             applied.append(path.name)
+        if bootstrap.exists():  # GRANT cho bảng vừa tạo (+ schema_migrations)
+            await conn.execute(bootstrap.read_text(encoding="utf-8"))
     finally:
-        await conn.fetchval("SELECT pg_advisory_unlock($1)", _LOCK_KEY)
-        await conn.close()
+        try:
+            if conn.is_in_transaction():
+                await conn.execute("ROLLBACK")
+            await conn.fetchval("SELECT pg_advisory_unlock($1)", _LOCK_KEY)
+        except Exception:  # noqa: S110 - dọn dẹp, không che lỗi gốc
+            pass
+        finally:
+            await conn.close()
     return applied
 
 

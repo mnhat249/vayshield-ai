@@ -90,7 +90,7 @@ CREATE INDEX IF NOT EXISTS idx_lender_trgm_name
 -- 2. anonymous_devices
 -- ---------------------------------------------------------------------------
 CREATE TABLE IF NOT EXISTS anonymous_devices (
-    id                  UUID PRIMARY KEY,
+    id                  UUID PRIMARY KEY DEFAULT uuid_generate_v7(),
     pubkey_ecdsa_p256   BYTEA,
     phone_blind_hmac    VARCHAR(64) UNIQUE,
     pepper_version      SMALLINT NOT NULL DEFAULT 1,
@@ -106,7 +106,7 @@ CREATE TABLE IF NOT EXISTS anonymous_devices (
 -- 3. family_guardian_links
 -- ---------------------------------------------------------------------------
 CREATE TABLE IF NOT EXISTS family_guardian_links (
-    id                          UUID PRIMARY KEY,
+    id                          UUID PRIMARY KEY DEFAULT uuid_generate_v7(),
     borrower_device_id          UUID NOT NULL REFERENCES anonymous_devices(id) ON DELETE CASCADE,
     guardian_alias              VARCHAR(64) NOT NULL,
     pairing_code_hash           VARCHAR(64),
@@ -127,7 +127,7 @@ CREATE INDEX IF NOT EXISTS idx_family_active_borrower
 -- 4. protection_sessions  (sandbox_namespace NOT NULL DEFAULT 'live')
 -- ---------------------------------------------------------------------------
 CREATE TABLE IF NOT EXISTS protection_sessions (
-    id                  UUID PRIMARY KEY,
+    id                  UUID PRIMARY KEY DEFAULT uuid_generate_v7(),
     device_id           UUID NOT NULL REFERENCES anonymous_devices(id) ON DELETE CASCADE,
     fiber_key           VARCHAR(80) NOT NULL DEFAULT 'default',
     sandbox_namespace   VARCHAR(64) NOT NULL DEFAULT 'live',
@@ -161,7 +161,7 @@ CREATE INDEX IF NOT EXISTS idx_sessions_sandbox_ns ON protection_sessions(sandbo
 -- 5. contract_audits  (CHECK kich thuoc < 64KB, do sau <= 5: EC-DB18)
 -- ---------------------------------------------------------------------------
 CREATE TABLE IF NOT EXISTS contract_audits (
-    id                      UUID PRIMARY KEY,
+    id                      UUID PRIMARY KEY DEFAULT uuid_generate_v7(),
     session_id              UUID NOT NULL REFERENCES protection_sessions(id) ON DELETE CASCADE,
     image_count             SMALLINT NOT NULL CHECK (image_count BETWEEN 0 AND 4),
     verdict_code            VARCHAR(40) NOT NULL CHECK (verdict_code IN (
@@ -191,7 +191,7 @@ CREATE TABLE IF NOT EXISTS contract_audits (
     model_tier_used          VARCHAR(32) NOT NULL,
     created_at               TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     CONSTRAINT ck_masked_extraction_size
-        CHECK (octet_length(masked_extraction_json::text) < 65536),
+        CHECK (octet_length(masked_extraction_json::text) < 131072),
     CONSTRAINT ck_masked_extraction_depth
         CHECK (jsonb_max_depth(masked_extraction_json) <= 5)
 );
@@ -201,7 +201,7 @@ CREATE INDEX IF NOT EXISTS idx_audits_session ON contract_audits(session_id);
 -- 6. interception_events  (EC-DB26: khong control char ngoai \n \t)
 -- ---------------------------------------------------------------------------
 CREATE TABLE IF NOT EXISTS interception_events (
-    id                      UUID PRIMARY KEY,
+    id                      UUID PRIMARY KEY DEFAULT uuid_generate_v7(),
     session_id              UUID NOT NULL REFERENCES protection_sessions(id) ON DELETE CASCADE,
     audio_call_state        VARCHAR(32) NOT NULL CHECK (audio_call_state IN (
         'ACTIVE_CELLULAR', 'ACTIVE_VOIP', 'ENDED_WITHIN_180S', 'NONE'
@@ -254,7 +254,7 @@ CREATE TABLE IF NOT EXISTS legal_provision_edges (
 -- 8. Do thi tai khoan moi
 -- ---------------------------------------------------------------------------
 CREATE TABLE IF NOT EXISTS fraud_campaign_clusters (
-    id                      UUID PRIMARY KEY,
+    id                      UUID PRIMARY KEY DEFAULT uuid_generate_v7(),
     campaign_label          VARCHAR(160) NOT NULL,
     impersonated_lender_id  UUID REFERENCES licensed_lender_registry(id),
     dominant_scam_trap      VARCHAR(32) NOT NULL,
@@ -267,7 +267,7 @@ CREATE TABLE IF NOT EXISTS fraud_campaign_clusters (
 );
 
 CREATE TABLE IF NOT EXISTS mule_account_nodes (
-    id                      UUID PRIMARY KEY,
+    id                      UUID PRIMARY KEY DEFAULT uuid_generate_v7(),
     bank_bin                VARCHAR(12) NOT NULL,
     account_hmac_sha256     VARCHAR(64) UNIQUE NOT NULL,
     va_prefix_hmac          VARCHAR(64),
@@ -288,7 +288,7 @@ CREATE INDEX IF NOT EXISTS idx_mule_va_prefix
     ON mule_account_nodes(bank_bin, va_prefix_hmac) WHERE va_prefix_hmac IS NOT NULL;
 
 CREATE TABLE IF NOT EXISTS mule_incident_edges (
-    id                  UUID PRIMARY KEY,
+    id                  UUID PRIMARY KEY DEFAULT uuid_generate_v7(),
     mule_node_id        UUID NOT NULL REFERENCES mule_account_nodes(id) ON DELETE CASCADE,
     reporter_device_id  UUID NOT NULL REFERENCES anonymous_devices(id),
     source_audit_id     UUID REFERENCES contract_audits(id),
@@ -305,7 +305,7 @@ CREATE TABLE IF NOT EXISTS mule_incident_edges (
 -- 9. B2B partners + shields (RLS co lap tenant: EC-DB15)
 -- ---------------------------------------------------------------------------
 CREATE TABLE IF NOT EXISTS fintech_partners (
-    id                  UUID PRIMARY KEY,
+    id                  UUID PRIMARY KEY DEFAULT uuid_generate_v7(),
     partner_code        VARCHAR(64) UNIQUE NOT NULL,
     organization_name   VARCHAR(200) NOT NULL,
     lender_registry_id  UUID REFERENCES licensed_lender_registry(id),
@@ -317,7 +317,7 @@ CREATE TABLE IF NOT EXISTS fintech_partners (
 );
 
 CREATE TABLE IF NOT EXISTS b2b_disbursement_shields (
-    id                      UUID PRIMARY KEY,
+    id                      UUID PRIMARY KEY DEFAULT uuid_generate_v7(),
     partner_id              UUID NOT NULL REFERENCES fintech_partners(id),
     idempotency_key         VARCHAR(128) NOT NULL,
     borrower_phone_hmac     VARCHAR(64) NOT NULL,
@@ -348,7 +348,11 @@ CREATE TABLE IF NOT EXISTS tamper_evident_audit_chain (
     target_ref_id   UUID NOT NULL,
     prev_entry_hash VARCHAR(64) NOT NULL,
     entry_hash      VARCHAR(64) UNIQUE NOT NULL,
-    created_at      TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    created_at      TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    -- Chong re nhanh chuoi: moi prev chi duoc dung 1 lan.
+    CONSTRAINT uq_audit_chain_prev UNIQUE (prev_entry_hash),
+    -- Dau '|' la ky tu phan cach khi bam: cam trong truong tu do.
+    CONSTRAINT ck_audit_no_pipe CHECK (position('|' IN actor_id) = 0 AND position('|' IN action_type) = 0)
 );
 
 CREATE OR REPLACE FUNCTION forbid_audit_chain_mutation() RETURNS TRIGGER AS $$
@@ -372,7 +376,7 @@ CREATE TRIGGER trg_immutable_audit_chain_truncate
 CREATE OR REPLACE FUNCTION audit_chain_entry_hash(
     p_prev text, p_actor text, p_action text, p_target uuid, p_created timestamptz
 ) RETURNS text
-LANGUAGE sql IMMUTABLE
+LANGUAGE sql STABLE
 SET search_path = pg_catalog, public
 AS $$
     SELECT encode(digest(convert_to(
@@ -389,6 +393,9 @@ AS $$
 DECLARE
     tip text;
 BEGIN
+    IF current_setting('transaction_isolation') <> 'read committed' THEN
+        RAISE EXCEPTION 'AUDIT_CHAIN_ISOLATION: chi duoc ghi o READ COMMITTED';
+    END IF;
     PERFORM pg_advisory_xact_lock(hashtext('vayshield.tamper_evident_audit_chain'));
     SELECT entry_hash INTO tip FROM tamper_evident_audit_chain ORDER BY seq_no DESC LIMIT 1;
     IF NEW.prev_entry_hash IS DISTINCT FROM COALESCE(tip, repeat('0', 64)) THEN
@@ -419,6 +426,9 @@ DECLARE
     now_ts timestamptz := clock_timestamp();
     new_seq bigint;
 BEGIN
+    IF current_setting('transaction_isolation') <> 'read committed' THEN
+        RAISE EXCEPTION 'AUDIT_CHAIN_ISOLATION: chi duoc ghi o READ COMMITTED';
+    END IF;
     PERFORM pg_advisory_xact_lock(hashtext('vayshield.tamper_evident_audit_chain'));
     SELECT entry_hash INTO tip FROM tamper_evident_audit_chain ORDER BY seq_no DESC LIMIT 1;
     tip := COALESCE(tip, repeat('0', 64));
@@ -474,6 +484,8 @@ BEGIN
             audit_chain_entry_hash(text, text, text, uuid, timestamptz),
             append_audit_chain(text, text, uuid), verify_audit_chain()
             TO vayshield_app;
+    ELSE
+        RAISE NOTICE 'ROLE vayshield_app CHUA TON TAI: bo qua GRANT. Chay bootstrap_roles.sql roi migrate lai de co quyen/RLS dung.';
     END IF;
 END
 $grants$;

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 from dataclasses import replace
 from datetime import UTC, datetime
 from itertools import pairwise
@@ -107,3 +108,25 @@ def test_runner_lists_migrations_in_order_and_checksum_stable() -> None:
     assert MIGRATIONS_DIR.is_dir()
     assert to_asyncpg_dsn("postgresql+asyncpg://u:p@h/db") == "postgresql://u:p@h/db"
     assert list_migrations(Path(MIGRATIONS_DIR) / "nonexistent") == []
+
+
+def test_ec_db18_size_measured_like_jsonb_text_many_keys() -> None:
+    """Nhiều khóa sát ngưỡng: compact < 64KB nhưng dạng jsonb >= 64KB phải bị từ chối."""
+    n = 4000
+    while True:
+        many = {f"k{i:05d}": 1 for i in range(n)}
+        jsonb_len = len(json.dumps(many, separators=(", ", ": ")).encode())
+        compact_len = len(json.dumps(many, separators=(",", ":")).encode())
+        if jsonb_len >= 65536:
+            break
+        n += 20
+    assert compact_len < 65536 <= jsonb_len
+    with pytest.raises(ValidationError):
+        _Doc(data=many)
+    just_under = {f"k{i:05d}": 1 for i in range(n - 40)}
+    assert _Doc(data=just_under).data == just_under
+
+
+def test_hash_rejects_pipe() -> None:
+    with pytest.raises(ValueError):
+        compute_entry_hash(GENESIS_HASH, "a|b", "X", UUID(int=1), datetime(2026, 1, 1, tzinfo=UTC))

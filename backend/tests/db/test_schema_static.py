@@ -107,7 +107,7 @@ def test_audit_chain_not_granted_update_delete() -> None:
 
 def test_ec_db18_json_checks() -> None:
     """EC-DB18: CHECK kích thước < 64KB và độ sâu <= 5."""
-    assert "octet_length(masked_extraction_json::text) < 65536" in SQL
+    assert "octet_length(masked_extraction_json::text) < 131072" in SQL  # lưới; Pydantic < 64KB
     assert "jsonb_max_depth(masked_extraction_json) <= 5" in SQL
 
 
@@ -118,7 +118,9 @@ def test_ec_db26_control_char_check() -> None:
 
 def test_uuidv7_defined_and_used() -> None:
     assert "FUNCTION uuid_generate_v7()" in SQL
-    assert "id                  UUID PRIMARY KEY DEFAULT uuid_generate_v7()" in SQL
+    pks = re.findall(r"^\s+id\s+UUID PRIMARY KEY(.*?),?$", SQL, flags=re.M)
+    assert len(pks) == 11
+    assert all("DEFAULT uuid_generate_v7()" in d for d in pks)
     assert "gen_random_uuid() PRIMARY" not in SQL
 
 
@@ -143,3 +145,23 @@ def test_foreign_keys_cascade_for_personal_data() -> None:
 
 def test_one_vote_per_device_per_mule() -> None:
     assert "UNIQUE (mule_node_id, reporter_device_id)" in SQL
+
+
+def test_chain_fork_and_isolation_guards() -> None:
+    assert "CONSTRAINT uq_audit_chain_prev UNIQUE (prev_entry_hash)" in SQL
+    assert "current_setting('transaction_isolation') <> 'read committed'" in SQL
+    assert SQL.count("AUDIT_CHAIN_ISOLATION") == 2
+
+
+def test_pipe_forbidden_and_hash_fn_stable() -> None:
+    assert "ck_audit_no_pipe" in SQL
+    assert re.search(r"audit_chain_entry_hash\([^)]*\)\s*RETURNS text\s+LANGUAGE sql STABLE", SQL)
+
+
+def test_bootstrap_roles_idempotent_file() -> None:
+    b = (SQL_PATH.parent / "bootstrap_roles.sql").read_text(encoding="utf-8")
+    assert "NOSUPERUSER NOBYPASSRLS" in b
+    assert "IF NOT EXISTS (SELECT 1 FROM pg_roles" in b
+    assert "ALTER DEFAULT PRIVILEGES" in b
+    assert "GRANT SELECT, INSERT ON tamper_evident_audit_chain" in b
+    assert "RAISE NOTICE" in SQL
