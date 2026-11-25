@@ -1,0 +1,101 @@
+[project]
+name = "vayshield-backend"
+version = "0.1.0"
+description = "VayShield AI backend - FastAPI, deterministic finance kernel, neuro-symbolic AI pipeline"
+readme = "README.md"
+requires-python = ">=3.12,<3.13"
+dependencies = [
+    # Web / API
+    "fastapi>=0.115",
+    "uvicorn[standard]>=0.32",
+    "pydantic>=2.9",
+    "pydantic-settings>=2.6",
+    "python-multipart>=0.0.18",
+    "sse-starlette>=2.1",
+    "httpx>=0.27",
+    "pyjwt>=2.9",
+    # Data
+    "sqlalchemy[asyncio]>=2.0.36",
+    "asyncpg>=0.30",
+    "pgvector>=0.3.6",
+    "redis>=5.2",
+    "uuid6>=2024.7.10",
+    # AI / Vision
+    "google-genai>=1.0",
+    "pillow>=11.0",
+    "opencv-python-headless>=4.10",
+    "numpy>=2.1",
+    "zxing-cpp>=2.2",
+    "rapidfuzz>=3.10",
+    # Crypto / Notify
+    "cryptography>=43",
+    "pynacl>=1.5",
+    "pywebpush>=2.0",
+    # Reports (triage PDF)
+    "fpdf2>=2.8",
+]
+
+[dependency-groups]
+dev = [
+    "pytest>=8.3",
+    "pytest-asyncio>=0.24",
+    "hypothesis>=6.115",
+    "fakeredis[lua]>=2.26",
+    "lupa>=2.2",
+    "ruff>=0.8",
+    "mypy>=1.13",
+    "pyyaml>=6.0",
+    "types-pyyaml>=6.0",
+    "jsonschema>=4.23",
+    "types-jsonschema>=4.23",
+]
+
+[tool.uv]
+package = false
+
+[tool.ruff]
+line-length = 100
+target-version = "py312"
+extend-exclude = [".venv", "migrations"]
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "I", "B", "UP", "N", "ASYNC", "S", "SIM", "RUF"]
+ignore = [
+    "RUF001", # chuỗi tiếng Việt có ký tự Unicode hợp lệ
+    "RUF002",
+    "RUF003",
+]
+
+[tool.ruff.lint.per-file-ignores]
+"tests/**" = ["S101", "S105", "S106", "S311"]
+"app/core/mocks.py" = ["S105", "S106"] # dữ liệu mock giả, không phải bí mật
+
+[tool.ruff.format]
+quote-style = "double"
+
+[tool.mypy]
+python_version = "3.12"
+strict = true
+plugins = ["pydantic.mypy"]
+exclude = ["^\\.venv/", "^migrations/"]
+warn_unused_ignores = true
+
+[[tool.mypy.overrides]]
+module = ["cv2.*", "zxing_cpp.*", "pywebpush.*", "fakeredis.*", "lupa.*", "pgvector.*", "fpdf.*", "uuid6.*"]
+ignore_missing_imports = true
+
+[tool.pydantic-mypy]
+init_forbid_extra = true
+init_typed = true
+warn_required_dynamic_aliases = true
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["."]
+asyncio_mode = "auto"
+asyncio_default_fixture_loop_scope = "function"
+addopts = "-ra --strict-markers"
+markers = [
+    "pg: cần PostgreSQL thật (tự skip khi thiếu biến môi trường TEST_DATABASE_URL)",
+    "redis_real: cần Redis thật (tự skip khi thiếu biến môi trường TEST_REDIS_URL)",
+]

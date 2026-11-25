@@ -1,0 +1,836 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "vayshield/contracts/ws-protocol.json",
+  "title": "VayShield AI — Giao thức WebSocket /ws/v1/guardian",
+  "description": "Khung tin WebSocket hai chiều người vay ↔ người thân (File 4 §4.2(C)). Mọi frame là JSON text {type, frame_id, sent_at, payload}. Payload tuân Zero-Amount Privacy Envelope: không số tiền, không tên công ty vay, không STK.",
+  "x-endpoint": {
+    "path": "/ws/v1/guardian",
+    "query": {
+      "ticket": "vé 1 lần từ GET /api/v1/ws-ticket"
+    },
+    "ticket_ttl_s": 45,
+    "ticket_single_use": true,
+    "reconnect": "Mỗi lần reconnect phải lấy vé mới (EC-DB12)",
+    "scheme": "wss khi trang chạy https (EC-OPS22), cổng 443"
+  },
+  "x-heartbeat": {
+    "server_ping_interval_s": 20,
+    "server_frame": "SERVER_PING",
+    "client_reply": "CLIENT_PONG"
+  },
+  "x-escalation-cascade": {
+    "steps": [
+      "POST /api/v1/shield/escalate tạo vs:ack:timer:{escalation_id} status=PENDING",
+      "Song song: EVENT_EMERGENCY_ALERT qua WS + Web Push VAPID high-urgency",
+      "Người thân gửi CLIENT_ALERT_ACK trong ack_timeout_s → ACKNOWLEDGED, hủy SMS, người vay nhận EVENT_ESCALATION_ACKNOWLEDGED",
+      "Quá ack_timeout_s không ACK (hoặc Push 410/404) → SMS/Email, người vay nhận EVENT_ESCALATION_FALLBACK"
+    ],
+    "ack_timeout_s": 10,
+    "channels_order": [
+      "WEBSOCKET",
+      "WEB_PUSH",
+      "SMS",
+      "EMAIL"
+    ]
+  },
+  "x-close-codes": {
+    "1000": "NORMAL_CLOSURE",
+    "1001": "GOING_AWAY (server tắt/scale)",
+    "4401": "TICKET_INVALID_OR_CONSUMED",
+    "4403": "ROLE_FORBIDDEN",
+    "4408": "HEARTBEAT_TIMEOUT",
+    "4429": "RATE_LIMITED"
+  },
+  "x-server-frames": [
+    "SERVER_HELLO",
+    "EVENT_EMERGENCY_ALERT",
+    "EVENT_ESCALATION_ACKNOWLEDGED",
+    "EVENT_ESCALATION_FALLBACK",
+    "EVENT_RESCUE_CARD",
+    "EVENT_ALERT_DIGEST",
+    "SERVER_PING",
+    "SERVER_ERROR"
+  ],
+  "x-client-frames": [
+    "CLIENT_ALERT_ACK",
+    "CLIENT_RESCUE_CARD_ACK",
+    "CLIENT_PONG"
+  ],
+  "oneOf": [
+    {
+      "$ref": "#/$defs/ServerFrame"
+    },
+    {
+      "$ref": "#/$defs/ClientFrame"
+    }
+  ],
+  "$defs": {
+    "AlertDigest": {
+      "additionalProperties": false,
+      "description": "S2-EC45: gom cảnh báo cũ > 45 phút khi người thân kết nối lại.",
+      "properties": {
+        "stale_alert_count": {
+          "minimum": 0,
+          "title": "Stale Alert Count",
+          "type": "integer"
+        },
+        "oldest_raised_at": {
+          "anyOf": [
+            {
+              "format": "date-time",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Oldest Raised At"
+        },
+        "summary_vi": {
+          "title": "Summary Vi",
+          "type": "string"
+        }
+      },
+      "required": [
+        "stale_alert_count",
+        "summary_vi"
+      ],
+      "title": "AlertDigest",
+      "type": "object"
+    },
+    "ClientAlertAck": {
+      "additionalProperties": false,
+      "properties": {
+        "escalation_id": {
+          "format": "uuid",
+          "title": "Escalation Id",
+          "type": "string"
+        }
+      },
+      "required": [
+        "escalation_id"
+      ],
+      "title": "ClientAlertAck",
+      "type": "object"
+    },
+    "ClientPong": {
+      "additionalProperties": false,
+      "properties": {
+        "server_ts_ms": {
+          "title": "Server Ts Ms",
+          "type": "integer"
+        }
+      },
+      "required": [
+        "server_ts_ms"
+      ],
+      "title": "ClientPong",
+      "type": "object"
+    },
+    "ClientRescueCardAck": {
+      "additionalProperties": false,
+      "properties": {
+        "rescue_card_id": {
+          "format": "uuid",
+          "title": "Rescue Card Id",
+          "type": "string"
+        }
+      },
+      "required": [
+        "rescue_card_id"
+      ],
+      "title": "ClientRescueCardAck",
+      "type": "object"
+    },
+    "EmergencyAlert": {
+      "additionalProperties": false,
+      "properties": {
+        "escalation_id": {
+          "format": "uuid",
+          "title": "Escalation Id",
+          "type": "string"
+        },
+        "borrower_display_label": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Borrower Display Label"
+        },
+        "hsm_state": {
+          "$ref": "#/$defs/HsmState"
+        },
+        "detected_axes": {
+          "items": {
+            "$ref": "#/$defs/OntologyAxis"
+          },
+          "title": "Detected Axes",
+          "type": "array"
+        },
+        "headline_vi": {
+          "title": "Headline Vi",
+          "type": "string"
+        },
+        "body_vi": {
+          "title": "Body Vi",
+          "type": "string"
+        },
+        "raised_at": {
+          "format": "date-time",
+          "title": "Raised At",
+          "type": "string"
+        },
+        "require_ack": {
+          "const": true,
+          "default": true,
+          "title": "Require Ack",
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "escalation_id",
+        "hsm_state",
+        "headline_vi",
+        "body_vi",
+        "raised_at"
+      ],
+      "title": "EmergencyAlert",
+      "type": "object"
+    },
+    "EscalationAcknowledged": {
+      "additionalProperties": false,
+      "properties": {
+        "escalation_id": {
+          "format": "uuid",
+          "title": "Escalation Id",
+          "type": "string"
+        },
+        "guardian_alias": {
+          "title": "Guardian Alias",
+          "type": "string"
+        },
+        "ack_latency_ms": {
+          "minimum": 0,
+          "title": "Ack Latency Ms",
+          "type": "integer"
+        },
+        "message_vi": {
+          "title": "Message Vi",
+          "type": "string"
+        }
+      },
+      "required": [
+        "escalation_id",
+        "guardian_alias",
+        "ack_latency_ms",
+        "message_vi"
+      ],
+      "title": "EscalationAcknowledged",
+      "type": "object"
+    },
+    "EscalationChannel": {
+      "enum": [
+        "WEBSOCKET",
+        "WEB_PUSH",
+        "SMS",
+        "EMAIL"
+      ],
+      "title": "EscalationChannel",
+      "type": "string"
+    },
+    "EscalationFallback": {
+      "additionalProperties": false,
+      "properties": {
+        "escalation_id": {
+          "format": "uuid",
+          "title": "Escalation Id",
+          "type": "string"
+        },
+        "channel": {
+          "$ref": "#/$defs/EscalationChannel"
+        },
+        "reason": {
+          "enum": [
+            "ACK_TIMEOUT",
+            "PUSH_EXPIRED_410",
+            "NO_LIVE_SOCKET"
+          ],
+          "title": "Reason",
+          "type": "string"
+        },
+        "message_vi": {
+          "title": "Message Vi",
+          "type": "string"
+        }
+      },
+      "required": [
+        "escalation_id",
+        "channel",
+        "reason",
+        "message_vi"
+      ],
+      "title": "EscalationFallback",
+      "type": "object"
+    },
+    "HsmState": {
+      "description": "10 trạng thái HSM (File 2 §2.1).",
+      "enum": [
+        "S0_IDLE",
+        "S1_LOAN_EXPLORATION",
+        "S2_CONTRACT_AUDITING",
+        "S3_ADVANCE_FEE_HARD_STOP",
+        "S4_SHIELD_ARMED_24H",
+        "S5_CRITICAL_INTERCEPTION",
+        "S6_COOLING_OFF_LOCK",
+        "S7_ESCALATED_SCAM_CONFIRMED",
+        "S8_SAFE_ROUTINE_TX",
+        "S9_GOLDEN_HOUR_TRIAGE"
+      ],
+      "title": "HsmState",
+      "type": "string"
+    },
+    "OntologyAxis": {
+      "description": "10 trục thao túng (File 3 §3.3).",
+      "enum": [
+        "C1",
+        "C2",
+        "C3",
+        "C4",
+        "C5",
+        "C6",
+        "C7",
+        "C8",
+        "C9",
+        "C10"
+      ],
+      "title": "OntologyAxis",
+      "type": "string"
+    },
+    "PushPayload": {
+      "additionalProperties": false,
+      "description": "Payload Web Push VAPID High-Urgency (cùng nguyên tắc Zero-Amount).",
+      "properties": {
+        "kind": {
+          "enum": [
+            "EMERGENCY_ALERT",
+            "RESCUE_CARD"
+          ],
+          "title": "Kind",
+          "type": "string"
+        },
+        "escalation_id": {
+          "anyOf": [
+            {
+              "format": "uuid",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Escalation Id"
+        },
+        "rescue_card_id": {
+          "anyOf": [
+            {
+              "format": "uuid",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Rescue Card Id"
+        },
+        "title_vi": {
+          "title": "Title Vi",
+          "type": "string"
+        },
+        "body_vi": {
+          "title": "Body Vi",
+          "type": "string"
+        },
+        "open_path": {
+          "description": "vd /guardian?esc=<id>",
+          "title": "Open Path",
+          "type": "string"
+        }
+      },
+      "required": [
+        "kind",
+        "title_vi",
+        "body_vi",
+        "open_path"
+      ],
+      "title": "PushPayload",
+      "type": "object"
+    },
+    "RealtimeRole": {
+      "enum": [
+        "BORROWER",
+        "GUARDIAN"
+      ],
+      "title": "RealtimeRole",
+      "type": "string"
+    },
+    "RescueCardDelivered": {
+      "additionalProperties": false,
+      "properties": {
+        "rescue_card_id": {
+          "format": "uuid",
+          "title": "Rescue Card Id",
+          "type": "string"
+        },
+        "escalation_id": {
+          "anyOf": [
+            {
+              "format": "uuid",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Escalation Id"
+        },
+        "card_type": {
+          "$ref": "#/$defs/RescueCardType"
+        },
+        "guardian_alias": {
+          "title": "Guardian Alias",
+          "type": "string"
+        },
+        "message_vi": {
+          "title": "Message Vi",
+          "type": "string"
+        },
+        "tts_script_vi": {
+          "title": "Tts Script Vi",
+          "type": "string"
+        }
+      },
+      "required": [
+        "rescue_card_id",
+        "card_type",
+        "guardian_alias",
+        "message_vi",
+        "tts_script_vi"
+      ],
+      "title": "RescueCardDelivered",
+      "type": "object"
+    },
+    "RescueCardType": {
+      "enum": [
+        "CALL_ME_NOW",
+        "STOP_TRANSFER_NOW",
+        "I_AM_COMING",
+        "CALL_BANK_HOTLINE"
+      ],
+      "title": "RescueCardType",
+      "type": "string"
+    },
+    "ServerError": {
+      "additionalProperties": false,
+      "properties": {
+        "code": {
+          "title": "Code",
+          "type": "string"
+        },
+        "message_vi": {
+          "title": "Message Vi",
+          "type": "string"
+        }
+      },
+      "required": [
+        "code",
+        "message_vi"
+      ],
+      "title": "ServerError",
+      "type": "object"
+    },
+    "ServerHello": {
+      "additionalProperties": false,
+      "properties": {
+        "connection_id": {
+          "format": "uuid",
+          "title": "Connection Id",
+          "type": "string"
+        },
+        "role": {
+          "$ref": "#/$defs/RealtimeRole"
+        },
+        "heartbeat_interval_s": {
+          "minimum": 1,
+          "title": "Heartbeat Interval S",
+          "type": "integer"
+        },
+        "ack_timeout_s": {
+          "minimum": 1,
+          "title": "Ack Timeout S",
+          "type": "integer"
+        }
+      },
+      "required": [
+        "connection_id",
+        "role",
+        "heartbeat_interval_s",
+        "ack_timeout_s"
+      ],
+      "title": "ServerHello",
+      "type": "object"
+    },
+    "ServerPing": {
+      "additionalProperties": false,
+      "properties": {
+        "server_ts_ms": {
+          "title": "Server Ts Ms",
+          "type": "integer"
+        }
+      },
+      "required": [
+        "server_ts_ms"
+      ],
+      "title": "ServerPing",
+      "type": "object"
+    },
+    "WsTicketResponse": {
+      "properties": {
+        "ticket": {
+          "description": "Vé 1 lần, xóa bằng GETDEL khi nâng cấp 101",
+          "title": "Ticket",
+          "type": "string"
+        },
+        "role": {
+          "$ref": "#/$defs/RealtimeRole"
+        },
+        "expires_at": {
+          "format": "date-time",
+          "title": "Expires At",
+          "type": "string"
+        },
+        "ttl_seconds": {
+          "minimum": 1,
+          "title": "Ttl Seconds",
+          "type": "integer"
+        },
+        "ws_path": {
+          "description": "Đường dẫn WS, client tự suy wss:/ws: (EC-OPS22)",
+          "title": "Ws Path",
+          "type": "string"
+        }
+      },
+      "required": [
+        "ticket",
+        "role",
+        "expires_at",
+        "ttl_seconds",
+        "ws_path"
+      ],
+      "title": "WsTicketResponse",
+      "type": "object"
+    },
+    "ServerFrame": {
+      "oneOf": [
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "type",
+            "frame_id",
+            "sent_at",
+            "payload"
+          ],
+          "properties": {
+            "type": {
+              "const": "SERVER_HELLO"
+            },
+            "frame_id": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "sent_at": {
+              "type": "string",
+              "format": "date-time"
+            },
+            "payload": {
+              "$ref": "#/$defs/ServerHello"
+            }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "type",
+            "frame_id",
+            "sent_at",
+            "payload"
+          ],
+          "properties": {
+            "type": {
+              "const": "EVENT_EMERGENCY_ALERT"
+            },
+            "frame_id": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "sent_at": {
+              "type": "string",
+              "format": "date-time"
+            },
+            "payload": {
+              "$ref": "#/$defs/EmergencyAlert"
+            }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "type",
+            "frame_id",
+            "sent_at",
+            "payload"
+          ],
+          "properties": {
+            "type": {
+              "const": "EVENT_ESCALATION_ACKNOWLEDGED"
+            },
+            "frame_id": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "sent_at": {
+              "type": "string",
+              "format": "date-time"
+            },
+            "payload": {
+              "$ref": "#/$defs/EscalationAcknowledged"
+            }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "type",
+            "frame_id",
+            "sent_at",
+            "payload"
+          ],
+          "properties": {
+            "type": {
+              "const": "EVENT_ESCALATION_FALLBACK"
+            },
+            "frame_id": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "sent_at": {
+              "type": "string",
+              "format": "date-time"
+            },
+            "payload": {
+              "$ref": "#/$defs/EscalationFallback"
+            }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "type",
+            "frame_id",
+            "sent_at",
+            "payload"
+          ],
+          "properties": {
+            "type": {
+              "const": "EVENT_RESCUE_CARD"
+            },
+            "frame_id": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "sent_at": {
+              "type": "string",
+              "format": "date-time"
+            },
+            "payload": {
+              "$ref": "#/$defs/RescueCardDelivered"
+            }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "type",
+            "frame_id",
+            "sent_at",
+            "payload"
+          ],
+          "properties": {
+            "type": {
+              "const": "EVENT_ALERT_DIGEST"
+            },
+            "frame_id": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "sent_at": {
+              "type": "string",
+              "format": "date-time"
+            },
+            "payload": {
+              "$ref": "#/$defs/AlertDigest"
+            }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "type",
+            "frame_id",
+            "sent_at",
+            "payload"
+          ],
+          "properties": {
+            "type": {
+              "const": "SERVER_PING"
+            },
+            "frame_id": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "sent_at": {
+              "type": "string",
+              "format": "date-time"
+            },
+            "payload": {
+              "$ref": "#/$defs/ServerPing"
+            }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "type",
+            "frame_id",
+            "sent_at",
+            "payload"
+          ],
+          "properties": {
+            "type": {
+              "const": "SERVER_ERROR"
+            },
+            "frame_id": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "sent_at": {
+              "type": "string",
+              "format": "date-time"
+            },
+            "payload": {
+              "$ref": "#/$defs/ServerError"
+            }
+          }
+        }
+      ]
+    },
+    "ClientFrame": {
+      "oneOf": [
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "type",
+            "frame_id",
+            "sent_at",
+            "payload"
+          ],
+          "properties": {
+            "type": {
+              "const": "CLIENT_ALERT_ACK"
+            },
+            "frame_id": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "sent_at": {
+              "type": "string",
+              "format": "date-time"
+            },
+            "payload": {
+              "$ref": "#/$defs/ClientAlertAck"
+            }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "type",
+            "frame_id",
+            "sent_at",
+            "payload"
+          ],
+          "properties": {
+            "type": {
+              "const": "CLIENT_RESCUE_CARD_ACK"
+            },
+            "frame_id": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "sent_at": {
+              "type": "string",
+              "format": "date-time"
+            },
+            "payload": {
+              "$ref": "#/$defs/ClientRescueCardAck"
+            }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "type",
+            "frame_id",
+            "sent_at",
+            "payload"
+          ],
+          "properties": {
+            "type": {
+              "const": "CLIENT_PONG"
+            },
+            "frame_id": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "sent_at": {
+              "type": "string",
+              "format": "date-time"
+            },
+            "payload": {
+              "$ref": "#/$defs/ClientPong"
+            }
+          }
+        }
+      ]
+    }
+  }
+}
