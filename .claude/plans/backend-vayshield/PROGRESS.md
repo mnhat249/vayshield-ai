@@ -3,11 +3,11 @@
 Plan: [`../backend-vayshield.md`](../backend-vayshield.md) · Cập nhật %: `node .claude/scripts/progress.js backend-vayshield --write`
 
 <!-- progress:start -->
-**Tổng tiến độ: 1.4%** `[░░░░░░░░░░░░░░░░░░░░]` — merged 0/19 task · cập nhật 2026-11-25
+**Tổng tiến độ: 2.0%** `[░░░░░░░░░░░░░░░░░░░░]` — merged 1/19 task · cập nhật 2026-11-25
 
 | Wave | Tiến độ | | Mốc | Tiến độ |
 |---|---|---|---|---|
-| W0 | 70% | | M0 | 70% |
+| W0 | 100% | | M0 | 100% |
 | W1 | 0% | | M1 | 0% |
 | W2 | 0% | | M2 | 0% |
 | W3 | 0% | | M3 | 0% |
@@ -32,7 +32,7 @@ Plan: [`../backend-vayshield.md`](../backend-vayshield.md) · Cập nhật %: `n
 ## Bảng task
 | ID | WP | Task | Wave | Mốc | Phụ thuộc | Trọng số | Trạng thái | Branch | Verify | Review | Cập nhật | Ghi chú |
 |----|----|------|------|-----|-----------|---------:|-----------|--------|--------|--------|----------|---------|
-| T00 | WP1-06 | Khung FastAPI + contracts M0 | 0 | M0 | – | 2 | verified | task/backend-vayshield/T00 | pass (95✓ 1 skip pg) | – | 2026-11-25 | Cần Nhóm 2 duyệt contract |
+| T00 | WP1-06 | Khung FastAPI + contracts M0 | 0 | M0 | – | 2 | merged | task/backend-vayshield/T00 | pass (95✓ 1 skip pg) | approve (sau 1 vòng sửa) | 2026-11-25 | Cần Nhóm 2 duyệt contract |
 | T01 | WP1-01 | PostgreSQL schema + RLS + hash-chain | 1 | M1 | T00 | 10 | pending | task/backend-vayshield/T01 | – | – | – | |
 | T02 | WP1-03 | Kernel tài chính APR/XIRR/khoảng/MIRR | 1 | M1 | T00 | 8 | pending | task/backend-vayshield/T02 | – | – | – | ≥35 pytest |
 | T03 | WP1-04 | Thị giác đối kháng + VietQR | 1 | M1 | T00 | 10 | pending | task/backend-vayshield/T03 | – | – | – | |
@@ -58,3 +58,4 @@ Plan: [`../backend-vayshield.md`](../backend-vayshield.md) · Cập nhật %: `n
 | 2026-11-25 | Tạo plan + bảng progress (status: draft, chờ duyệt) |
 | 2026-11-25 | Plan approved; T00 dispatched (wave 0) |
 | 2026-11-25 | T00 implemented (PARTIAL: .env.example bị chặn quyền, chưa chạy Docker) → verify pass |
+| 2026-11-25 | T00 review: 4 major + 9 minor → sửa xong (a0ef22f) → merged. Mốc M0 xong (contract chờ Nhóm 2 xem) |
