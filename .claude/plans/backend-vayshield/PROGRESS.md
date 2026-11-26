@@ -3,13 +3,13 @@
 Plan: [`../backend-vayshield.md`](../backend-vayshield.md) · Cập nhật %: `node .claude/scripts/progress.js backend-vayshield --write`
 
 <!-- progress:start -->
-**Tổng tiến độ: 63.2%** `[█████████████░░░░░░░]` — merged 9/19 task · cập nhật 2026-11-26
+**Tổng tiến độ: 64.4%** `[█████████████░░░░░░░]` — merged 10/19 task · cập nhật 2026-11-27
 
 | Wave | Tiến độ | | Mốc | Tiến độ |
 |---|---|---|---|---|
 | W0 | 100% | | M0 | 100% |
-| W1 | 93% | | M1 | 79% |
-| W2 | 90% | | M2 | 47% |
+| W1 | 93% | | M1 | 82% |
+| W2 | 100% | | M2 | 47% |
 | W3 | 0% | | M3 | 50% |
 | W4 | 0% | | M4 | 0% |
 | W5 | 0% | |  |  |
@@ -41,7 +41,7 @@ Plan: [`../backend-vayshield.md`](../backend-vayshield.md) · Cập nhật %: `n
 | T06 | WP1-11 | Dataset Bench-340 (data + nhãn) | 1 | M3 | T00 | 2 | merged | task/backend-vayshield/T06 | validate pass | approve; nhãn APR đối chiếu solver T02: 63 trên 63 khớp, 17 null (advance-fee) | – | |
 | T07 | WP1-08 | Ontology 10 trục C1–C10 | 1 | M2 | T00 | 4 | merged | task/backend-vayshield/T07 | pass (188✓) | approve (sau 1 vòng sửa) | – | |
 | T08 | WP1-02 | Seed registry + luật + mule mẫu | 2 | M2 | T01 | 6 | merged | task/backend-vayshield/T08 | pass (881✓); PR#4 CI pg | approve sau sửa (4 major); bản sửa chỉ verify + CI pg xanh, chưa review lại; dữ liệu verified=false cần người xác minh | – | Người xác minh dữ liệu thật |
-| T09 | WP1-03 | Ma trận 9 phán quyết + lookalike | 2 | M1 | T02,T01 | 4 | verified | task/backend-vayshield/T09 | pass (922✓); PR#5 CI pg | sửa review (1 blocker + 4 major), re-review đang chạy | – | |
+| T09 | WP1-03 | Ma trận 9 phán quyết + lookalike | 2 | M1 | T02,T01 | 4 | merged | task/backend-vayshield/T09 | pass (922✓); PR#5 CI pg | approve sau 3 vòng sửa (1 blocker + nhiều major); vòng 3 chỉ verify + CI pg xanh + bộ hồi quy 354 tên, chưa review lại | – | |
 | T10 | WP1-06 | Mật mã & bảo mật nền | 2 | M1 | T01 | 2 | merged | task/backend-vayshield/T10 | pass (539✓); PR#3 CI pg | approve sau sửa (2 major); CI pg xanh; rủi ro mở: chữ ký policy chỉ phủ payload cần task contract | – | |
 | T11 | WP1-06 | API Trạm 1 & 2 (SSE) | 3 | M1 | T02,T03,T04,T09,T10 | 6 | pending | task/backend-vayshield/T11 | – | – | – | |
 | T12 | WP1-08 | API Trạm 3 + WS + leo thang + gia đình | 3 | M2 | T05,T07,T10 | 6 | pending | task/backend-vayshield/T12 | – | – | – | |
@@ -85,3 +85,4 @@ Plan: [`../backend-vayshield.md`](../backend-vayshield.md) · Cập nhật %: `n
 | 2026-11-26 | Giới hạn 5h dừng T09 (đang sửa review), T04 (review vòng 3), T08 (mới bắt đầu); reset 21:30. Quyết định của người dùng: ngân hàng/FinCo chỉ có ảnh chụp, chưa xác thực APK → tối đa VÀNG (AMBER, LENDER_NOT_VERIFIED); gửi cho T09 khi agent chạy lại. P2P 20–35% chờ quyết |
 | 2026-11-26 | T08 implemented + verified (881✓, mọi dữ liệu registry/luật verified=false), PR#4. T09 sửa xong (75a70ff), PR#5, re-review. T04 review vòng 3: 2 blocker + 4 major → agent sửa theo hướng whitelist ranh giới |
 | 2026-11-26 | T08 merged (approve sau sửa (4 major); bản sửa chỉ verify + CI pg xanh, chưa review lại; dữ liệu verified=false cần người xác minh) |
+| 2026-11-27 | T09 merged (approve sau 3 vòng sửa (1 blocker + nhiều major); vòng 3 chỉ verify + CI pg xanh + bộ hồi quy 354 tên, chưa review lại) |
