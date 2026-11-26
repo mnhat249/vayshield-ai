@@ -128,9 +128,16 @@ def strip_red_stamp(image: Image.Image) -> StampResult:
     if ratio < RED_DETECT_RATIO:
         return StampResult(Image.fromarray(rgb, mode="RGB"), False, ratio, False)
 
-    # Mực = V rất thấp, hoặc tối rõ rệt so với nền mộc cục bộ (trung vị V vùng đỏ).
-    stamp_v = float(np.median(val[red]))
-    ink = red & ((val < INK_VALUE_MAX * 255) | (val < INK_LOCAL_RATIO * stamp_v))
+    # Mực = V rất thấp, hoặc tối rõ rệt so với nền mộc CỦA CHÍNH vùng đỏ đó: trung vị V tính
+    # theo từng thành phần liên thông (mảng đỏ tối cạnh mộc sáng không bị tô đen).
+    ref_v = np.full(val.shape, float(np.median(val[red])), np.float32)
+    merged = cv2.dilate(red.astype(np.uint8), np.ones((7, 7), np.uint8))
+    n_lab, labels = cv2.connectedComponents(merged)
+    for lab in range(1, min(n_lab, 65)):  # chặn chi phí khi nhiễu tạo quá nhiều thành phần
+        sel = red & (labels == lab)
+        if sel.any():
+            ref_v[sel] = float(np.median(val[sel]))
+    ink = red & ((val < INK_VALUE_MAX * 255) | (val < INK_LOCAL_RATIO * ref_v))
     dark_text = (val < 110) & (sat < 90)
     near_red = cv2.dilate(red.astype(np.uint8), np.ones((5, 5), np.uint8)).astype(bool)
     overlaps = bool(np.any(ink) or np.any(near_red & dark_text))

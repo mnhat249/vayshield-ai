@@ -131,3 +131,38 @@ def test_ec_ai06_ela_region_negative_indices_are_clipped() -> None:
     a = ela_region_ratio(img, (-10, -10, 20, 20))
     b = ela_region_ratio(img, (0, 0, 20, 20))
     assert a == b
+
+
+_STUCK_HEAD = "Chuyển khoản nhanh 24/7 NAPAS. Treo lệnh. "
+
+
+@pytest.mark.parametrize(
+    "tail",
+    [
+        "Vui lòng nạp 15% phí giải tỏa",
+        "Vui lòng trả phí giải tỏa 500k",
+        "Phí giải tỏa: 500.000đ",
+        "Cần nộp thêm phí xác thực 300.000đ",
+        "Cần nộp thuế thu nhập 2.000.000đ để nhận tiền",
+        "Vui lòng gửi 10% phí giải ngân",
+        "Đóng 10% phí",
+        "Yêu cầu bổ sung 10% phí giải tỏa",
+        "Cần nộp phí bảo hiểm khoản vay 10%",
+        "Vui lòng chuyển 500k để mở băng",
+    ],
+)
+def test_ec_ai06_advance_fee_variants_flagged(tail: str) -> None:
+    """EC-AI06 (round 2): các cách đòi phí giải tỏa đều bị bắt (không hồi quy)."""
+    assert receipt_forensics(_STUCK_HEAD + tail).fake_receipt_napas_impossible
+
+
+def test_ec_ai06_free_text_after_noi_dung_is_ignored() -> None:
+    text = "Chuyển khoản nhanh 24/7. Đang chờ xử lý. Nội dung: dong tien giai ngan khoan vay"
+    assert not receipt_forensics(text).fake_receipt_napas_impossible
+
+
+def test_ec_ai06_invalid_ela_region_does_not_crash() -> None:
+    img = Image.new("RGB", (64, 64), (200, 200, 200))
+    r = receipt_forensics(_STUCK_HEAD + "Đóng 10% phí", img, (100, 100, 200, 200))
+    assert r.ela_ratio is None and "ELA_REGION_INVALID" in r.reasons
+    assert r.fake_receipt_napas_impossible

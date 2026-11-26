@@ -11,8 +11,13 @@ from dataclasses import dataclass
 
 from PIL import Image, UnidentifiedImageError
 
-MAX_PIXELS = 25_000_000  # EC-DB05: 25MP
-MAX_DECODED_BYTES = 64 * 1024 * 1024  # EC-DB05: bitmap RGBA sau giải nén <= 64MB
+MAX_PIXELS = 25_000_000  # EC-DB05: trần pixel danh nghĩa (25MP)
+MAX_DECODED_BYTES = 64 * 1024 * 1024  # EC-DB05: bitmap RGBA (4 byte/px) sau giải nén <= 64MB
+# => giới hạn THỰC TẾ là 64MB/4 = 16.777.216 px (~16,7MP) vì chặt hơn 25MP.
+# Trần dung lượng file thô (byte nén) là đơn vị khác với bitmap giải nén; dùng hằng riêng.
+# Trần 1,5MB/ảnh theo contract (client nén <=1280px) thuộc tầng API, không áp ở đây.
+MAX_RAW_BYTES = 64 * 1024 * 1024
+MAX_EFFECTIVE_PIXELS = MAX_DECODED_BYTES // 4
 
 Image.MAX_IMAGE_PIXELS = MAX_PIXELS
 
@@ -45,7 +50,7 @@ def sniff_format(data: bytes) -> str:
 
 def read_header(data: bytes, max_pixels: int = MAX_PIXELS) -> ImageHeader:
     """Đọc header (không cấp phát bitmap) và kiểm tra giới hạn pixel."""
-    if len(data) > MAX_DECODED_BYTES:  # file thô quá lớn: từ chối trước khi mở
+    if len(data) > MAX_RAW_BYTES:  # file thô quá lớn: từ chối trước khi mở
         raise ImageRejectedError("IMAGE_TOO_LARGE", "Dung lượng file vượt giới hạn.")
     fmt = sniff_format(data)
     try:
@@ -56,9 +61,15 @@ def read_header(data: bytes, max_pixels: int = MAX_PIXELS) -> ImageHeader:
     except (UnidentifiedImageError, OSError, SyntaxError) as exc:
         raise ImageRejectedError("CORRUPT_IMAGE", "Ảnh hỏng hoặc không đọc được.") from exc
     if width <= 0 or height <= 0 or width * height > max_pixels:
-        raise ImageRejectedError("IMAGE_TOO_LARGE", "Kích thước ảnh vượt giới hạn 25 megapixel.")
+        raise ImageRejectedError(
+            "IMAGE_TOO_LARGE",
+            f"Kích thước ảnh vượt giới hạn {min(max_pixels, MAX_EFFECTIVE_PIXELS):,} pixel.",
+        )
     if width * height * 4 > MAX_DECODED_BYTES:
-        raise ImageRejectedError("IMAGE_TOO_LARGE", "Bộ nhớ giải nén vượt giới hạn.")
+        raise ImageRejectedError(
+            "IMAGE_TOO_LARGE",
+            "Ảnh vượt giới hạn thực tế 16,7 megapixel (bitmap RGBA giải nén > 64MB).",
+        )
     return ImageHeader(fmt=fmt, width=width, height=height)
 
 

@@ -98,6 +98,16 @@ def test_ec_ai05_dark_red_stamp_not_painted_black() -> None:
     assert not ((out[..., 0] > 100) & (out[..., 1] < 60)).any()
 
 
+def test_ec_ai05_dark_red_patch_beside_bright_stamp_not_black() -> None:
+    """EC-AI05 (round 2): mảng đỏ tối cạnh mộc sáng không bị tô đen (nền mộc tính theo vùng)."""
+    img = Image.new("RGB", (600, 120), (255, 255, 255))
+    d = ImageDraw.Draw(img)
+    d.rectangle((20, 20, 200, 100), fill=(230, 40, 40))  # mộc sáng
+    d.rectangle((380, 20, 560, 100), fill=(140, 25, 30))  # mảng đỏ tối, tách biệt
+    out = np.asarray(strip_red_stamp(img).image).astype(int)
+    assert out[20:100, 380:560].sum(axis=2).min() > 300
+
+
 def test_ec_ai05_no_stamp_is_untouched() -> None:
     clean = _text_image((255, 255, 255), (0, 0, 0), "1500000")
     res = strip_red_stamp(clean)
@@ -188,6 +198,7 @@ def test_ec_db05_decoded_bitmap_limit_64mb_boundary() -> None:
     with pytest.raises(ImageRejectedError) as ei:
         sanitize_image(png_with_declared_size(4000, 5000))
     assert ei.value.code == "IMAGE_TOO_LARGE"
+    assert "16,7" in str(ei.value) or "16.777" in str(ei.value)  # thông báo nêu giới hạn thật
     assert read_header(png_with_declared_size(4000, 4000)).width == 4000  # đúng biên 64MB
 
 

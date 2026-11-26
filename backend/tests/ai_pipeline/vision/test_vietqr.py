@@ -172,9 +172,56 @@ def test_ec_ai02_faint_scam_qr_next_to_clear_qr_is_found() -> None:
     assert by_text[mine].sender is QrSender.SELF
 
 
+def test_ec_ai02_full_blue_background_is_not_self() -> None:
+    """EC-AI02 (round 2): nền xanh phủ kín ảnh (có/không thẻ trắng) không phải bong bóng SELF."""
+    qr = render_qr(build_vietqr(account="9999000011112"))
+    plain = Image.new("RGB", (900, 1600), (0, 90, 200))
+    plain.paste(qr.resize((300, 300)), (300, 650))  # x_center = 0.5W
+    card = plain.copy()
+    ImageDraw.Draw(card).rectangle((280, 630, 620, 970), fill=(255, 255, 255))
+    card.paste(qr.resize((300, 300)), (300, 650))
+    for img in (plain, card):
+        (a,) = attribute_qr_sender(img)
+        assert a.sender is not QrSender.SELF and a.should_check
+
+
+def test_ec_ai02_wide_blue_bubble_with_qr_on_left_is_not_self() -> None:
+    """EC-AI02 (round 2): bong bóng xanh rộng (30..870) chứa QR ở x=0.21W vẫn bị kiểm."""
+    qr = render_qr(build_vietqr(account="9999000011112"))
+    img = Image.new("RGB", (900, 700), (225, 232, 240))
+    ImageDraw.Draw(img).rounded_rectangle((30, 40, 870, 660), 18, fill=(204, 226, 255))
+    img.paste(qr.resize((220, 220)), (80, 200))
+    (a,) = attribute_qr_sender(img)
+    assert a.detection.x_center / 900 < 0.3
+    assert a.sender is not QrSender.SELF and a.should_check
+
+
+def test_ec_ai02_detect_qr_bounded_time_and_memory_on_large_image() -> None:
+    """EC-AI02/DB05 (round 2): ảnh lớn không có QR không bùng CPU/RAM (ngưỡng rộng)."""
+    import time
+    import tracemalloc
+
+    img = Image.new("RGB", (1080, 12000), (240, 240, 240))
+    tracemalloc.start()
+    t0 = time.perf_counter()
+    assert detect_qr_codes(img) == []
+    elapsed = time.perf_counter() - t0
+    peak = tracemalloc.get_traced_memory()[1]
+    tracemalloc.stop()
+    assert elapsed < 20
+    assert peak < 500 * 1024 * 1024
+
+
 @pytest.mark.parametrize(
     ("tag", "value"),
-    [("54", "1e5"), ("54", "1500000.123"), ("54", "-5"), ("54", "abc")],
+    [
+        ("54", "١٢٣"),
+        ("54", "9" * 14),
+        ("54", "1e5"),
+        ("54", "1500000.123"),
+        ("54", "-5"),
+        ("54", "abc"),
+    ],
 )
 def test_ec_ai03_bad_amount_format_rejected(tag: str, value: str) -> None:
     """Tag 54 phải khớp dạng số tiền hợp lệ (số nguyên hoặc tối đa 2 chữ số thập phân)."""

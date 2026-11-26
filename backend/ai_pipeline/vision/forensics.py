@@ -21,13 +21,17 @@ _STUCK = re.compile(
     r"\b(treo|bi treo|dang cho|cho (nguoi nhan|xu ly|giai toa|duyet)|"
     r"pending|bi giu|tam giu|dong bang|phong toa)\b"
 )
-_PAY = r"(?:nop|(?<!\d)(?<!\d )dong|chuyen them|gui them|thanh toan)"
+_PAY = r"(?:nop|nap|tra|gui|thanh toan|chuyen(?: khoan| them)?|bo sung|(?<!\d)(?<!\d )dong)"
 _UNLOCK = r"(?:giai toa|mo bang|mo khoa|giai ngan|kich hoat)"
 _FEE = re.compile(
     rf"\b{_PAY}\b.{{0,40}}\b{_UNLOCK}\b"
     rf"|\b{_UNLOCK}\b.{{0,40}}\b{_PAY}\b"
-    rf"|\b(?:nop|chuyen them)\b.{{0,12}}\d+ ?%"
+    rf"|\b{_PAY}\b.{{0,12}}\d+ ?%"
+    r"|\bphi (?:giai toa|mo bang|mo khoa|kich hoat|xac thuc|giai ngan|bao hiem)\b"
+    rf"|\b{_PAY}\b.{{0,30}}\bthue\b.{{0,40}}\bnhan tien\b"
 )
+# Phần nội dung chuyển khoản do người dùng/đối phương tự gõ: không dùng để suy ra đòi phí.
+_FREE_TEXT = re.compile(r"\b(?:noi dung(?: ck| chuyen khoan)?|loi nhan|ghi chu)\s*:")
 
 
 @dataclass(frozen=True)
@@ -45,7 +49,8 @@ class ReceiptForensics:
 def napas_247_impossible(ocr_text: str) -> bool:
     """Biên lai 'CK nhanh 24/7' nhưng treo + đòi người nhận nộp phí → bất khả thi."""
     t = fold_diacritics(ocr_text)
-    return bool(_FAST.search(t) and _STUCK.search(t) and _FEE.search(t))
+    fee_text = _FREE_TEXT.split(t)[0]
+    return bool(_FAST.search(t) and _STUCK.search(t) and _FEE.search(fee_text))
 
 
 def ela_map(image: Image.Image, quality: int = ELA_QUALITY) -> NDArray[np.float32]:
@@ -88,8 +93,12 @@ def receipt_forensics(
     ratio: float | None = None
     ela_flag = False
     if image is not None and amount_region is not None:
-        inside, _, ratio = ela_region_ratio(image, amount_region)
-        ela_flag = ratio >= ELA_RATIO_THRESHOLD and inside >= ELA_MIN_REGION_MEAN
-        if ela_flag:
-            reasons.append("ELA_ANOMALY_NEAR_AMOUNT")
+        try:
+            inside, _, ratio = ela_region_ratio(image, amount_region)
+        except ValueError:
+            reasons.append("ELA_REGION_INVALID")
+        else:
+            ela_flag = ratio >= ELA_RATIO_THRESHOLD and inside >= ELA_MIN_REGION_MEAN
+            if ela_flag:
+                reasons.append("ELA_ANOMALY_NEAR_AMOUNT")
     return ReceiptForensics(napas, ela_flag, ratio, tuple(reasons))

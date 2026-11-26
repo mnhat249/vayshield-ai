@@ -48,7 +48,10 @@ def canonicalize_text(text: str, *, leet: bool = False) -> str:
 
 
 def fold_diacritics(text: str) -> str:
-    """Bỏ dấu tiếng Việt + lowercase, dùng cho so khớp từ khóa tất định."""
+    """Bỏ dấu tiếng Việt + lowercase; CÓ áp leet (kh0ản→khoan), CHỈ dùng cho so khớp từ khóa.
+
+    Không dùng kết quả này để trích số tiền/mã (leet có thể làm hỏng chữ số).
+    """
     nfd = unicodedata.normalize("NFD", canonicalize_text(text, leet=True).lower())
     stripped = "".join(c for c in nfd if unicodedata.category(c) != "Mn")
     return stripped.replace("đ", "d")
