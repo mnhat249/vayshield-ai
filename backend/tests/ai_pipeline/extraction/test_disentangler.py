@@ -2,12 +2,15 @@
 
 from __future__ import annotations
 
+import pytest
+
 from ai_pipeline.extraction.disentangler import (
     MultiLoanDisentangler,
     PageExtraction,
     brand_key,
     deducted_fee_interval,
     dedupe_fees,
+    fee_key,
     merge_pages,
 )
 from ai_pipeline.extraction.schemas import DeductedFeeItem, ScreenCategory
@@ -214,3 +217,56 @@ def test_ec_ai07_same_brand_spelling_variants_merged() -> None:
     assert not result.requires_loan_selection
     assert brand_key("Tia Chớp") == brand_key("TIA CHOP")
     assert brand_key("App Vay Nhanh A") != brand_key("App Vay Nhanh B")
+
+
+@pytest.mark.parametrize(
+    ("a", "b"),
+    [
+        ("Home Credit", "Home Credit VN"),
+        ("FE Credit", "FE Credit Việt Nam"),
+        ("Tia Chớp", "Tia Chop App"),
+        ("Home Credit", "Công ty Tài chính Home Credit"),
+        ("FE Credit", "FE CREDIT Finance JSC"),
+    ],
+)
+def test_ec_ai07_rereview_brand_suffixes_same_card(a: str, b: str) -> None:
+    """EC-AI07 (re-review major 3): hậu/tiền tố VN/Việt Nam/App/Công ty/Finance/JSC không tách
+    cùng một app thành 2 thẻ."""
+    pages = [
+        PageExtraction(0, loan(claimed_lender_name=a)),
+        PageExtraction(1, loan(claimed_lender_name=b, screen_categories=["DISBURSEMENT_SUMMARY"])),
+    ]
+    result = D.disentangle(pages)
+    assert len(result.cards) == 1
+    assert not result.requires_loan_selection
+
+
+def test_ec_ai07_rereview_suffix_strip_keeps_a_b_distinct() -> None:
+    assert brand_key("App Vay Nhanh A") != brand_key("App Vay Nhanh B")
+    assert brand_key("Vay Nhanh A VN") != brand_key("Vay Nhanh B VN")
+    assert brand_key("VN") == "vn"  # bỏ hết thì giữ nguyên, không ra khóa rỗng
+
+
+@pytest.mark.parametrize(
+    ("a", "b"),
+    [
+        ("Phí hồ sơ", "Phí hồ sơ (bắt buộc)"),
+        ("Phí hồ sơ:", "phí hồ sơ"),
+        ("Bảo hiểm khoản vay", "Phí bảo hiểm khoản vay"),
+    ],
+)
+def test_s2_ec21_rereview_fee_label_variants_same_key(a: str, b: str) -> None:
+    """S2-EC21 (re-review major 4): nhãn phí khác cách viết là cùng một khoản."""
+    assert fee_key(a) == fee_key(b)
+
+
+def test_s2_ec21_rereview_label_variants_on_one_page_counted_once() -> None:
+    fees = [
+        DeductedFeeItem(fee_label="Phí hồ sơ:", amount_vnd=1_000_000),
+        DeductedFeeItem(fee_label="Phí hồ sơ (bắt buộc)", amount_vnd=1_000_000),
+    ]
+    out, removed = dedupe_fees([fees])
+    assert [f.amount_vnd for f in out] == [1_000_000]
+    assert removed == 1
+    # Khác số tiền hoặc nhãn khác hẳn → vẫn là 2 khoản.
+    assert fee_key("Phí dịch vụ") != fee_key("Phí dịch vụ VIP")

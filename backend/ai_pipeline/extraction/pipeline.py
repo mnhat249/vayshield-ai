@@ -18,8 +18,9 @@ from .disentangler import (
     LoanCard,
     MultiLoanDisentangler,
     PageExtraction,
+    collapse_label_variants,
     deducted_fee_interval,
-    normalize_label,
+    fee_key,
 )
 from .gemini_client import ImagePart
 from .prompts import (
@@ -94,11 +95,11 @@ def merge_fee_lists(
     ``uncertainty_max_vnd`` giữ max của cả hai để worst_case không bị hạ; tích sẵn OR.
     Khoản chỉ Pro thấy được thêm vào; khoản chỉ Flash thấy (ngoài ROI) được giữ nguyên.
     """
-    remaining = list(pro)
+    remaining = collapse_label_variants(pro)
     out: list[DeductedFeeItem] = []
-    for f in flash:
-        key = normalize_label(f.fee_label)
-        match = next((p for p in remaining if normalize_label(p.fee_label) == key), None)
+    for f in collapse_label_variants(flash):
+        key = fee_key(f.fee_label)
+        match = next((p for p in remaining if fee_key(p.fee_label) == key), None)
         if match is None:
             out.append(f)
             continue

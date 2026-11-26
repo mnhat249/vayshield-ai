@@ -392,3 +392,22 @@ async def test_ec_ai07_one_char_brand_difference_needs_selection() -> None:
         "App Vay Nhanh A": 10_000_000,
         "App Vay Nhanh B": 3_000_000,
     }
+
+
+@pytest.mark.parametrize(
+    ("flash_label", "pro_labels", "expected_total"),
+    [
+        ("Bảo hiểm khoản vay", ["Phí bảo hiểm khoản vay"], 500_000),
+        ("Phí hồ sơ", ["Phí hồ sơ:", "Phí hồ sơ (bắt buộc)"], 500_000),
+    ],
+)
+def test_ec_ai24_rereview_merge_fee_label_variants(
+    flash_label: str, pro_labels: list[str], expected_total: int
+) -> None:
+    """EC-AI24 / re-review major 4: Flash + Pro ghi cùng khoản phí khác cách viết → 1 khoản,
+    không cộng đôi (trước: "Bảo hiểm khoản vay" + "Phí bảo hiểm khoản vay" = 2 khoản)."""
+    flash = [DeductedFeeItem(fee_label=flash_label, amount_vnd=500_000)]
+    pro = [DeductedFeeItem(fee_label=lbl, amount_vnd=500_000) for lbl in pro_labels]
+    merged = merge_fee_lists(flash, pro)
+    assert sum(f.amount_vnd for f in merged) == expected_total
+    assert len(merged) == 1

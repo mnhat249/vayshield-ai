@@ -152,3 +152,101 @@ def test_ec_ai11_hundreds_after_large_scale(text: str, expected: int) -> None:
     """EC-AI11 (review major): "trăm" sau triệu/tỷ không kèm đơn vị nhỏ = phần của đơn vị lớn,
     khớp với cách viết số "1 triệu 200"."""
     assert parse_vnd_amount(text) == expected
+
+
+@pytest.mark.parametrize(
+    ("text", "value", "per"),
+    [
+        ("trả 1 triệu 200 một tháng", 1_200_000, 30),
+        ("góp một triệu hai một tháng", 1_200_000, 30),
+        ("đóng 2 triệu 500 1 tuần", 2_500_000, 7),
+        ("đóng 1 triệu 5 một ngày", 1_500_000, 1),
+        ("góp hai củ rưỡi một tuần", 2_500_000, 7),
+        ("góp một triệu hai mỗi tháng", 1_200_000, 30),
+    ],
+)
+def test_ec_ai11_rereview_fraction_then_one_period(text: str, value: int, per: int) -> None:
+    """EC-AI11 (re-review blocker 1): phần lẻ rồi "một/1 <kỳ>" — không đọc lố qua nhiều số."""
+    m = normalize_vn_currency_slang(text).money
+    assert [(x.value_vnd, x.per_period_days) for x in m] == [(value, per)]
+
+
+@pytest.mark.parametrize(
+    ("text", "values", "durations"),
+    [
+        ("vay 10 triệu năm 2024, phải trả 15 triệu", [10_000_000, 15_000_000], []),
+        ("vay 10 triệu năm ngoái giờ nợ 30 triệu", [10_000_000, 30_000_000], []),
+        ("vay 10 triệu năm nay", [10_000_000], []),
+        ("vay 3 triệu hai hôm trả 4 triệu", [3_000_000, 4_000_000], [2]),
+        ("vay 3 triệu mười hôm", [3_000_000], [10]),
+        ("góp 2 triệu ba kỳ", [2_000_000], []),
+        ("vay 5 củ ba đợt", [5_000_000], []),
+        ("đóng 500 nghìn hai lần", [500_000], []),
+        ("vay 10 triệu ngày 15 tháng 3", [10_000_000], []),
+        ("vay 8 triệu 810 ngày 15 tháng 3", [8_810_000], []),
+    ],
+)
+def test_ec_ai11_rereview_no_fraction_before_calendar_or_quantifier(
+    text: str, values: list[int], durations: list[int]
+) -> None:
+    """EC-AI11 (re-review blocker 2): "năm 2024/nay/ngoái", "hôm", "kỳ/lần/đợt", ngày tháng
+    đứng sau đơn vị tiền KHÔNG bị cộng làm phần lẻ (trước: "10 triệu năm 2024" → 10,5tr)."""
+    r = normalize_vn_currency_slang(text)
+    assert [m.value_vnd for m in r.money] == values
+    assert [d.days for d in r.durations] == durations
+
+
+def test_ec_ai11_quantifier_marks_follow_up_question() -> None:
+    """ "góp 2 triệu ba kỳ": số tiền chắc, nhưng "ba kỳ" cần hỏi lại (tiền mỗi kỳ hay tổng)."""
+    r = normalize_vn_currency_slang("góp 2 triệu ba kỳ")
+    assert r.money[0].follow_quantity == "ba kỳ"
+    assert r.needs_confirmation
+
+
+@pytest.mark.parametrize(
+    "text",
+    [
+        "vay 3 triệu 30",  # 3,3tr hay 3.030.000?
+        "vay 1 triệu 1234",
+        "vay 3 triệu mười",
+        "vay mấy củ",
+        "vay vài triệu",
+        "góp 1 triệu hai trăm hai tuần",  # 1,2tr/2 tuần hay 1tr/202 tuần?
+        "mười bảy triệu tám mươi một tháng",  # 17,08tr/tháng hay 17tr/81 tháng?
+    ],
+)
+def test_ec_ai11_ambiguous_returns_none_and_flag(text: str) -> None:
+    """Chiến lược mới: mơ hồ → ``value_vnd=None`` + ``ambiguous`` (hỏi lại), KHÔNG đoán."""
+    r = normalize_vn_currency_slang(text)
+    assert r.money
+    assert r.money[0].value_vnd is None
+    assert r.money[0].ambiguous
+    assert r.needs_confirmation
+    assert parse_vnd_amount(text) is None
+
+
+@pytest.mark.parametrize(
+    ("text", "expected"),
+    [
+        ("hai mốt củ", 21_000_000),
+        ("hai lăm triệu", 25_000_000),
+        ("muoi cu ruoi", 10_500_000),
+        ("mot trieu hai tram nghin", 1_200_000),
+        ("nam trieu", 5_000_000),
+    ],
+)
+def test_ec_ai11_rereview_colloquial_tens_and_unaccented(text: str, expected: int) -> None:
+    """EC-AI11 (re-review minor 5): mốt/lăm sau chữ số = hàng chục; số viết không dấu."""
+    assert parse_vnd_amount(text) == expected
+
+
+def test_ec_ai11_unaccented_common_words_not_numbers() -> None:
+    """Không dấu: "sau" (= sau đó), "tam" (= tạm) không bị đọc thành 6/8 khi không có đơn vị."""
+    r = normalize_vn_currency_slang("tra sau ngay giai ngan, tam ngung")
+    assert r.money == ()
+    assert r.durations == ()
+
+
+def test_ec_ai11_moi_bua_is_per_day() -> None:
+    m = normalize_vn_currency_slang("mỗi bữa đóng hai trăm nghìn").money
+    assert [(x.value_vnd, x.per_period_days) for x in m] == [(200_000, 1)]

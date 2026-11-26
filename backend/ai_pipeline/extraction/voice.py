@@ -161,6 +161,15 @@ def transcribe_terms_to_extraction(transcript: str) -> VoiceTermsDraft:
         clause = src[clause_start:clause_end]
         prev_end = m.end
         role = _nearest_role(window, after)
+        if m.value_vnd is None:  # cụm tiền mơ hồ: không đoán, hỏi lại
+            notes.append(f'Chưa nghe rõ số tiền "{m.raw}" — vui lòng nói lại con số.')
+            continue
+        if m.follow_quantity is not None and m.per_period_days is None:
+            notes.append(
+                f'Số tiền {m.value_vnd:,} đồng đi kèm "{m.follow_quantity}" — đây là tiền mỗi kỳ'
+                " hay tổng? Vui lòng xác nhận.".replace(",", ".")
+            )
+            continue
         if m.per_period_days is not None and (m.per_period_explicit or role is None):
             per_period.append((m.value_vnd, m.per_period_days))
             continue

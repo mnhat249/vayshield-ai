@@ -139,3 +139,44 @@ def test_ec_ai11_principal_then_fee_same_clause() -> None:
     ).extraction
     assert e.nominal_principal_vnd == 20_000_000
     assert e.upfront_fee_demand.amount_vnd == 2_000_000
+
+
+def test_ec_ai11_rereview_voice_calendar_year_not_fraction() -> None:
+    """EC-AI11 (re-review blocker 2): "vay 10 triệu năm 2024, phải trả 15 triệu"."""
+    e = transcribe_terms_to_extraction("tôi vay 10 triệu năm 2024, phải trả 15 triệu").extraction
+    assert e.nominal_principal_vnd == 10_000_000
+    assert e.total_repayment_stated_vnd == 15_000_000
+
+
+def test_ec_ai11_rereview_voice_installment_one_month() -> None:
+    """EC-AI11 (re-review blocker 1): "góp một triệu hai một tháng" = 1,2tr mỗi tháng; chưa có
+    thời hạn → không bịa số kỳ, hỏi lại."""
+    draft = transcribe_terms_to_extraction("vay 10 triệu, góp một triệu hai một tháng")
+    assert draft.extraction.nominal_principal_vnd == 10_000_000
+    assert [(m.value_vnd, m.per_period_days) for m in draft.slang_tokens][1] == (1_200_000, 30)
+    assert draft.extraction.repayment_regimes == []
+    assert any("bao lâu" in n for n in draft.extraction.extraction_notes_vi)
+    with_tenure = transcribe_terms_to_extraction(
+        "vay 10 triệu, góp một triệu hai mỗi tháng, trong mười tháng"
+    ).extraction
+    assert [
+        (r.period_count, r.period_interval_days, r.amount_per_period_vnd)
+        for r in with_tenure.repayment_regimes
+    ] == [(10, 30, 1_200_000)]
+
+
+def test_ec_ai11_rereview_voice_quantifier_not_principal() -> None:
+    """ "góp 2 triệu ba kỳ, vay 5 triệu": 2tr KHÔNG phải gốc; hỏi lại ý nghĩa "ba kỳ"."""
+    e = transcribe_terms_to_extraction("góp 2 triệu ba kỳ, vay 5 triệu").extraction
+    assert e.nominal_principal_vnd == 5_000_000
+    assert any("ba kỳ" in n for n in e.extraction_notes_vi)
+
+
+def test_ec_ai11_voice_ambiguous_amount_asks_again() -> None:
+    """Cụm tiền mơ hồ → không gán vào gốc/tổng, ghi chú hỏi lại."""
+    draft = transcribe_terms_to_extraction("vay mấy củ, phải trả 3 triệu 30")
+    e = draft.extraction
+    assert e.nominal_principal_vnd is None
+    assert e.total_repayment_stated_vnd is None
+    assert sum("Chưa nghe rõ số tiền" in n for n in e.extraction_notes_vi) == 2
+    assert draft.needs_confirmation

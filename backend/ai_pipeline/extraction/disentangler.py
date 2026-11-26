@@ -12,6 +12,7 @@ Nguyên tắc D2: hợp nhất không bao giờ hạ cờ cảnh báo (cờ OR, 
 
 from __future__ import annotations
 
+import re
 import unicodedata
 from collections.abc import Sequence
 from dataclasses import dataclass
@@ -75,13 +76,55 @@ def normalize_label(text: str) -> str:
     return " ".join("".join(c if c.isalnum() else " " for c in stripped).split())
 
 
-def brand_key(name: str) -> str:
-    """Khóa thương hiệu: bỏ dấu, chữ thường, bỏ khoảng trắng/ký tự đặc biệt, qua alias.
+# Tiền/hậu tố pháp nhân / quốc gia / loại hình không phân biệt thương hiệu (đã bỏ dấu).
+_BRAND_NOISE = (
+    "cong ty tnhh mot thanh vien",
+    "cong ty co phan",
+    "cong ty tnhh",
+    "cong ty tai chinh",
+    "cong ty",
+    "tai chinh",
+    "viet nam",
+    "vietnam",
+    "vn",
+    "app",
+    "ung dung",
+    "finance",
+    "financial",
+    "jsc",
+    "ltd",
+    "co",
+    "tnhh",
+    "mtv",
+)
+_BRAND_NOISE_RE = re.compile(r"\b(?:" + "|".join(re.escape(w) for w in _BRAND_NOISE) + r")\b")
 
-    "FE Credit" ≡ "fe-credit" ≡ "FECREDIT"; "Tia Chớp" ≡ "Tia Chop"; nhưng "... A" ≠ "... B".
+
+def brand_key(name: str) -> str:
+    """Khóa thương hiệu: bỏ dấu, chữ thường, bỏ tiền/hậu tố chung, bỏ khoảng trắng, qua alias.
+
+    "FE Credit Việt Nam" ≡ "fe-credit" ≡ "FECREDIT"; "Tia Chop App" ≡ "Tia Chớp"; nhưng vẫn so
+    khớp CHÍNH XÁC phần còn lại nên "App Vay Nhanh A" ≠ "App Vay Nhanh B" (EC-AI07).
     """
-    key = normalize_label(name).replace(" ", "")
+    label = normalize_label(name)
+    core = " ".join(_BRAND_NOISE_RE.sub(" ", label).split())
+    key = (core or label).replace(" ", "")
     return BRAND_ALIASES.get(key, key)
+
+
+_PAREN_RE = re.compile(r"[(\[{][^)\]}]*[)\]}]")
+_FEE_PREFIX_RE = re.compile(r"^(?:phi|tien|khoan)\s+")
+
+
+def fee_key(label: str) -> str:
+    """Khóa nhãn phí để khử trùng: bỏ phần trong ngoặc, dấu câu, tiền tố "phí/tiền/khoản".
+
+    "Phí hồ sơ (bắt buộc)" ≡ "Phí hồ sơ:" ≡ "hồ sơ"; "Phí bảo hiểm khoản vay" ≡ "Bảo hiểm khoản
+    vay". Không so khớp mờ — "Phí dịch vụ" ≠ "Phí dịch vụ VIP".
+    """
+    base = normalize_label(_PAREN_RE.sub(" ", label))
+    stripped = _FEE_PREFIX_RE.sub("", base)
+    return stripped or base
 
 
 def page_authority(extraction: MultiImageLoanExtraction) -> int:
@@ -111,6 +154,30 @@ class DisentangleResult:
     irrelevant_pages: tuple[int, ...]
 
 
+def collapse_label_variants(fees: Sequence[DeductedFeeItem]) -> list[DeductedFeeItem]:
+    """Trong MỘT lần đọc: cùng ``fee_key`` + cùng số tiền nhưng nhãn gốc khác cách viết
+    ("Phí hồ sơ:" / "Phí hồ sơ (bắt buộc)") là MỘT khoản ghi hai lần → gộp. Hai khoản nhãn
+    giống hệt nhau giữ nguyên (có thể là 2 khoản thật cùng tên)."""
+    out: list[DeductedFeeItem] = []
+    for fee in fees:
+        key, label = fee_key(fee.fee_label), normalize_label(fee.fee_label)
+        twin = next(
+            (
+                i
+                for i, o in enumerate(out)
+                if fee_key(o.fee_label) == key
+                and o.amount_vnd == fee.amount_vnd
+                and normalize_label(o.fee_label) != label
+            ),
+            None,
+        )
+        if twin is None:
+            out.append(fee)
+        else:
+            out[twin] = _merge_fee(out[twin], fee)
+    return out
+
+
 def dedupe_fees(
     fee_lists: Sequence[Sequence[DeductedFeeItem]],
 ) -> tuple[list[DeductedFeeItem], int]:
@@ -119,9 +186,9 @@ def dedupe_fees(
     total_in = 0
     for fees in fee_lists:
         per_page: dict[tuple[str, int], list[DeductedFeeItem]] = {}
-        for fee in fees:
-            total_in += 1
-            per_page.setdefault((normalize_label(fee.fee_label), fee.amount_vnd), []).append(fee)
+        total_in += len(fees)
+        for fee in collapse_label_variants(fees):
+            per_page.setdefault((fee_key(fee.fee_label), fee.amount_vnd), []).append(fee)
         for key, items in per_page.items():
             existing = merged.setdefault(key, [])
             for idx, item in enumerate(items):
