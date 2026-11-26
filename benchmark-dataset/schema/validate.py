@@ -59,6 +59,7 @@ def _schema_errors(name: str, samples: list[dict[str, Any]]) -> list[str]:
 
 def _check_contract(samples: list[dict[str, Any]]) -> list[str]:
     errs: list[str] = []
+    codes = bc.spec_verdict_codes()
     groups = Counter(s["group"] for s in samples)
     for g, n in groups.items():
         if n != 10:
@@ -69,20 +70,42 @@ def _check_contract(samples: list[dict[str, Any]]) -> list[str]:
             if not (DATA / img["file"]).is_file():
                 errs.append(f"{sid}: missing image {img['file']}")
         flows = [(c["day"], c["amount_vnd"]) for c in s["cashflows"]]
-        apr = bc.xirr_percent(flows)
-        if float(apr) >= 1_000_000:
-            errs.append(f"{sid}: APR saturated ({apr})")
-        if abs(float(apr) - s["expected_apr_percent"]) > 0.005:
-            errs.append(
-                f"{sid}: expected_apr {s['expected_apr_percent']} != recomputed {apr}"
-            )
         f = s["flags"]
+        if s["verdict"] not in codes:
+            errs.append(f"{sid}: verdict {s['verdict']} not one of the 9 spec codes")
+        if f["advance_fee"]:
+            # F_upfront > 0 and P_disbursed == 0: kernel stops, APR/EAR are null (File 2 s4.1)
+            if (
+                s["expected_apr_vn_365"] is not None
+                or s["expected_ear_xirr"] is not None
+            ):
+                errs.append(f"{sid}: advance-fee sample must have null APR/EAR")
+        else:
+            apr = bc.apr_vn_365_percent(flows)
+            if s["expected_apr_vn_365"] is None or (
+                abs(float(apr) - s["expected_apr_vn_365"]) > 0.005
+            ):
+                errs.append(
+                    f"{sid}: expected_apr_vn_365 {s['expected_apr_vn_365']} != recomputed {apr}"
+                )
+            ear = bc.ear_xirr_percent_or_none(flows)
+            want_ear = None if ear is None else float(ear)
+            got_ear = s["expected_ear_xirr"]
+            if (want_ear is None) != (got_ear is None) or (
+                want_ear is not None and abs(want_ear - got_ear) > 0.005
+            ):
+                errs.append(
+                    f"{sid}: expected_ear_xirr {got_ear} != recomputed {want_ear}"
+                )
         v = bc.verdict_for(
-            s["expected_apr_percent"],
+            s["expected_apr_vn_365"],
             advance_fee=f["advance_fee"],
             spoof=f["spoof"],
-            bnpl_cashout=f["bnpl_cashout"],
+            bnpl_or_straw=f["bnpl_cashout"] or f["straw_borrower"],
+            licensed=f["licensed_entity"],
             p2p_over_cap=f["p2p_over_cap"],
+            pawn=f["pawn_contract"],
+            incomplete_doc=f["incomplete_doc"],
         )
         if v != s["verdict"]:
             errs.append(f"{sid}: verdict {s['verdict']} != rule {v}")

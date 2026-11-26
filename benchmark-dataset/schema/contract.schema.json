@@ -10,11 +10,12 @@
     "brand",
     "principal_vnd",
     "cashflows",
-    "expected_apr_percent",
+    "expected_apr_vn_365",
     "verdict",
     "flags",
     "qr_codes",
-    "injection_text"
+    "injection_text",
+    "expected_ear_xirr"
   ],
   "properties": {
     "id": {
@@ -88,16 +89,17 @@
         }
       }
     },
-    "expected_apr_percent": {
-      "type": "number",
-      "minimum": 0
-    },
     "verdict": {
       "enum": [
-        "SAFE",
-        "CAUTION",
-        "DANGER",
-        "BLOCK"
+        "V_RED_ADVANCE_FEE",
+        "V_RED_BRAND_SPOOF",
+        "V_RED_BNPL_OR_STRAW_SCAM",
+        "V_RED_CRIMINAL_USURY",
+        "V_ORANGE_CIVIL_CAP_EXCEEDED",
+        "V_ORANGE_PAWN_HIGH_FEE",
+        "V_YELLOW_HIGH_COST_LICENSED",
+        "V_AMBER_INCOMPLETE_DOC",
+        "V_GREEN_TRANSPARENT"
       ]
     },
     "flags": {
@@ -111,7 +113,11 @@
         "long_scroll",
         "bnpl_cashout",
         "p2p_over_cap",
-        "injection"
+        "injection",
+        "straw_borrower",
+        "licensed_entity",
+        "pawn_contract",
+        "incomplete_doc"
       ],
       "properties": {
         "advance_fee": {
@@ -136,6 +142,18 @@
           "type": "boolean"
         },
         "injection": {
+          "type": "boolean"
+        },
+        "straw_borrower": {
+          "type": "boolean"
+        },
+        "licensed_entity": {
+          "type": "boolean"
+        },
+        "pawn_contract": {
+          "type": "boolean"
+        },
+        "incomplete_doc": {
           "type": "boolean"
         }
       }
@@ -176,6 +194,21 @@
         "string",
         "null"
       ]
+    },
+    "expected_apr_vn_365": {
+      "type": [
+        "number",
+        "null"
+      ],
+      "minimum": 0
+    },
+    "expected_ear_xirr": {
+      "type": [
+        "number",
+        "null"
+      ],
+      "minimum": 0,
+      "maximum": 50000
     }
   }
 }
