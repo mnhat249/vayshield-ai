@@ -3,12 +3,12 @@
 Plan: [`../backend-vayshield.md`](../backend-vayshield.md) · Cập nhật %: `node .claude/scripts/progress.js backend-vayshield --write`
 
 <!-- progress:start -->
-**Tổng tiến độ: 33.6%** `[███████░░░░░░░░░░░░░]` — merged 3/19 task · cập nhật 2026-11-26
+**Tổng tiến độ: 36.0%** `[███████░░░░░░░░░░░░░]` — merged 4/19 task · cập nhật 2026-11-26
 
 | Wave | Tiến độ | | Mốc | Tiến độ |
 |---|---|---|---|---|
 | W0 | 100% | | M0 | 100% |
-| W1 | 59% | | M1 | 48% |
+| W1 | 63% | | M1 | 53% |
 | W2 | 0% | | M2 | 15% |
 | W3 | 0% | | M3 | 25% |
 | W4 | 0% | | M4 | 0% |
@@ -34,7 +34,7 @@ Plan: [`../backend-vayshield.md`](../backend-vayshield.md) · Cập nhật %: `n
 |----|----|------|------|-----|-----------|---------:|-----------|--------|--------|--------|----------|---------|
 | T00 | WP1-06 | Khung FastAPI + contracts M0 | 0 | M0 | – | 2 | merged | task/backend-vayshield/T00 | pass (95✓ 1 skip pg) | approve (sau 1 vòng sửa) | 2026-11-25 | Cần Nhóm 2 duyệt contract |
 | T01 | WP1-01 | PostgreSQL schema + RLS + hash-chain | 1 | M1 | T00 | 10 | merged | task/backend-vayshield/T01 | pass local + CI pg (PR#1) | approve sau sửa (2 major); CI pg xanh | – | |
-| T02 | WP1-03 | Kernel tài chính APR/XIRR/khoảng/MIRR | 1 | M1 | T00 | 8 | verified | task/backend-vayshield/T02 | pass (177✓) | changes (1 major) | – | ≥35 pytest |
+| T02 | WP1-03 | Kernel tài chính APR/XIRR/khoảng/MIRR | 1 | M1 | T00 | 8 | merged | task/backend-vayshield/T02 | pass (177✓) | approve sau sửa (1 major); bản sửa chỉ verify, chưa review lại | – | ≥35 pytest |
 | T03 | WP1-04 | Thị giác đối kháng + VietQR | 1 | M1 | T00 | 10 | verified | task/backend-vayshield/T03 | pass (196✓) | changes (1 blocker, 4 major) | – | |
 | T04 | WP1-05 | Trích xuất LLM + Conformal + Voice | 1 | M1 | T00 | 12 | running | task/backend-vayshield/T04 | – | – | – | |
 | T05 | WP1-07 | Redis HSM + Lua smurf + idempotency | 1 | M2 | T00 | 8 | running | task/backend-vayshield/T05 | – | – | – | |
@@ -67,3 +67,4 @@ Plan: [`../backend-vayshield.md`](../backend-vayshield.md) · Cập nhật %: `n
 | 2026-11-25 | Người dùng dừng toàn bộ agent. Handoff: .claude/handoff/2026-11-25-backend-vayshield-wave1.md |
 | 2026-11-26 | Người dùng bảo tiếp tục. CI T01: 1 test fail (test lỗi thời sau khi nới CHECK) → agent T01 sửa. T02, T03: agent mới chạy trên worktree cũ để làm nốt sửa review. T04–T06 để lượt sau (giữ ≤3 agent/lượt) |
 | 2026-11-26 | T01 merged (approve sau sửa (2 major); CI pg xanh) |
+| 2026-11-26 | T02 merged (approve sau sửa (1 major); bản sửa chỉ verify, chưa review lại) |
