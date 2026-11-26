@@ -1,7 +1,7 @@
 """Sổ đăng ký pháp nhân cho vay được cấp phép (File 1 §1.2; bảng ``licensed_lender_registry``).
 
 ``LenderRegistry`` là Protocol thuần đọc; bản in-memory dùng cho test/Sandbox. Repo PostgreSQL
-(đọc ``licensed_lender_registry`` do T08 seed) cài đặt cùng Protocol ở task khác.
+(đọc ``licensed_lender_registry`` do T08 seed) ở ``app.verdict.registry_pg.PgLenderRegistry``.
 """
 
 from __future__ import annotations

@@ -48,10 +48,11 @@ def _monthly(principal: int, installment: int, n: int, fee: int = 0) -> tuple[Ca
 
 
 def test_s2_ec13_flat_rate_ad_contradiction_uses_real_cashflow(decide: Decide) -> None:
-    """S2-EC13 / §1.3: "1,2%/tháng" nhưng trả 1.350.000đ × 12 cho 10tr → APR thật ~96%/năm."""
+    """S2-EC13 / §1.3: "1,2%/tháng" nhưng trả 1.350.000đ × 12 cho 10tr → APR thật ~101,4%/năm."""
     flows = _monthly(10_000_000, 1_350_000, 12)
     report = analyze_cashflows(flows)
-    # Kỳ 30 ngày thực (Actual/365) → ~101%/năm (đặc tả ước ~96,5% theo 12 kỳ/năm).
+    # Đặc tả ghi "~96,5%/năm" là SAI: giải APR_VN-365 đúng (12 kỳ × 30 ngày, Actual/365) ra
+    # ~101,4%/năm, tức cận dưới >= 100% → tín dụng đen.
     assert report.apr_primary is not None and 0.95 < report.apr_primary < 1.05
     inp = VerdictInput(
         claimed_lender_name="Vay Siêu Tốc", stated_annual_rate=0.144, cashflows=flows
@@ -307,6 +308,7 @@ _LAW_TEXT = re.compile(
 
 def _all_verdicts(decide: Decide) -> list[object]:
     hc = VerdictInput(claimed_lender_name="Home Credit")
+    ok = Provenance(apk_signature_ok=True)
     return [
         decide(VerdictInput(upfront_fee_demand=UpfrontFeeDemand(demanded=True)), apr(0.1)),
         decide(VerdictInput(claimed_lender_name="Shinhan Vay Nhanh"), apr(0.3)),
@@ -317,9 +319,9 @@ def _all_verdicts(decide: Decide) -> list[object]:
             VerdictInput(claimed_lender_name="Cầm Đồ Kimlong Demo", is_pawn_asset_secured=True),
             apr(0.5),
         ),
-        decide(hc, apr(0.5)),
+        decide(hc, apr(0.5), ok),
         decide(hc, AprInterval.unavailable("X")),
-        decide(hc, apr(0.2)),
+        decide(hc, apr(0.2), ok),
     ]
 
 
@@ -372,3 +374,45 @@ def test_input_validation(kwargs: dict[str, object]) -> None:
 def test_rollover_terms_validation() -> None:
     with pytest.raises(VerdictInputError):
         RolloverTerms(principal_vnd=1, extension_fee_vnd=1, extension_period_days=0)
+
+
+def test_advance_fee_hides_apr_from_reasons_and_rollover(decide: Decide) -> None:
+    """Review minor: nhãn ẩn APR không lộ lãi suất qua lý do hay ``rollover.period_apr``."""
+    inp = VerdictInput(
+        stated_annual_rate=0.12,
+        upfront_fee_demand=UpfrontFeeDemand(demanded=True, amount_vnd=500_000),
+        rollover=RolloverTerms(
+            principal_vnd=10_000_000, extension_fee_vnd=1_800_000, extension_period_days=7
+        ),
+    )
+    v = decide(inp, apr(0.5, 1.2))
+    assert v.verdict_code is V.V_RED_ADVANCE_FEE
+    assert v.rollover is None
+    assert not any("%" in r for r in v.reasons_vi)
+    assert "%" not in v.tts_script
+
+
+def test_legal_basis_has_no_invented_tctd_d100() -> None:
+    assert "TCTD_2024_D100" not in ALL_LEGAL_BASIS_IDS
+    assert LEGAL_BASIS_BY_VERDICT[V.V_YELLOW_HIGH_COST_LICENSED] == (
+        "TCTD_2024_D15",
+        "TT_43_2016_NHNN",
+    )
+
+
+@pytest.mark.parametrize(
+    "name", ["Home Credit Việt Nam", "Công ty Tài chính Home Credit", "HOME CREDIT VN"]
+)
+def test_s2_ec16_real_name_variant_with_verified_apk_is_not_spoof(
+    decide: Decide, registry: InMemoryLenderRegistry, name: str
+) -> None:
+    """Review BLOCKER: tên thật + từ chung chung, chữ ký APK đúng → EXACT, không RED_BRAND_SPOOF."""
+    inp = VerdictInput(claimed_lender_name=name)
+    ok = Provenance(apk_signature_ok=True)
+    m = match_lender(inp, ok, registry)
+    assert m.status is MatchStatus.EXACT and m.record is HOME_CREDIT
+    v = decide(inp, apr(0.30), ok)
+    assert v.verdict_code is V.V_GREEN_TRANSPARENT
+    assert V.V_RED_BRAND_SPOOF not in v.fired_rules
+    # Chỉ có ảnh chụp: không mạo danh nhưng tối đa AMBER (chưa xác thực kênh).
+    assert decide(inp, apr(0.30)).verdict_code is V.V_AMBER_INCOMPLETE_DOC

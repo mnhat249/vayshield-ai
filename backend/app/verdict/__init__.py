@@ -36,6 +36,7 @@ from app.verdict.registry import (
     LenderRecord,
     LenderRegistry,
 )
+from app.verdict.registry_pg import PgLenderRegistry
 
 __all__ = [
     "ALL_LEGAL_BASIS_IDS",
@@ -54,6 +55,7 @@ __all__ = [
     "LenderRecord",
     "LenderRegistry",
     "MatchStatus",
+    "PgLenderRegistry",
     "Provenance",
     "RolloverTerms",
     "SpecialMorphology",

@@ -136,3 +136,64 @@ def test_unrelated_domain_no_match(registry: InMemoryLenderRegistry) -> None:
 
 def test_normalize_host() -> None:
     assert normalize_host("HTTPS://WWW.FeCredit.com.vn:443/a?b=1") == "fecredit.com.vn"
+
+
+@pytest.mark.parametrize(
+    ("name", "target"),
+    [
+        ("Home Credit Việt Nam", HOME_CREDIT),
+        ("Công ty Tài chính Home Credit", HOME_CREDIT),
+        ("HOME CREDIT VN", HOME_CREDIT),
+        ("Shinhan Finance Việt Nam", SHINHAN),
+        ("Vietcombank VN", VIETCOMBANK),
+        ("Ngân hàng Vietcombank", VIETCOMBANK),
+        ("Công ty Tài chính FE Credit", FE_CREDIT),
+    ],
+)
+def test_ec16_real_name_variants_with_benign_words_are_exact_core(
+    registry: InMemoryLenderRegistry, name: str, target: object
+) -> None:
+    """Review BLOCKER (test âm S2-EC16): tên thật + "Việt Nam"/"VN"/"Công ty Tài chính" KHÔNG
+    phải tên nhái."""
+    hit = detect_lookalike_brand(name, registry)
+    assert hit.status is MatchStatus.EXACT, (name, hit)
+    assert hit.method == "EXACT_CORE"
+    assert hit.record is target
+
+
+@pytest.mark.parametrize(
+    "name", ["Home Credit Vay Nhanh", "Vietcombank Online 24h", "FE Credit Quốc Tế"]
+)
+def test_ec16_suspicious_suffix_blocks_exact_core(
+    registry: InMemoryLenderRegistry, name: str
+) -> None:
+    assert detect_lookalike_brand(name, registry).status is MatchStatus.LOOKALIKE
+
+
+@pytest.mark.parametrize("name", ["Credit Nhanh", "MCredit", "Home Pay", "Vietcom"])
+def test_ec16_weak_or_short_cores_not_assigned_to_brand(
+    registry: InMemoryLenderRegistry, name: str
+) -> None:
+    """Review minor: lõi ngắn/token phổ biến không bị gán là nhái FE Credit / Home Credit / VCB."""
+    assert detect_lookalike_brand(name, registry).status is MatchStatus.NONE
+
+
+@pytest.mark.parametrize("domain", ["credit.vn", "vietcom.vn", "mcredit.vn"])
+def test_ec16_short_domain_labels_not_assigned_to_brand(
+    registry: InMemoryLenderRegistry, domain: str
+) -> None:
+    assert detect_lookalike_domain(domain, registry).status is MatchStatus.NONE
+
+
+def test_ec16_ambiguous_core_shared_by_two_entities_is_not_exact() -> None:
+    from app.core.schemas.common import LegalCategory
+    from app.verdict import LenderRecord
+
+    bank = LenderRecord(
+        entity_code="BANK_SHINHAN",
+        legal_category=LegalCategory.COMMERCIAL_BANK,
+        official_short_name="Shinhan Bank",
+        official_legal_name="Ngân hàng TNHH MTV Shinhan Việt Nam",
+    )
+    reg = InMemoryLenderRegistry([SHINHAN, bank])
+    assert detect_lookalike_brand("Shinhan Việt Nam", reg).method != "EXACT_CORE"

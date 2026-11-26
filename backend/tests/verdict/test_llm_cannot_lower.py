@@ -57,8 +57,9 @@ def test_stated_rate_from_ad_never_replaces_real_apr(decide: Decide) -> None:
     """S2-EC13: "1,2%/tháng" (14,4%/năm) trên quảng cáo không làm phán quyết nhẹ đi."""
     base = VerdictInput(claimed_lender_name="Home Credit")
     with_ad = replace(base, stated_annual_rate=0.144)
-    v = decide(with_ad, apr(0.965))
-    assert v.verdict_code is decide(base, apr(0.965)).verdict_code
+    ok = Provenance(apk_signature_ok=True)
+    v = decide(with_ad, apr(0.965), ok)
+    assert v.verdict_code is decide(base, apr(0.965), ok).verdict_code
     assert v.verdict_code is V.V_YELLOW_HIGH_COST_LICENSED
 
 
@@ -110,6 +111,7 @@ _RISK_FLAGS = (
     "apk_bad",
     "personal_account",
     "frozen_notice",
+    "pawn_flip",
 )
 
 
@@ -132,6 +134,8 @@ def _apply(inp: VerdictInput, prov: Provenance, flag: str) -> tuple[VerdictInput
         return replace(inp, distinct_loan_brands_count=2), prov
     if flag == "apk_bad":
         return inp, replace(prov, apk_signature_ok=False)
+    if flag == "pawn_flip":  # cờ cầm cố do LLM: lật chiều nào cũng không được hạ mức
+        return replace(inp, is_pawn_asset_secured=not inp.is_pawn_asset_secured), prov
     if flag == "personal_account":
         return inp, replace(prov, beneficiary_is_personal_account=True)
     return inp, replace(prov, account_frozen_notice=True)
@@ -185,3 +189,28 @@ def test_higher_apr_never_lowers_severity_for_same_lender(
     low = _run(inp, apr(lo), prov)
     high = _run(inp, apr(lo + bump), prov)
     assert _rank(high) <= _rank(low), (low, high)
+
+
+@settings(max_examples=300, deadline=None)
+@given(
+    name=_names,
+    lo=st.floats(0, 3),
+    width=st.floats(0, 1),
+    extra=st.floats(0, 2),
+    apk=st.sampled_from([None, True]),
+    principal=st.sampled_from([None, 50_000_000, 150_000_000]),
+)
+def test_widening_upper_bound_never_lowers_severity(
+    name: str | None,
+    lo: float,
+    width: float,
+    extra: float,
+    apk: bool | None,
+    principal: int | None,
+) -> None:
+    """Review A: nới rộng cận trên khoảng nhạy (thêm bất định) không bao giờ hạ nhãn."""
+    inp = VerdictInput(claimed_lender_name=name, principal_vnd=principal)
+    prov = Provenance(apk_signature_ok=apk)
+    narrow = _run(inp, apr(lo, lo + width), prov)
+    wide = _run(inp, apr(lo, lo + width + extra), prov)
+    assert _rank(wide) <= _rank(narrow), (narrow, wide)

@@ -7,15 +7,20 @@ Thuật toán tất định:
    tên pháp nhân / alias của 1 pháp nhân, hoặc host trùng (hay là subdomain của) domain chính thức.
 3. Nếu không khớp chính xác với bất kỳ pháp nhân nào → **khớp mờ** trên "lõi thương hiệu" (bỏ từ
    chung chung: công ty, tài chính, vay nhanh, quốc tế…) sau khi quy ký tự đồng hình (Cyrillic,
-   ``0→o``, ``1→i``): ``score = (JaroWinkler + Levenshtein chuẩn hóa) / 2``. ``score > 0.78`` hoặc
-   lõi thương hiệu này chứa trọn lõi kia (vd "Tín dụng FE Việt" ⊂ "FE Credit") → ``LOOKALIKE``.
+   ``0→o``, ``1→i``): ``score = (JaroWinkler + Levenshtein chuẩn hóa) / 2``. ``score > 0.78`` (lõi
+   >= 4 ký tự, độ dài lệch <= 20%, cùng ký tự đầu) hoặc lõi này chứa trọn lõi kia qua 1 token
+   thương hiệu "mạnh" (vd "Tín dụng FE Việt" ⊂ "FE Credit") → ``LOOKALIKE``.
+
+Trước bước 3: ``EXACT_CORE`` nếu lõi thương hiệu (không quy đồng hình) trùng đúng 1 pháp nhân và
+phần còn lại chỉ là từ chung chung lành ("Home Credit Việt Nam", "Vietcombank VN"). Hậu tố đáng
+ngờ ("Vay Nhanh", "Quốc Tế"…) chặn EXACT_CORE để vẫn bắt tên nhái.
 """
 
 from __future__ import annotations
 
 import re
 import unicodedata
-from collections.abc import Iterable
+from collections.abc import Iterable, Sequence
 from dataclasses import dataclass
 from enum import StrEnum
 from typing import Final
@@ -62,61 +67,39 @@ _HOMOGLYPHS: Final = str.maketrans(
     }
 )
 
-# Từ chung chung không mang tính thương hiệu (đã bỏ dấu).
-_GENERIC_TOKENS: Final = frozenset(
+# Từ chung chung "lành": hình thức pháp lý / địa danh / ngành. Tên thật thường thêm các từ này
+# ("Home Credit Việt Nam", "Công ty Tài chính Home Credit") → vẫn là EXACT_CORE.
+_BENIGN_GENERIC_TOKENS: Final = frozenset(
     {
-        "cong",
-        "ty",
-        "tnhh",
-        "mtv",
-        "mot",
-        "thanh",
-        "vien",
-        "trach",
-        "nhiem",
-        "huu",
-        "han",
-        "co",
-        "phan",
-        "cp",
-        "tmcp",
-        "thuong",
-        "mai",
-        "jsc",
-        "ltd",
-        "limited",
-        "company",
-        "group",
-        "tai",
-        "chinh",
-        "tin",
-        "dung",
-        "tieu",
-        "ngan",
-        "hang",
-        "bank",
-        "finance",
-        "financial",
-        "vay",
-        "tien",
-        "nhanh",
-        "online",
-        "app",
-        "viet",
-        "nam",
-        "vietnam",
-        "vn",
-        "quoc",
-        "te",
-        "international",
-        "dich",
-        "vu",
-        "so",
-        "digital",
-        "the",
-        "va",
+        "cong", "ty", "tnhh", "mtv", "mot", "thanh", "vien", "trach", "nhiem", "huu", "han",
+        "co", "phan", "cp", "tmcp", "thuong", "mai", "jsc", "ltd", "limited", "company", "group",
+        "tai", "chinh", "tin", "dung", "tieu", "ngan", "hang", "bank", "finance", "financial",
+        "viet", "nam", "vietnam", "vn", "the", "va",
     }
-)
+)  # fmt: skip
+
+# Hậu tố "đáng ngờ" hay gặp ở tên nhái ("Shinhan Vay Nhanh", "HomeCredit Quốc Tế"): bị bỏ khi
+# lấy lõi thương hiệu nhưng KHÔNG cho phép kết luận EXACT_CORE (S2-EC16).
+_SUSPICIOUS_GENERIC_TOKENS: Final = frozenset(
+    {
+        "vay", "tien", "nhanh", "online", "app", "quoc", "te", "international", "dich", "vu",
+        "so", "digital", "24h", "24", "7", "sieu", "toc", "gap", "ho", "tro", "uu", "dai",
+    }
+)  # fmt: skip
+
+_GENERIC_TOKENS: Final = _BENIGN_GENERIC_TOKENS | _SUSPICIOUS_GENERIC_TOKENS
+
+# Token thương hiệu "yếu" (quá phổ biến): trùng riêng các token này không đủ kết luận nhái.
+_WEAK_BRAND_TOKENS: Final = frozenset(
+    {
+        "credit", "home", "pay", "money", "cash", "lend", "loan", "smart", "easy", "fast",
+        "plus", "pro", "shop", "mobile", "card", "fin", "vi",
+    }
+)  # fmt: skip
+
+_MIN_CORE_LEN: Final = 3
+_MIN_FUZZY_LEN: Final = 4
+_MIN_LEN_RATIO: Final = 0.8
 
 
 class MatchStatus(StrEnum):
@@ -130,7 +113,8 @@ class BrandMatch:
     status: MatchStatus
     record: LenderRecord | None = None
     score: float = 0.0
-    method: str | None = None  # EXACT_NAME | EXACT_DOMAIN | FUZZY | TOKEN_CONTAINMENT
+    # EXACT_NAME | EXACT_CORE | EXACT_DOMAIN | EXACT_PACKAGE | FUZZY | TOKEN_CONTAINMENT
+    method: str | None = None
 
 
 NO_MATCH: Final = BrandMatch(MatchStatus.NONE)
@@ -157,6 +141,15 @@ def brand_core(text: str) -> tuple[str, ...]:
     return tuple(t for t in _skeleton_tokens(text) if t not in _GENERIC_TOKENS)
 
 
+def _raw_core(text: str) -> tuple[str, ...]:
+    """Lõi thương hiệu KHÔNG quy đồng hình (để "H0me Credit" không thành EXACT_CORE)."""
+    return tuple(t for t in normalize_text(text).split() if t not in _GENERIC_TOKENS)
+
+
+def _has_suspicious_suffix(text: str) -> bool:
+    return any(t in _SUSPICIOUS_GENERIC_TOKENS for t in normalize_text(text).split())
+
+
 def _score(a: str, b: str) -> float:
     if not a or not b:
         return 0.0
@@ -169,11 +162,23 @@ def brand_similarity(a: str, b: str) -> float:
 
 
 def _contains(core_in: tuple[str, ...], core_ref: tuple[str, ...]) -> bool:
+    """Lõi này chứa trọn lõi kia và phần chung có ít nhất 1 token thương hiệu "mạnh"."""
     if not core_in or not core_ref:
         return False
     a, b = set(core_in), set(core_ref)
-    shared = a & b
-    return (a <= b or b <= a) and len("".join(shared)) >= 2
+    strong = (a & b) - _WEAK_BRAND_TOKENS
+    return (a <= b or b <= a) and len("".join(strong)) >= 2
+
+
+def _fuzzy_ok(a: str, b: str, threshold: float) -> tuple[bool, float]:
+    """Khớp mờ chỉ khi đủ dài, độ dài tương đương và cùng ký tự đầu (tránh "MCredit" → FE
+    Credit, "vietcom" → Vietcombank)."""
+    score = _score(a, b)
+    if min(len(a), len(b)) < _MIN_FUZZY_LEN or a[0] != b[0]:
+        return False, score
+    if min(len(a), len(b)) / max(len(a), len(b)) < _MIN_LEN_RATIO:
+        return False, score
+    return score > threshold, score
 
 
 def _best_fuzzy(
@@ -186,15 +191,34 @@ def _best_fuzzy(
     best = NO_MATCH
     for record, name in candidates:
         core_ref = brand_core(name)
-        score = _score(compact_in, "".join(core_ref))
-        method = "FUZZY"
-        if score <= threshold and _contains(core_in, core_ref):
-            method = "TOKEN_CONTAINMENT"
-        elif score <= threshold:
+        compact_ref = "".join(core_ref)
+        if not compact_ref:
             continue
+        ok, score = _fuzzy_ok(compact_in, compact_ref, threshold)
+        method = "FUZZY"
+        if not ok:
+            if not _contains(core_in, core_ref):
+                continue
+            method = "TOKEN_CONTAINMENT"
         if best.status is MatchStatus.NONE or score > best.score:
             best = BrandMatch(MatchStatus.LOOKALIKE, record, score, method)
     return best
+
+
+def _exact_core(name: str, records: Sequence[LenderRecord]) -> BrandMatch | None:
+    """Lõi thương hiệu trùng hoàn toàn đúng 1 pháp nhân, phần khác chỉ là từ chung chung "lành"
+    → ``EXACT_CORE``. Có hậu tố đáng ngờ hoặc lõi trùng nhiều pháp nhân → ``None``."""
+    if _has_suspicious_suffix(name):
+        return None
+    core = "".join(_raw_core(name))
+    if len(core) < _MIN_CORE_LEN:
+        return None
+    hits = {
+        r.entity_code: r for r in records for n in r.names if n and "".join(_raw_core(n)) == core
+    }
+    if len(hits) != 1:
+        return None
+    return BrandMatch(MatchStatus.EXACT, next(iter(hits.values())), 1.0, "EXACT_CORE")
 
 
 def detect_lookalike_brand(
@@ -212,6 +236,9 @@ def detect_lookalike_brand(
     for record in records:
         if any(compact == _compact(n) for n in record.names if n):
             return BrandMatch(MatchStatus.EXACT, record, 1.0, "EXACT_NAME")
+    core_hit = _exact_core(name, records)
+    if core_hit is not None:
+        return core_hit
     pairs = [(r, n) for r in records for n in r.names if n]
     return _best_fuzzy(pairs, name, threshold)
 
@@ -260,11 +287,13 @@ def detect_lookalike_domain(
             ref = "".join(_skeleton_tokens(_registrable_label(normalize_host(official))))
             if len(ref) < 3:
                 continue
-            score = max(_score(label, ref) for label in labels)
+            results = [_fuzzy_ok(label, ref, threshold) for label in labels if label]
+            ok = any(r[0] for r in results)
+            score = max((r[1] for r in results), default=0.0)
             method = "FUZZY"
-            if score <= threshold:
+            if not ok:
                 # Thương hiệu bị nhét vào subdomain / ghép chữ: "homecredit.vn.vay-nhanh.xyz".
-                if ref not in host_compact:
+                if len(ref) < 5 or ref not in host_compact:
                     continue
                 method = "TOKEN_CONTAINMENT"
             if best.status is MatchStatus.NONE or score > best.score:

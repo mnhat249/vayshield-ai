@@ -71,6 +71,14 @@ RULE_PRIORITY: Final[tuple[VerdictCode, ...]] = (
     VerdictCode.V_GREEN_TRANSPARENT,
 )
 
+_APR_BEARING_REASONS: Final = frozenset(
+    {
+        Contradiction.STATED_RATE_CONTRADICTION,
+        Contradiction.LOAN_EXTENSION_FEE,
+        Contradiction.INTERVAL_CROSSES_LEGAL_THRESHOLD,
+    }
+)
+
 _LICENSED_TCTD: Final = frozenset({LegalCategory.COMMERCIAL_BANK, LegalCategory.LICENSED_FINCO})
 _NON_TCTD_REGISTERED: Final = frozenset(
     {LegalCategory.P2P_SANDBOX, LegalCategory.BNPL_WALLET_PROVIDER}
@@ -148,7 +156,9 @@ def _lender_path(
     if category in _LICENSED_TCTD:
         return LenderPath.LICENSED_TCTD
     if category is LegalCategory.LICENSED_PAWN_CHAIN:
-        return LenderPath.PAWN_CHAIN if extraction.is_pawn_asset_secured else LenderPath.UNLICENSED
+        # Nhánh cầm đồ do REGISTRY quyết định; cờ ``is_pawn_asset_secured`` (LLM) không mở nhánh
+        # nhẹ hơn cho bên không phép, và cũng không đẩy chuỗi cầm đồ sang nhánh khác.
+        return LenderPath.PAWN_CHAIN
     if category in _NON_TCTD_REGISTERED:
         return LenderPath.REGISTERED_NON_TCTD
     return LenderPath.UNLICENSED
@@ -160,6 +170,7 @@ def _financial_rule(
     *,
     bundled_insurance: bool,
     p2p_over_cap: bool,
+    channel_verified: bool,
     contradictions: list[Contradiction],
 ) -> VerdictCode:
     lo, hi = interval.apr_min, interval.apr_max
@@ -168,6 +179,11 @@ def _financial_rule(
         return VerdictCode.V_AMBER_INCOMPLETE_DOC
 
     if path is LenderPath.LICENSED_TCTD:
+        if not channel_verified:
+            # Quyết định của người dùng: chỉ có ảnh chụp (chưa kiểm chữ ký APK) thì tên khớp
+            # ngân hàng/FinCo cũng không đủ để ra XANH/VÀNG CAM → tối đa AMBER.
+            contradictions.append(Contradiction.LENDER_NOT_VERIFIED)
+            return VerdictCode.V_AMBER_INCOMPLETE_DOC
         if bundled_insurance:
             contradictions.append(Contradiction.BUNDLED_INSURANCE)
         if hi > HIGH_COST_THRESHOLD or bundled_insurance:
@@ -177,25 +193,31 @@ def _financial_rule(
     # Mọi chủ thể không phải ngân hàng / FinCo: kiểm mốc hình sự 100%/năm trên cận dưới.
     if lo >= CRIMINAL_USURY_FLOOR:
         return VerdictCode.V_RED_CRIMINAL_USURY
-    if interval_crosses((lo, hi), CRIMINAL_USURY_FLOOR):
+    # Trần dân sự 20%/năm kèm dung sai biên ±0,5 điểm % (S2-EC42).
+    above_civil = compare_to_legal_cap(lo, CIVIL_CAP) is LegalCapPosition.ABOVE
+    crosses_civil = (
+        not above_civil and compare_to_legal_cap(hi, CIVIL_CAP) is LegalCapPosition.ABOVE
+    )
+    if crosses_civil or interval_crosses((lo, hi), CRIMINAL_USURY_FLOOR):
         contradictions.append(Contradiction.INTERVAL_CROSSES_LEGAL_THRESHOLD)
-        return VerdictCode.V_AMBER_INCOMPLETE_DOC
 
     if path is LenderPath.PAWN_CHAIN:
-        if hi > HIGH_COST_THRESHOLD:
+        if above_civil:  # cận dưới đã > 20,5%: tối thiểu CAM (khoảng cắt 100% không hạ nhãn)
             return VerdictCode.V_ORANGE_PAWN_HIGH_FEE
-        return VerdictCode.V_GREEN_TRANSPARENT
+        return (
+            VerdictCode.V_AMBER_INCOMPLETE_DOC
+            if crosses_civil
+            else (VerdictCode.V_GREEN_TRANSPARENT)
+        )
 
-    # Trần dân sự 20%/năm kèm dung sai biên ±0,5 điểm % (S2-EC42).
-    if compare_to_legal_cap(lo, CIVIL_CAP) is LegalCapPosition.ABOVE:
+    if above_civil:  # chắc chắn vượt trần dân sự dù cận trên có cắt mốc 100% (S2-EC41)
         return VerdictCode.V_ORANGE_CIVIL_CAP_EXCEEDED
-    if compare_to_legal_cap(hi, CIVIL_CAP) is LegalCapPosition.ABOVE:
-        contradictions.append(Contradiction.INTERVAL_CROSSES_LEGAL_THRESHOLD)
+    if p2p_over_cap:  # vi phạm hạn mức Sandbox (S2-EC17) — xét trước nhánh cắt mốc 20%
+        return VerdictCode.V_ORANGE_CIVIL_CAP_EXCEEDED
+    if crosses_civil:
         return VerdictCode.V_AMBER_INCOMPLETE_DOC
     if path is LenderPath.REGISTERED_NON_TCTD:
         return VerdictCode.V_GREEN_TRANSPARENT
-    if p2p_over_cap:
-        return VerdictCode.V_ORANGE_CIVIL_CAP_EXCEEDED  # vi phạm hạn mức Sandbox (S2-EC17)
     contradictions.append(Contradiction.LENDER_NOT_VERIFIED)
     return VerdictCode.V_AMBER_INCOMPLETE_DOC
 
@@ -324,12 +346,16 @@ def decide_verdict(
                 interval,
                 bundled_insurance=has_bundled_insurance(extraction.deducted_fees),
                 p2p_over_cap=p2p_over_cap,
+                channel_verified=provenance.apk_signature_ok is True,
                 contradictions=contradictions,
             )
         )
 
-    # Cổng đủ chứng từ (chặng 5): chỉ thêm ứng viên AMBER, không gỡ luật nào khác. Thiếu trang
-    # chỉ có thể giấu thêm chi phí, nên cận dưới APR vẫn đúng và nhãn nặng hơn được giữ.
+    # Cổng đủ chứng từ (chặng 5): chỉ thêm ứng viên AMBER, không gỡ luật nào khác (cờ do LLM đặt
+    # không được hạ nhãn nặng hơn). GIẢ ĐỊNH với T11: ``apr_interval`` chỉ được dựng từ kỳ hạn /
+    # lịch trả THỰC SỰ đọc được; nếu thiếu trang làm khuyết kỳ hạn thì T11 phải truyền
+    # ``AprInterval.unavailable(...)`` (→ AMBER) hoặc khoảng phủ mọi kỳ hạn khả dĩ. Khi đó cận
+    # dưới APR là đúng và V_RED_CRIMINAL_USURY (cận dưới >= 100%) được giữ (File 2 §1.3).
     if extraction.missing_critical_page_suspected:
         contradictions.append(Contradiction.MISSING_CRITICAL_PAGE)
         fired.add(VerdictCode.V_AMBER_INCOMPLETE_DOC)
@@ -411,6 +437,8 @@ def _build(
 
     reasons = [reason_text(code, **values)]
     for item in contradictions:
+        if hide_apr and item in _APR_BEARING_REASONS:
+            continue  # nhãn ẩn APR: không lộ con số lãi suất qua lý do
         extra = dict(values)
         if item is Contradiction.LOAN_EXTENSION_FEE and "rollover_apr" in values:
             extra["apr"] = values["rollover_apr"]
@@ -459,5 +487,5 @@ def _build(
         official_hotline_verify=hotline,
         c_loss_vnd=c_loss,
         lost_workdays=lost_days,
-        rollover=spiral,
+        rollover=None if hide_apr else spiral,
     )

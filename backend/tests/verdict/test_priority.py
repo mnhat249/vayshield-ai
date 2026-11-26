@@ -97,6 +97,6 @@ def test_all_red_rules_at_once_yield_advance_fee(decide: Decide) -> None:
 
 def test_fired_rules_sorted_by_priority(decide: Decide) -> None:
     inp = replace(VerdictInput(claimed_lender_name="Home Credit"), distinct_loan_brands_count=3)
-    v = decide(inp, apr(0.5))
+    v = decide(inp, apr(0.5), Provenance(apk_signature_ok=True))
     assert v.fired_rules == (V.V_YELLOW_HIGH_COST_LICENSED, V.V_AMBER_INCOMPLETE_DOC)
     assert v.verdict_code is V.V_YELLOW_HIGH_COST_LICENSED

@@ -17,7 +17,6 @@ BLHS_2015_D201: Final = "BLHS_2015_D201"  # cho vay lãi nặng
 NQ_01_2021_HDTP: Final = "NQ_01_2021_HDTP"  # hướng dẫn Điều 201
 BLDS_2015_D468: Final = "BLDS_2015_D468"  # trần lãi dân sự
 TCTD_2024_D15: Final = "TCTD_2024_D15"  # bảo hiểm không bắt buộc
-TCTD_2024_D100: Final = "TCTD_2024_D100"  # lãi suất thỏa thuận của TCTD
 TT_43_2016_NHNN: Final = "TT_43_2016_NHNN"  # cho vay tiêu dùng của công ty tài chính
 TT_18_2019_NHNN: Final = "TT_18_2019_NHNN"  # quy đổi lãi suất theo năm 365 ngày
 ND_94_2025: Final = "ND_94_2025"  # cơ chế thử nghiệm P2P
@@ -29,7 +28,6 @@ ALL_LEGAL_BASIS_IDS: Final = frozenset(
         NQ_01_2021_HDTP,
         BLDS_2015_D468,
         TCTD_2024_D15,
-        TCTD_2024_D100,
         TT_43_2016_NHNN,
         TT_18_2019_NHNN,
         ND_94_2025,
@@ -44,7 +42,7 @@ LEGAL_BASIS_BY_VERDICT: Final = MappingProxyType(
         VerdictCode.V_RED_CRIMINAL_USURY: (BLHS_2015_D201, NQ_01_2021_HDTP, BLDS_2015_D468),
         VerdictCode.V_ORANGE_CIVIL_CAP_EXCEEDED: (BLDS_2015_D468,),
         VerdictCode.V_ORANGE_PAWN_HIGH_FEE: (BLDS_2015_D468, TT_18_2019_NHNN),
-        VerdictCode.V_YELLOW_HIGH_COST_LICENSED: (TCTD_2024_D100, TCTD_2024_D15, TT_43_2016_NHNN),
+        VerdictCode.V_YELLOW_HIGH_COST_LICENSED: (TCTD_2024_D15, TT_43_2016_NHNN),
         VerdictCode.V_AMBER_INCOMPLETE_DOC: (TT_18_2019_NHNN,),
         VerdictCode.V_GREEN_TRANSPARENT: (TT_18_2019_NHNN,),
     }

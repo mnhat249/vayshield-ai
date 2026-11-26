@@ -67,7 +67,7 @@ def test_advance_fee_boundary_fee_deducted_at_source_is_not_advance_fee(decide: 
         net_disbursed_vnd=8_500_000,
         deducted_fees=(DeductedFee(label="Phí hồ sơ", amount_vnd=1_500_000),),
     )
-    v = decide(inp, apr(0.30))
+    v = decide(inp, apr(0.30), APK_OK)
     assert v.verdict_code is not V.V_RED_ADVANCE_FEE
     assert v.kernel_signal is None
     assert v.verdict_code is V.V_GREEN_TRANSPARENT
@@ -110,7 +110,7 @@ def test_brand_spoof_positive_licensed_name_with_usury_rate_unverified(decide: D
 
 def test_brand_spoof_boundary_rate_just_below_100_or_channel_verified(decide: Decide) -> None:
     """Biên: cận dưới 99,99% hoặc kênh đã xác thực chữ ký → không phải mạo danh."""
-    assert decide(HC, apr(0.9999, 1.5)).verdict_code is V.V_YELLOW_HIGH_COST_LICENSED
+    assert decide(HC, apr(0.9999, 1.5)).verdict_code is V.V_AMBER_INCOMPLETE_DOC  # chưa xác thực
     assert decide(HC, apr(1.5), APK_OK).verdict_code is V.V_YELLOW_HIGH_COST_LICENSED
 
 
@@ -166,9 +166,19 @@ def test_criminal_usury_positive_pawn_chain_not_exempt(decide: Decide) -> None:
 
 def test_criminal_usury_boundary_interval_crosses_100(decide: Decide) -> None:
     """Biên S2-EC41: [99,9%; 120%] cắt mốc 100% → chưa kết tội, nhắc xác nhận."""
-    v = decide(UNKNOWN, apr(0.999, 1.2))
+    v = decide(UNKNOWN, apr(0.15, 1.2))
     assert v.verdict_code is V.V_AMBER_INCOMPLETE_DOC
     assert Contradiction.INTERVAL_CROSSES_LEGAL_THRESHOLD in v.contradictions
+
+
+def test_criminal_usury_boundary_crossing_100_with_lo_above_20_is_at_least_civil(
+    decide: Decide,
+) -> None:
+    """Review A: [50%; 120%] cắt mốc 100% nhưng chắc chắn vượt 20% → CAM ĐẬM + cờ cắt mốc."""
+    v = decide(UNKNOWN, apr(0.5, 1.2))
+    assert v.verdict_code is V.V_ORANGE_CIVIL_CAP_EXCEEDED
+    assert Contradiction.INTERVAL_CROSSES_LEGAL_THRESHOLD in v.contradictions
+    assert decide(UNKNOWN, apr(0.999, 1.2)).verdict_code is V.V_ORANGE_CIVIL_CAP_EXCEEDED
 
 
 def test_criminal_usury_boundary_point_just_below_100(decide: Decide) -> None:
@@ -213,9 +223,13 @@ def test_pawn_high_fee_positive_near_100(decide: Decide) -> None:
     assert decide(PAWN, apr(0.95)).verdict_code is V.V_ORANGE_PAWN_HIGH_FEE
 
 
-def test_pawn_high_fee_boundary_exactly_35_is_not_high(decide: Decide) -> None:
-    assert decide(PAWN, apr(0.35)).verdict_code is V.V_GREEN_TRANSPARENT
-    assert decide(PAWN, apr(0.3501)).verdict_code is V.V_ORANGE_PAWN_HIGH_FEE
+def test_pawn_high_fee_boundary_civil_tolerance(decide: Decide) -> None:
+    """Review C: cầm đồ có APR > 20,5% tối thiểu CAM; trong dung sai 20,5% vẫn xanh."""
+    assert decide(PAWN, apr(0.205)).verdict_code is V.V_GREEN_TRANSPARENT
+    assert decide(PAWN, apr(0.2051)).verdict_code is V.V_ORANGE_PAWN_HIGH_FEE
+    assert decide(PAWN, apr(0.30)).verdict_code is V.V_ORANGE_PAWN_HIGH_FEE
+    assert decide(PAWN, apr(0.5, 1.2)).verdict_code is V.V_ORANGE_PAWN_HIGH_FEE
+    assert decide(PAWN, apr(0.15, 0.30)).verdict_code is V.V_AMBER_INCOMPLETE_DOC
 
 
 def test_pawn_boundary_pawn_flag_from_llm_cannot_soften_unregistered_lender(
@@ -224,15 +238,16 @@ def test_pawn_boundary_pawn_flag_from_llm_cannot_soften_unregistered_lender(
     """Biên: cờ ``is_pawn_asset_secured`` (LLM) với bên không có trong registry → vẫn CAM ĐẬM."""
     inp = _with(UNKNOWN, is_pawn_asset_secured=True)
     assert decide(inp, apr(0.45)).verdict_code is V.V_ORANGE_CIVIL_CAP_EXCEEDED
+    # Với chuỗi cầm đồ trong registry, cờ LLM không đổi nhánh (registry quyết định).
     no_asset = _with(PAWN, is_pawn_asset_secured=False)
-    assert decide(no_asset, apr(0.45)).verdict_code is V.V_ORANGE_CIVIL_CAP_EXCEEDED
+    assert decide(no_asset, apr(0.45)).verdict_code is decide(PAWN, apr(0.45)).verdict_code
 
 
 # ------------------------------------------------------ V_YELLOW_HIGH_COST_LICENSED ---
 
 
 def test_yellow_positive_finco_high_apr(decide: Decide) -> None:
-    v = decide(HC, apr(0.45))
+    v = decide(HC, apr(0.45), APK_OK)
     assert v.verdict_code is V.V_YELLOW_HIGH_COST_LICENSED
     assert v.severity is Severity.YELLOW_ORANGE
 
@@ -243,7 +258,7 @@ def test_yellow_positive_bank_with_prechecked_insurance(decide: Decide) -> None:
         VCB,
         deducted_fees=(DeductedFee(label="Bảo hiểm sức khỏe", amount_vnd=1_200_000),),
     )
-    v = decide(inp, apr(0.15))
+    v = decide(inp, apr(0.15), APK_OK)
     assert v.verdict_code is V.V_YELLOW_HIGH_COST_LICENSED
     assert Contradiction.BUNDLED_INSURANCE in v.contradictions
 
@@ -253,8 +268,8 @@ def test_yellow_positive_verified_channel_above_100(decide: Decide) -> None:
 
 
 def test_yellow_boundary_exactly_35(decide: Decide) -> None:
-    assert decide(HC, apr(0.35)).verdict_code is V.V_GREEN_TRANSPARENT
-    assert decide(HC, apr(0.3501)).verdict_code is V.V_YELLOW_HIGH_COST_LICENSED
+    assert decide(HC, apr(0.35), APK_OK).verdict_code is V.V_GREEN_TRANSPARENT
+    assert decide(HC, apr(0.3501), APK_OK).verdict_code is V.V_YELLOW_HIGH_COST_LICENSED
 
 
 def test_yellow_boundary_unticked_insurance_not_bundled(decide: Decide) -> None:
@@ -266,7 +281,7 @@ def test_yellow_boundary_unticked_insurance_not_bundled(decide: Decide) -> None:
             ),
         ),
     )
-    assert decide(inp, apr(0.15)).verdict_code is V.V_GREEN_TRANSPARENT
+    assert decide(inp, apr(0.15), APK_OK).verdict_code is V.V_GREEN_TRANSPARENT
 
 
 # ---------------------------------------------------------- V_AMBER_INCOMPLETE_DOC ---
@@ -285,13 +300,13 @@ def test_amber_positive_interval_crosses_20(decide: Decide) -> None:
 
 
 def test_amber_positive_missing_page_on_otherwise_green(decide: Decide) -> None:
-    v = decide(_with(HC, missing_critical_page_suspected=True), apr(0.25))
+    v = decide(_with(HC, missing_critical_page_suspected=True), apr(0.25), APK_OK)
     assert v.verdict_code is V.V_AMBER_INCOMPLETE_DOC
     assert Contradiction.MISSING_CRITICAL_PAGE in v.contradictions
 
 
 def test_amber_positive_two_distinct_loans_mixed(decide: Decide) -> None:
-    v = decide(_with(HC, distinct_loan_brands_count=2), apr(0.25))
+    v = decide(_with(HC, distinct_loan_brands_count=2), apr(0.25), APK_OK)
     assert v.verdict_code is V.V_AMBER_INCOMPLETE_DOC
     assert Contradiction.MULTIPLE_LOANS_MIXED in v.contradictions
 
@@ -311,7 +326,7 @@ def test_amber_boundary_missing_page_does_not_soften_heavier_verdict(decide: Dec
 
 
 def test_green_positive_finco(decide: Decide) -> None:
-    v = decide(HC, apr(0.30))
+    v = decide(HC, apr(0.30), APK_OK)
     assert v.verdict_code is V.V_GREEN_TRANSPARENT
     assert v.severity is Severity.GREEN
     assert "lừa đảo" in v.tts_script  # vẫn nhắc bật Khiên Trạm 3
@@ -336,3 +351,28 @@ def test_green_boundary_p2p_tolerance_band(decide: Decide) -> None:
 
 def test_green_boundary_unknown_lender_never_green(decide: Decide) -> None:
     assert decide(UNKNOWN, apr(0.05)).verdict_code is V.V_AMBER_INCOMPLETE_DOC
+
+
+def test_unverified_licensed_brand_screenshot_only_is_at_most_amber(decide: Decide) -> None:
+    """Quyết định người dùng: ngân hàng/FinCo chỉ có ảnh chụp (apk_signature_ok=None), tên khớp
+    → tối đa AMBER (LENDER_NOT_VERIFIED), không bao giờ XANH / VÀNG CAM."""
+    for interval in (apr(0.10), apr(0.30), apr(0.45), apr(0.9)):
+        for base in (HC, VCB):
+            v = decide(base, interval)
+            assert v.verdict_code is V.V_AMBER_INCOMPLETE_DOC
+            assert Contradiction.LENDER_NOT_VERIFIED in v.contradictions
+    assert decide(HC, apr(0.30), APK_OK).verdict_code is V.V_GREEN_TRANSPARENT
+
+
+def test_p2p_over_cap_checked_before_crossing_20(decide: Decide) -> None:
+    """Review B: Lendzy 150tr với khoảng [15%; 25%] vẫn CAM ĐẬM (vượt hạn mức), không AMBER."""
+    inp = _with(P2P, principal_vnd=150_000_000)
+    v = decide(inp, apr(0.15, 0.25))
+    assert v.verdict_code is V.V_ORANGE_CIVIL_CAP_EXCEEDED
+    assert Contradiction.P2P_SANDBOX_CAP_EXCEEDED in v.contradictions
+    assert Contradiction.INTERVAL_CROSSES_LEGAL_THRESHOLD in v.contradictions
+
+
+def test_p2p_within_cap_20_to_35_stays_civil_cap_assumption(decide: Decide) -> None:
+    """Giả định chờ người duyệt: P2P (không phải TCTD) 20–35% → CAM ĐẬM, không XANH."""
+    assert decide(P2P, apr(0.30)).verdict_code is V.V_ORANGE_CIVIL_CAP_EXCEEDED
