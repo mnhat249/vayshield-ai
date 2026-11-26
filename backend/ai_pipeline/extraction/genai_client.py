@@ -8,6 +8,7 @@ from __future__ import annotations
 
 from typing import Any
 
+import httpx
 from google import genai
 from google.genai import errors as genai_errors
 from google.genai import types
@@ -82,7 +83,8 @@ class GoogleGenAIClient:
             )
         except genai_errors.APIError as exc:
             raise map_api_error(exc.code) from None
-        except OSError as exc:
+        except (TimeoutError, httpx.TransportError, OSError) as exc:
+            # httpx.ConnectError/ReadTimeout không phải OSError — vẫn là lỗi mạng tạm thời.
             raise GeminiTransientError("network") from exc
         candidate = response.candidates[0] if response.candidates else None
         finish = (

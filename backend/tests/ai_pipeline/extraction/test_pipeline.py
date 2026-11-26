@@ -22,13 +22,14 @@ from ai_pipeline.extraction.pipeline import (
     INJECTION_NOTE_VI,
     NON_LOAN_MESSAGE_VI,
     ExtractionPipeline,
+    merge_fee_lists,
 )
 from ai_pipeline.extraction.prompts import (
     ESCALATION_SUFFIX,
     SYSTEM_PROMPT_V2,
     contains_banned_terms,
 )
-from ai_pipeline.extraction.schemas import MultiImageLoanExtraction
+from ai_pipeline.extraction.schemas import DeductedFeeItem, MultiImageLoanExtraction
 
 from ._factory import IMG, PRIMARY, PRO, SECONDARY, loan, make_cascade
 
@@ -176,10 +177,11 @@ async def test_s2_ec18_prompt_injection_in_image_does_not_change_numbers() -> No
         texts = [p.text for p in call.request.parts if isinstance(p, TextPart)]
         evidence = [t for t in texts if INJECTION in t]
         assert len(evidence) == 1
-        # thẻ đóng giả mạo bị loại → chỉ có đúng 1 cặp thẻ thật
-        assert evidence[0].count("</untrusted_evidence>") == 1
-        assert evidence[0].startswith("<untrusted_evidence>")
-        assert evidence[0].endswith("</untrusted_evidence>")
+        # thẻ đóng giả mạo bị loại → chỉ có đúng 1 cặp thẻ thật (có nonce)
+        assert "</untrusted_evidence>" not in evidence[0]
+        assert evidence[0].startswith('<untrusted_evidence id="')
+        assert evidence[0].count("</untrusted_evidence id=") == 1
+        assert evidence[0].rstrip().endswith('">')
 
 
 async def test_ec_ai07_brand_conflict_extracts_each_image_separately() -> None:
@@ -310,3 +312,83 @@ async def test_s2_ec46_soft_timeout_propagated_and_unavailable_raises() -> None:
     with pytest.raises(ExtractionUnavailableError):
         await ExtractionPipeline(cascade).run([IMG], on_soft_timeout=lambda: fired.append(True))
     assert fired == [True]
+
+
+async def test_ec_ai24_pro_roi_never_drops_flash_fees() -> None:
+    """EC-AI24 / review major: Flash đọc 3 phí (1tr + 0,5tr + 0,3tr), Pro chỉ thấy vùng ROI
+    (1 phí 1tr) → vẫn giữ đủ 3 phí, worst_case không bị hạ."""
+    flash = loan(
+        critical_fields_min_confidence=0.6,
+        deducted_fees_at_source=[
+            {"fee_label": "Phí hồ sơ", "amount_vnd": 1_000_000},
+            {"fee_label": "Bảo hiểm", "amount_vnd": 500_000},
+            {"fee_label": "Phí thẩm định", "amount_vnd": 300_000},
+        ],
+    )
+    pro = loan(deducted_fees_at_source=[{"fee_label": "Phí hồ sơ", "amount_vnd": 1_000_000}])
+    cascade, _, _ = make_cascade({PRIMARY: [reply_json(flash)], PRO: [reply_json(pro)]})
+    out = await ExtractionPipeline(cascade).run([IMG])
+    assert out.escalated
+    assert out.extraction is not None
+    fees = out.extraction.deducted_fees_at_source
+    assert sorted(f.amount_vnd for f in fees) == [300_000, 500_000, 1_000_000]
+    assert out.fee_interval is not None
+    assert out.fee_interval.worst_case_vnd == 1_800_000
+
+
+def test_ec_ai24_merge_fee_lists_keeps_upper_bound() -> None:
+    """Cùng nhãn: lấy số của Pro nhưng cận trên giữ số lớn hơn; khoản chỉ Pro thấy được thêm."""
+    flash = [
+        DeductedFeeItem(fee_label="Phí hồ sơ", amount_vnd=1_800_000),
+        DeductedFeeItem(fee_label="Bảo hiểm", amount_vnd=500_000, is_mandatory_or_prechecked=False),
+    ]
+    pro = [
+        DeductedFeeItem(fee_label="phí HỒ SƠ", amount_vnd=1_300_000),
+        DeductedFeeItem(fee_label="Bảo hiểm", amount_vnd=500_000),
+        DeductedFeeItem(fee_label="Phí giải ngân", amount_vnd=200_000),
+    ]
+    merged = merge_fee_lists(flash, pro)
+    assert len(merged) == 3
+    assert merged[0].amount_vnd == 1_300_000
+    assert merged[0].uncertainty_max_vnd == 1_800_000
+    assert merged[1].is_mandatory_or_prechecked
+    assert merged[2].amount_vnd == 200_000
+    assert len(merge_fee_lists(flash, [])) == len(flash)
+
+
+async def test_missing_critical_numbers_force_confirmation() -> None:
+    """Review major: mọi số trọng yếu null (conf 0.95) → không còn ``status=OK`` im lặng."""
+    empty = loan(
+        nominal_principal_vnd=None,
+        net_disbursed_vnd=None,
+        total_repayment_stated_vnd=None,
+        repayment_regimes=[],
+    )
+    cascade, _, _ = make_cascade({PRIMARY: [reply_json(empty)], PRO: [reply_json(empty)]})
+    out = await ExtractionPipeline(cascade).run([IMG])
+    assert out.phase1_decision is not None
+    assert EscalationReason.MISSING_CRITICAL in out.phase1_decision.reasons
+    assert out.escalated
+    assert out.needs_user_confirmation
+
+
+async def test_ec_ai07_one_char_brand_difference_needs_selection() -> None:
+    """EC-AI07 (review major) qua pipeline: A/B khác 1 ký tự → 2 thẻ, phải chọn khoản vay."""
+    both = ["App Vay Nhanh A", "App Vay Nhanh B"]
+    cascade, _, _ = make_cascade(
+        {
+            PRIMARY: [
+                reply_json(loan(distinct_loan_brands_detected=both)),
+                reply_json(loan(claimed_lender_name="App Vay Nhanh A")),
+                reply_json(
+                    loan(claimed_lender_name="App Vay Nhanh B", nominal_principal_vnd=3_000_000)
+                ),
+            ]
+        }
+    )
+    out = await ExtractionPipeline(cascade).run([ImagePart(b"a"), ImagePart(b"b")])
+    assert out.status == "NEEDS_LOAN_SELECTION"
+    assert {c.brand: c.extraction.nominal_principal_vnd for c in out.cards} == {
+        "App Vay Nhanh A": 10_000_000,
+        "App Vay Nhanh B": 3_000_000,
+    }

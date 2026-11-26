@@ -5,6 +5,7 @@ from __future__ import annotations
 from ai_pipeline.extraction.disentangler import (
     MultiLoanDisentangler,
     PageExtraction,
+    brand_key,
     deducted_fee_interval,
     dedupe_fees,
     merge_pages,
@@ -172,3 +173,44 @@ def test_ec_ai24_uncertainty_upper_bound_in_worst_case() -> None:
     fees = [DeductedFeeItem(fee_label="Phí", amount_vnd=1_000_000, uncertainty_max_vnd=1_800_000)]
     interval = deducted_fee_interval(fees)
     assert (interval.best_case_vnd, interval.worst_case_vnd) == (1_000_000, 1_800_000)
+
+
+def test_ec_ai07_brands_differing_by_one_char_not_merged() -> None:
+    """EC-AI07 (review major): "App Vay Nhanh A" (10tr) và "App Vay Nhanh B" (3tr) là 2 khoản
+    vay khác nhau — so khớp mờ ≥ 90 từng gộp nhầm thành 1 thẻ mang tên A với gốc 3tr."""
+    pages = [
+        PageExtraction(
+            0, loan(claimed_lender_name="App Vay Nhanh A", nominal_principal_vnd=10_000_000)
+        ),
+        PageExtraction(
+            1, loan(claimed_lender_name="App Vay Nhanh B", nominal_principal_vnd=3_000_000)
+        ),
+    ]
+    result = D.disentangle(pages)
+    assert result.requires_loan_selection
+    assert {c.brand: c.extraction.nominal_principal_vnd for c in result.cards} == {
+        "App Vay Nhanh A": 10_000_000,
+        "App Vay Nhanh B": 3_000_000,
+    }
+
+
+def test_ec_ai07_brands_differing_by_digit_not_merged() -> None:
+    pages = [
+        PageExtraction(0, loan(claimed_lender_name="Vay Nhanh 247")),
+        PageExtraction(1, loan(claimed_lender_name="Vay Nhanh 248")),
+    ]
+    assert len(D.disentangle(pages).cards) == 2
+
+
+def test_ec_ai07_same_brand_spelling_variants_merged() -> None:
+    """Cùng thương hiệu khác cách viết (dấu, hoa thường, gạch nối, alias) vẫn là 1 thẻ."""
+    pages = [
+        PageExtraction(0, loan(claimed_lender_name="FE Credit")),
+        PageExtraction(1, loan(claimed_lender_name="fe-credit")),
+        PageExtraction(2, loan(claimed_lender_name="FECREDIT VN")),
+    ]
+    result = D.disentangle(pages)
+    assert len(result.cards) == 1
+    assert not result.requires_loan_selection
+    assert brand_key("Tia Chớp") == brand_key("TIA CHOP")
+    assert brand_key("App Vay Nhanh A") != brand_key("App Vay Nhanh B")

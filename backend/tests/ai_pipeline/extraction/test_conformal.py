@@ -127,3 +127,37 @@ def test_split_conformal_quantile() -> None:
     assert EscalationReason.CONFORMAL_SCORE not in d.reasons
     strict = ConformalRouter(q_hat=0.05)
     assert EscalationReason.CONFORMAL_SCORE in strict.decide(loan()).reasons
+
+
+def test_missing_critical_all_numbers_null_escalates() -> None:
+    """Review major: hợp đồng mà gốc/thực nhận/tổng đều null, tự khai 0.95 → vẫn leo thang
+    với ``MISSING_CRITICAL`` và ép xác nhận tay."""
+    e = loan(
+        nominal_principal_vnd=None,
+        net_disbursed_vnd=None,
+        total_repayment_stated_vnd=None,
+        repayment_regimes=[],
+        critical_fields_min_confidence=0.95,
+    )
+    d = ROUTER.decide(e)
+    assert d.escalate
+    assert EscalationReason.MISSING_CRITICAL in d.reasons
+    assert d.needs_user_confirmation
+
+
+def test_missing_critical_page_suspected_flag_escalates() -> None:
+    d = ROUTER.decide(loan(missing_critical_page_suspected=True))
+    assert EscalationReason.MISSING_CRITICAL in d.reasons
+    assert d.needs_user_confirmation
+
+
+def test_chat_only_without_numbers_not_missing_critical() -> None:
+    """Ảnh chat không có số không bị coi là thiếu trang hợp đồng."""
+    e = loan(
+        screen_categories=["CHAT_CONVERSATION"],
+        nominal_principal_vnd=None,
+        net_disbursed_vnd=None,
+        total_repayment_stated_vnd=None,
+        repayment_regimes=[],
+    )
+    assert EscalationReason.MISSING_CRITICAL not in ROUTER.decide(e).reasons

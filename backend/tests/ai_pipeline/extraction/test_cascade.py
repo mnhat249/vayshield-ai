@@ -19,6 +19,8 @@ from ai_pipeline.extraction.gemini_client import (
     GeminiBadRequestError,
     GeminiQuotaError,
     GeminiTransientError,
+    GenerationRequest,
+    GenerationResult,
     ImagePart,
     NoApiKeyAvailableError,
     reply_json,
@@ -127,10 +129,11 @@ async def test_key_rotation_on_quota() -> None:
     )
     result = await cascade.extract(system_instruction=SYSTEM_PROMPT_V2, parts=PARTS)
     assert result.model_used == PRIMARY
-    assert [c.key_index_hint for c in client.calls] == ["0000", "0001"]
+    assert [c.key_slot for c in client.calls] == [0, 1]
     assert [a.outcome for a in result.attempts] == ["quota", "ok"]
-    # key 0 đang nghỉ → lần kế dùng key 1
-    assert pool.acquire().index == 1
+    # key 0 đang nghỉ CHO MODEL PRIMARY → lần kế dùng key 1; model khác vẫn dùng được key 0
+    assert pool.acquire(PRIMARY).index == 1
+    assert pool.acquire(SECONDARY).index == 0
 
 
 async def test_auth_error_disables_key_and_transient_rotates() -> None:
@@ -146,19 +149,69 @@ async def test_auth_error_disables_key_and_transient_rotates() -> None:
     )
     result = await cascade.extract(system_instruction=SYSTEM_PROMPT_V2, parts=PARTS)
     assert [a.outcome for a in result.attempts] == ["auth", "transient", "ok"]
-    assert [c.key_index_hint for c in client.calls] == ["0000", "0001", "0002"]
+    assert [c.key_slot for c in client.calls] == [0, 1, 2]
     assert {pool.acquire().index for _ in range(4)} == {1, 2}
 
 
-async def test_all_keys_exhausted_falls_to_secondary_then_unavailable() -> None:
-    cascade, _, _ = make_cascade(
-        {PRIMARY: [FakeReply(error=GeminiQuotaError("429"))] * 2},
+async def test_s2_ec46_all_keys_429_on_primary_secondary_still_called() -> None:
+    """Quota Gemini tính theo từng model: 2 key đều 429 ở Flash → Flash-Lite VẪN được gọi."""
+    cascade, client, _ = make_cascade(
+        {
+            PRIMARY: [FakeReply(error=GeminiQuotaError("429"))] * 2,
+            SECONDARY: [reply_json(loan())],
+        },
         keys=2,
+    )
+    result = await cascade.extract(system_instruction=SYSTEM_PROMPT_V2, parts=PARTS)
+    assert result.model_used == SECONDARY
+    assert [(a.model, a.outcome) for a in result.attempts] == [
+        (PRIMARY, "quota"),
+        (PRIMARY, "quota"),
+        (SECONDARY, "ok"),
+    ]
+    assert client.models_called() == [PRIMARY, PRIMARY, SECONDARY]
+
+
+async def test_auth_errors_disable_keys_globally() -> None:
+    """401/403 loại key cho MỌI model → hết key thì không gọi secondary."""
+    cascade, client, _ = make_cascade(
+        {PRIMARY: [FakeReply(error=GeminiAuthError("401"))] * 2}, keys=2
     )
     with pytest.raises(ExtractionUnavailableError) as exc:
         await cascade.extract(system_instruction=SYSTEM_PROMPT_V2, parts=PARTS)
-    outcomes = [(a.model, a.outcome) for a in exc.value.attempts]
-    assert outcomes == [(PRIMARY, "quota"), (PRIMARY, "quota"), (SECONDARY, "no_key")]
+    assert [(a.model, a.outcome) for a in exc.value.attempts] == [
+        (PRIMARY, "auth"),
+        (PRIMARY, "auth"),
+        (SECONDARY, "no_key"),
+    ]
+    assert client.models_called() == [PRIMARY, PRIMARY]
+
+
+async def test_s2_ec46_unexpected_client_exception_is_transient() -> None:
+    """Lỗi client không lường trước (vd httpx.ConnectError lọt SDK) không thoát khỏi cascade."""
+    import httpx
+
+    async def boom(request: GenerationRequest, api_key: SecretStr) -> GenerationResult:
+        if request.model == PRIMARY:
+            raise httpx.ConnectError("đứt cáp")
+        return GenerationResult(text=loan().model_dump_json(), model=request.model)
+
+    cascade, client, _ = make_cascade({}, keys=2)
+    client.handler = boom
+    result = await cascade.extract(system_instruction=SYSTEM_PROMPT_V2, parts=PARTS)
+    assert result.model_used == SECONDARY
+    assert [a.outcome for a in result.attempts] == ["transient", "transient", "ok"]
+
+
+def test_fake_call_does_not_keep_key_characters() -> None:
+    """Nit: FakeCall chỉ giữ chỉ số key, không giữ ký tự nào của key."""
+    from ai_pipeline.extraction.gemini_client import FakeCall
+
+    assert "key_slot" in FakeCall.__dataclass_fields__
+    assert all(
+        f.type in ("str", "int", "GenerationRequest")
+        for f in FakeCall.__dataclass_fields__.values()
+    )
 
 
 def test_api_key_pool_round_robin_and_cooldown() -> None:

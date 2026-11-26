@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import pytest
+
 from ai_pipeline.extraction.schemas import ScreenCategory
 from ai_pipeline.extraction.voice import resolve_phonetic_confusions, transcribe_terms_to_extraction
 
@@ -55,11 +57,12 @@ def test_ec_ai11_missing_tenure_flags_note() -> None:
 
 
 def test_ec_ai12_phonetic_confusion_certain() -> None:
-    """EC-AI12: "gửi khoản vay" / "quỷ khoản vay" → "hủy khoản vay"; "trèo" → "treo"."""
-    text, fixes = resolve_phonetic_confusions("Em muốn gửi khoản vay, tiền trèo mãi")
+    """EC-AI12: "quỷ khoản vay" → "hủy khoản vay"; "trèo" → "treo"; "đối chứng" → "đối ứng"."""
+    text, fixes = resolve_phonetic_confusions("Em quỷ khoản vay, tiền trèo mãi")
     assert "hủy khoản vay" in text
     assert "tiền treo" in text
     assert len(fixes) == 2
+    assert all(f.certain for f in fixes)
     text2, _ = resolve_phonetic_confusions("quỷ hợp đồng vay, nộp phí đối chứng")
     assert "hủy hợp đồng vay" in text2
     assert "phí đối ứng" in text2
@@ -75,3 +78,64 @@ def test_ec_ai12_ambiguous_sign_asks_user() -> None:
 def test_ec_ai12_sign_without_cancel_context_untouched() -> None:
     _, fixes = resolve_phonetic_confusions("tôi đồng ý ký khoản vay mười củ")
     assert fixes == ()
+
+
+def test_ec_ai11_voice_principal_with_one_month_tenure() -> None:
+    """EC-AI11 (review blocker): "vay 10 triệu một tháng, phải trả 12 triệu"."""
+    draft = transcribe_terms_to_extraction("vay 10 triệu một tháng, phải trả 12 triệu")
+    e = draft.extraction
+    assert e.nominal_principal_vnd == 10_000_000
+    assert e.total_repayment_stated_vnd == 12_000_000
+    assert e.tenure_days_total == 30
+    assert e.repayment_regimes == []
+    assert draft.confirmation.repayment_total_vnd == 12_000_000
+
+
+def test_ec_ai11_voice_slang_principal_one_month() -> None:
+    """EC-AI11: "vay mười củ một tháng, trả mười hai củ" (ví dụ ghi trong code)."""
+    e = transcribe_terms_to_extraction("vay mười củ một tháng, trả mười hai củ").extraction
+    assert e.nominal_principal_vnd == 10_000_000
+    assert e.total_repayment_stated_vnd == 12_000_000
+    assert e.tenure_days_total == 30
+
+
+def test_ec_ai11_voice_two_weeks_tenure() -> None:
+    e = transcribe_terms_to_extraction("vay 3 củ hai tuần, phải trả 4 củ").extraction
+    assert e.nominal_principal_vnd == 3_000_000
+    assert e.total_repayment_stated_vnd == 4_000_000
+    assert e.tenure_days_total == 14
+
+
+@pytest.mark.parametrize(
+    "text", ["tôi gửi khoản vay này vào ngân hàng", "con gửi khoản vay cho mẹ giữ"]
+)
+def test_ec_ai12_gui_khoan_vay_not_silently_rewritten(text: str) -> None:
+    """EC-AI12 (review major): "gửi khoản vay" là câu bình thường → không sửa thành "hủy"."""
+    out, fixes = resolve_phonetic_confusions(text)
+    assert "hủy" not in out
+    assert fixes == ()
+
+
+def test_ec_ai12_gui_with_cancel_context_only_suggested() -> None:
+    draft = transcribe_terms_to_extraction("em không muốn vay nữa, gửi khoản vay đi")
+    assert [f.certain for f in draft.phonetic_corrections] == [False]
+    assert "hủy" not in draft.transcript_normalized
+
+
+def test_ec_ai11_fee_keyword_after_amount_wins() -> None:
+    """EC-AI11 (review minor): "nộp trước 2 triệu phí mở băng thì mới giải ngân 20 triệu"
+    → phí đòi trước = 2tr, gốc = 20tr (trước đây bị đảo ngược)."""
+    e = transcribe_terms_to_extraction(
+        "nó bảo nộp trước 2 triệu phí mở băng thì mới giải ngân 20 triệu"
+    ).extraction
+    assert e.nominal_principal_vnd == 20_000_000
+    assert e.upfront_fee_demand.demanded
+    assert e.upfront_fee_demand.amount_vnd == 2_000_000
+
+
+def test_ec_ai11_principal_then_fee_same_clause() -> None:
+    e = transcribe_terms_to_extraction(
+        "vay 20 triệu nhưng nó bắt nộp phí bảo hiểm 2 triệu"
+    ).extraction
+    assert e.nominal_principal_vnd == 20_000_000
+    assert e.upfront_fee_demand.amount_vnd == 2_000_000

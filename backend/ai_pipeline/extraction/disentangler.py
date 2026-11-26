@@ -17,8 +17,6 @@ from collections.abc import Sequence
 from dataclasses import dataclass
 from typing import Any
 
-from rapidfuzz import fuzz
-
 from .schemas import (
     DeductedFeeItem,
     MultiImageLoanExtraction,
@@ -35,7 +33,16 @@ SCREEN_AUTHORITY: dict[ScreenCategory, int] = {
     ScreenCategory.MARKETING_OFFER: 1,
     ScreenCategory.NON_LOAN_IRRELEVANT: 0,
 }
-BRAND_FUZZY_MATCH = 90  # rapidfuzz ratio để coi 2 tên là một thương hiệu (lỗi OCR)
+# Alias đã biết (khóa đã chuẩn hóa, bỏ khoảng trắng) → khóa chuẩn. KHÔNG dùng so khớp mờ:
+# "App Vay Nhanh A" và "App Vay Nhanh B" khác 1 ký tự nhưng là 2 khoản vay khác nhau (EC-AI07).
+BRAND_ALIASES: dict[str, str] = {
+    "fecredit": "fecredit",
+    "fecreditvn": "fecredit",
+    "homecredit": "homecredit",
+    "homecreditvietnam": "homecredit",
+    "tiachop": "tiachop",
+    "apptiachop": "tiachop",
+}
 
 _LOCKED_SCALARS = (
     "nominal_principal_vnd",
@@ -66,6 +73,15 @@ def normalize_label(text: str) -> str:
     stripped = "".join(c for c in decomposed if unicodedata.category(c) != "Mn")
     stripped = stripped.replace("đ", "d")
     return " ".join("".join(c if c.isalnum() else " " for c in stripped).split())
+
+
+def brand_key(name: str) -> str:
+    """Khóa thương hiệu: bỏ dấu, chữ thường, bỏ khoảng trắng/ký tự đặc biệt, qua alias.
+
+    "FE Credit" ≡ "fe-credit" ≡ "FECREDIT"; "Tia Chớp" ≡ "Tia Chop"; nhưng "... A" ≠ "... B".
+    """
+    key = normalize_label(name).replace(" ", "")
+    return BRAND_ALIASES.get(key, key)
 
 
 def page_authority(extraction: MultiImageLoanExtraction) -> int:
@@ -206,8 +222,8 @@ def _page_brands(e: MultiImageLoanExtraction) -> list[str]:
         names.append(e.claimed_lender_name)
     out: list[str] = []
     for n in names:
-        key = normalize_label(n)
-        if key and not any(fuzz.ratio(key, normalize_label(o)) >= BRAND_FUZZY_MATCH for o in out):
+        key = brand_key(n)
+        if key and not any(key == brand_key(o) for o in out):
             out.append(n)
     return out
 
@@ -231,9 +247,9 @@ class MultiLoanDisentangler:
             if not brands:
                 unbranded.append(p)
                 continue
-            key = normalize_label(brands[0])
+            key = brand_key(brands[0])
             for g_key, g_pages in groups:
-                if fuzz.ratio(key, normalize_label(g_key)) >= BRAND_FUZZY_MATCH:
+                if key == brand_key(g_key):
                     g_pages.append(p)
                     break
             else:

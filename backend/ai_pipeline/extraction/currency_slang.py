@@ -162,6 +162,36 @@ def _parse_numeric(token: str) -> tuple[Decimal, int]:
     return Decimal("".join(parts)), 0
 
 
+_NUMBER_WORDS = frozenset({*_DIGIT_WORDS, *_TEN_INITIAL, *_TENS_SUFFIX, *_HUNDRED, *_ODD})
+_YEAR_AFTER = frozenset({*_DIGIT_WORDS, *_TEN_INITIAL, *_TENS_SUFFIX})
+
+
+def _number_then_period(tokens: list[_Token], j: int) -> bool:
+    """Cụm số bắt đầu ở ``j`` có kết thúc bằng đơn vị kỳ/thời hạn không?
+
+    Blocker EC-AI11: "vay 10 triệu một tháng" — "một" là thời hạn, không phải phần lẻ.
+    "năm" sau một chữ số ("một năm", "2 năm") là năm (thời hạn), không phải số 5.
+    """
+    clause = tokens[j].clause
+    prev: str | None = None
+    k = j
+    while k < len(tokens) and tokens[k].clause == clause:
+        tok = tokens[k].text
+        if (
+            prev is not None
+            and tok in _YEAR_WORDS
+            and (prev in _YEAR_AFTER or _NUMERIC_RE.fullmatch(prev))
+        ):
+            return True
+        if tok in PERIOD_DAYS:
+            return prev is not None
+        if not (_NUMERIC_RE.fullmatch(tok) or tok in _NUMBER_WORDS):
+            return False
+        prev = tok
+        k += 1
+    return False
+
+
 def _parse_number(tokens: list[_Token], i: int) -> _NumParse | None:
     """Đọc một cụm số (chữ số hoặc chữ tiếng Việt) bắt đầu ở token ``i``."""
     first = tokens[i].text
@@ -179,12 +209,15 @@ def _parse_number(tokens: list[_Token], i: int) -> _NumParse | None:
     pending_ctx = "initial"  # initial | after_scale | after_hundred
     prev = "start"
     last_scale = Decimal(1)
+    group_has_hundred = False  # nhóm hiện tại có "trăm" (để đọc "một triệu hai trăm")
     is_money = False
     j = i
     while j < len(tokens):
         tok = tokens[j].text
         if tokens[j].clause != tokens[i].clause:
             break
+        if prev == "scale" and _number_then_period(tokens, j):
+            break  # "10 triệu | một tháng": số sau đơn vị tiền là thời hạn
         if _NUMERIC_RE.fullmatch(tok):
             if pending is None and prev in ("start", "scale"):
                 pending, pending_digits = _parse_numeric(tok)
@@ -226,6 +259,7 @@ def _parse_number(tokens: list[_Token], i: int) -> _NumParse | None:
                 break
             group += pending * 100
             pending = None
+            group_has_hundred = True
             prev = "hundred"
         elif tok in _ODD:
             if prev != "hundred":
@@ -240,6 +274,7 @@ def _parse_number(tokens: list[_Token], i: int) -> _NumParse | None:
                 break
             total += group * scale
             group = Decimal(0)
+            group_has_hundred = False
             last_scale = scale
             prev = "scale"
             is_money = True
@@ -248,6 +283,7 @@ def _parse_number(tokens: list[_Token], i: int) -> _NumParse | None:
                 total += last_scale / 2
             elif prev == "hundred":
                 group += 50
+                group_has_hundred = True
             else:
                 break
             prev = "half"
@@ -272,6 +308,9 @@ def _parse_number(tokens: list[_Token], i: int) -> _NumParse | None:
             group += pending * 10  # "một trăm tư" = 140
         else:
             group += pending
+    if group and total and group_has_hundred and last_scale >= 1_000_000:
+        # "một triệu hai trăm" = 1.200.000 (khớp "1 triệu 200"), không phải 1.000.200.
+        group *= last_scale / 1000
     total += group
     return _NumParse(total, j, is_money)
 

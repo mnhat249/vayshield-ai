@@ -13,7 +13,7 @@ from collections.abc import Iterable, Sequence
 from dataclasses import dataclass
 from enum import StrEnum
 
-from .schemas import MultiImageLoanExtraction, is_non_loan_only
+from .schemas import MultiImageLoanExtraction, ScreenCategory, is_non_loan_only
 from .uncertainty import DigitUncertainty, critical_uncertainties
 
 CONFIDENCE_FLOOR = 0.82  # File 3 §1.2
@@ -37,6 +37,7 @@ class EscalationReason(StrEnum):
     PROMPT_INJECTION_SUSPECTED = "PROMPT_INJECTION_SUSPECTED"
     TRUNCATED_OUTPUT = "TRUNCATED_OUTPUT"
     PACKAGE_AMBIGUOUS = "PACKAGE_AMBIGUOUS"
+    MISSING_CRITICAL = "MISSING_CRITICAL"
 
 
 @dataclass(frozen=True, slots=True)
@@ -49,7 +50,10 @@ class RoutingDecision:
 
     @property
     def needs_user_confirmation(self) -> bool:
-        return self.calibrated_confidence < USER_CONFIRM_BELOW
+        return (
+            self.calibrated_confidence < USER_CONFIRM_BELOW
+            or EscalationReason.MISSING_CRITICAL in self.reasons
+        )
 
 
 def split_conformal_quantile(scores: Sequence[float], alpha: float = CONFORMAL_ALPHA) -> float:
@@ -71,6 +75,23 @@ def total_mismatch(extraction: MultiImageLoanExtraction) -> bool:
         return False
     schedule = sum(r.period_count * r.amount_per_period_vnd for r in extraction.repayment_regimes)
     return abs(total - schedule) * 100 > TOTAL_MISMATCH_PERCENT * principal
+
+
+_TERMS_SCREENS = frozenset({ScreenCategory.CONTRACT_TERMS, ScreenCategory.DISBURSEMENT_SUMMARY})
+
+
+def missing_critical(extraction: MultiImageLoanExtraction) -> bool:
+    """Trang hợp đồng/giải ngân mà thiếu CẢ gốc lẫn thực nhận, hoặc LLM nghi thiếu trang.
+
+    Không để độ tin cậy tự khai cao (0.95) che việc mọi số trọng yếu đều ``null``.
+    """
+    if extraction.missing_critical_page_suspected:
+        return True
+    return (
+        bool(_TERMS_SCREENS & set(extraction.screen_categories))
+        and extraction.nominal_principal_vnd is None
+        and extraction.net_disbursed_vnd is None
+    )
 
 
 def _normalize_brand(name: str) -> str:
@@ -134,6 +155,8 @@ class ConformalRouter:
             reasons.append(EscalationReason.LOW_CONFIDENCE)
         if total_mismatch(extraction):
             reasons.append(EscalationReason.TOTAL_MISMATCH)
+        if missing_critical(extraction):
+            reasons.append(EscalationReason.MISSING_CRITICAL)
         if brand_conflict(extraction):
             reasons.append(EscalationReason.BRAND_CONFLICT)
         if self.q_hat is not None and score > self.q_hat:

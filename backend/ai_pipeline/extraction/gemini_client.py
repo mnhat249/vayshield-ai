@@ -106,10 +106,15 @@ class GeminiClient(Protocol):
 class ApiKeyLease:
     index: int
     key: SecretStr
+    model: str | None = None
 
 
 class ApiKeyPool:
-    """Xoay vòng round-robin; key cạn quota nghỉ ``quota_cooldown_s``; key hỏng bị loại."""
+    """Xoay vòng round-robin nhiều key.
+
+    Quota Gemini tính theo TỪNG model: 429 chỉ cho cặp ``(key, model)`` nghỉ
+    ``quota_cooldown_s`` — key đó vẫn dùng được cho model dự phòng. 401/403 loại key toàn cục.
+    """
 
     def __init__(
         self, keys: Sequence[SecretStr], clock: Clock, *, quota_cooldown_s: float = 60.0
@@ -117,25 +122,26 @@ class ApiKeyPool:
         self._keys = list(keys)
         self._clock = clock
         self._cooldown = quota_cooldown_s
-        self._available_at = [0.0] * len(self._keys)
+        self._available_at: dict[tuple[int, str | None], float] = {}
         self._disabled = [False] * len(self._keys)
         self._cursor = 0
 
     def __len__(self) -> int:
         return len(self._keys)
 
-    def acquire(self) -> ApiKeyLease:
+    def acquire(self, model: str | None = None) -> ApiKeyLease:
         now = self._clock.monotonic()
         n = len(self._keys)
         for step in range(n):
             idx = (self._cursor + step) % n
-            if not self._disabled[idx] and self._available_at[idx] <= now:
-                self._cursor = (idx + 1) % n
-                return ApiKeyLease(idx, self._keys[idx])
+            if self._disabled[idx] or self._available_at.get((idx, model), 0.0) > now:
+                continue
+            self._cursor = (idx + 1) % n
+            return ApiKeyLease(idx, self._keys[idx], model)
         raise NoApiKeyAvailableError("không còn Gemini API key khả dụng")
 
     def report_quota_exhausted(self, lease: ApiKeyLease) -> None:
-        self._available_at[lease.index] = self._clock.monotonic() + self._cooldown
+        self._available_at[(lease.index, lease.model)] = self._clock.monotonic() + self._cooldown
 
     def report_invalid(self, lease: ApiKeyLease) -> None:
         self._disabled[lease.index] = True
@@ -160,7 +166,7 @@ class FakeReply:
 @dataclass(frozen=True, slots=True)
 class FakeCall:
     model: str
-    key_index_hint: str  # 4 ký tự cuối key — chỉ dùng trong test, không phải log
+    key_slot: int  # thứ tự key khác nhau mà fake đã thấy (0, 1, ...) — không giữ ký tự key
     request: GenerationRequest
 
 
@@ -174,9 +180,17 @@ class FakeGeminiClient:
     script: Mapping[str, list[FakeReply]] = field(default_factory=dict)
     handler: Handler | None = None
     calls: list[FakeCall] = field(default_factory=list)
+    _seen_keys: list[SecretStr] = field(default_factory=list, repr=False)
+
+    def _slot(self, api_key: SecretStr) -> int:
+        for i, k in enumerate(self._seen_keys):
+            if k == api_key:  # SecretStr so sánh theo giá trị, không lộ ra ngoài
+                return i
+        self._seen_keys.append(api_key)
+        return len(self._seen_keys) - 1
 
     async def generate(self, request: GenerationRequest, *, api_key: SecretStr) -> GenerationResult:
-        self.calls.append(FakeCall(request.model, api_key.get_secret_value()[-4:], request))
+        self.calls.append(FakeCall(request.model, self._slot(api_key), request))
         if self.handler is not None:
             return await self.handler(request, api_key)
         queue = self.script.get(request.model)

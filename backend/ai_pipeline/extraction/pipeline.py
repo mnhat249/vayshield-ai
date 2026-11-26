@@ -19,6 +19,7 @@ from .disentangler import (
     MultiLoanDisentangler,
     PageExtraction,
     deducted_fee_interval,
+    normalize_label,
 )
 from .gemini_client import ImagePart
 from .prompts import (
@@ -29,7 +30,12 @@ from .prompts import (
     scan_prompt_injection,
 )
 from .sanity import apply_magnitude_sanity, check_package_plausibility
-from .schemas import MultiImageLoanExtraction, SpecialScamMorphology, is_non_loan_only
+from .schemas import (
+    DeductedFeeItem,
+    MultiImageLoanExtraction,
+    SpecialScamMorphology,
+    is_non_loan_only,
+)
 from .uncertainty import digit_uncertainties
 
 NON_LOAN_MESSAGE_VI = "Ảnh này không phải hợp đồng vay hay tin nhắn tài chính."
@@ -79,6 +85,40 @@ class ExtractionOutcome:
         return self.cards[0].extraction if len(self.cards) == 1 else None
 
 
+def merge_fee_lists(
+    flash: Sequence[DeductedFeeItem], pro: Sequence[DeductedFeeItem]
+) -> list[DeductedFeeItem]:
+    """Hợp phí Flash (toàn ảnh) với Pro (chỉ vùng ROI) — không bao giờ ít khoản hơn Flash.
+
+    Ghép theo nhãn chuẩn hóa: cùng nhãn → lấy số của Pro (độ phân giải cao) nhưng cận trên
+    ``uncertainty_max_vnd`` giữ max của cả hai để worst_case không bị hạ; tích sẵn OR.
+    Khoản chỉ Pro thấy được thêm vào; khoản chỉ Flash thấy (ngoài ROI) được giữ nguyên.
+    """
+    remaining = list(pro)
+    out: list[DeductedFeeItem] = []
+    for f in flash:
+        key = normalize_label(f.fee_label)
+        match = next((p for p in remaining if normalize_label(p.fee_label) == key), None)
+        if match is None:
+            out.append(f)
+            continue
+        remaining.remove(match)
+        bounds = [f.amount_vnd, match.amount_vnd]
+        bounds += [v for v in (f.uncertainty_max_vnd, match.uncertainty_max_vnd) if v is not None]
+        upper = max(bounds)
+        out.append(
+            DeductedFeeItem(
+                fee_label=match.fee_label,
+                amount_vnd=match.amount_vnd,
+                uncertainty_max_vnd=upper if upper > match.amount_vnd else None,
+                is_mandatory_or_prechecked=f.is_mandatory_or_prechecked
+                or match.is_mandatory_or_prechecked,
+            )
+        )
+    out.extend(remaining)
+    return out
+
+
 def merge_escalation(
     flash: MultiImageLoanExtraction, pro: MultiImageLoanExtraction
 ) -> MultiImageLoanExtraction:
@@ -90,8 +130,10 @@ def merge_escalation(
             data[name] = value
     if pro.repayment_regimes:
         data["repayment_regimes"] = [r.model_dump() for r in pro.repayment_regimes]
-    if pro.deducted_fees_at_source:
-        data["deducted_fees_at_source"] = [f.model_dump() for f in pro.deducted_fees_at_source]
+    data["deducted_fees_at_source"] = [
+        f.model_dump()
+        for f in merge_fee_lists(flash.deducted_fees_at_source, pro.deducted_fees_at_source)
+    ]
     for flag in _WARN_FLAGS:
         data[flag] = getattr(flash, flag) or getattr(pro, flag)
     up_f, up_p = flash.upfront_fee_demand, pro.upfront_fee_demand

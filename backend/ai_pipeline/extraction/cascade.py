@@ -210,7 +210,7 @@ class ModelCascade:
                 run.attempts.append(ModelAttempt(request.model, "timeout"))
                 return run
             try:
-                lease = self._keys.acquire()
+                lease = self._keys.acquire(request.model)
             except NoApiKeyAvailableError:
                 run.attempts.append(ModelAttempt(request.model, "no_key"))
                 return run
@@ -243,6 +243,10 @@ class ModelCascade:
                 run.attempts.append(ModelAttempt(request.model, "bad_request"))
                 return run
             except GeminiError:
+                run.attempts.append(ModelAttempt(request.model, "transient"))
+                continue
+            except Exception:  # lỗi client không lường trước (httpx, SDK) → coi là tạm thời
+                logger.warning("gemini unexpected error", extra={"model": request.model})
                 run.attempts.append(ModelAttempt(request.model, "transient"))
                 continue
             finally:

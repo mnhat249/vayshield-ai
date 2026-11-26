@@ -101,3 +101,54 @@ def test_ec_ai11_normalized_text_replaces_mentions() -> None:
 
 def test_parse_vnd_amount_none_when_no_money() -> None:
     assert parse_vnd_amount("không có số nào") is None
+
+
+@pytest.mark.parametrize(
+    ("text", "money", "durations"),
+    [
+        ("vay 10 triệu một tháng", [(10_000_000, 30)], []),
+        ("đóng 500 nghìn một ngày", [(500_000, 1)], []),
+        ("vay 3 củ hai tuần", [(3_000_000, None)], [14]),
+        ("vay 5 triệu hai tháng trả 7 triệu", [(5_000_000, None), (7_000_000, None)], [60]),
+        ("vay 10 triệu 1 năm", [(10_000_000, None)], [365]),
+        ("vay mười củ một năm", [(10_000_000, None)], [365]),
+    ],
+)
+def test_ec_ai11_period_word_after_amount_is_not_fraction(
+    text: str, money: list[tuple[int, int | None]], durations: list[int]
+) -> None:
+    """EC-AI11 (review blocker): "một/hai" trước đơn vị kỳ là thời hạn, không cộng vào tiền.
+
+    Trước: "vay 10 triệu một tháng" → 10.100.000; "vay 3 củ hai tuần" → 3.200.000.
+    """
+    result = normalize_vn_currency_slang(text)
+    assert [(m.value_vnd, m.per_period_days) for m in result.money] == money
+    assert [d.days for d in result.durations] == durations
+
+
+def test_ec_ai11_fraction_after_scale_still_works() -> None:
+    """Không hồi quy: "tám triệu tư", "năm củ hai", "1tr2" vẫn là phần lẻ."""
+    assert parse_vnd_amount("tám triệu tư") == 8_400_000
+    assert parse_vnd_amount("năm củ hai") == 5_200_000
+    assert parse_vnd_amount("1tr2") == 1_200_000
+    assert parse_vnd_amount("hai triệu năm") == 2_500_000
+
+
+@pytest.mark.parametrize(
+    ("text", "expected"),
+    [
+        ("một triệu hai trăm", 1_200_000),
+        ("hai triệu năm trăm", 2_500_000),
+        ("một tỷ hai trăm", 1_200_000_000),
+        ("hai triệu một trăm", 2_100_000),
+        ("một triệu hai trăm năm mươi", 1_250_000),
+        ("1 triệu 200", 1_200_000),
+        ("một triệu hai trăm nghìn", 1_200_000),
+        ("năm nghìn hai trăm", 5_200),
+        ("một tỷ hai trăm triệu", 1_200_000_000),
+    ],
+)
+def test_ec_ai11_hundreds_after_large_scale(text: str, expected: int) -> None:
+    """EC-AI11 (review major): "trăm" sau triệu/tỷ không kèm đơn vị nhỏ = phần của đơn vị lớn,
+    khớp với cách viết số "1 triệu 200"."""
+    assert parse_vnd_amount(text) == expected
