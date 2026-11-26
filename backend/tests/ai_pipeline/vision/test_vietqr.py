@@ -122,18 +122,75 @@ def test_ec_ai02_two_qr_chat_excludes_users_own_right_qr() -> None:
 
 
 def test_ec_ai02_middle_band_uses_bubble_color() -> None:
-    """EC-AI02: tâm QR trong dải 0.48–0.52W → dùng màu bong bóng."""
+    """EC-AI02: bong bóng không căn phải -> không SELF; trắng -> COUNTERPARTY, xanh -> UNKNOWN."""
     qr = render_qr(build_vietqr())
     for color, expected in (
-        ((204, 226, 255), QrSender.SELF),
+        ((204, 226, 255), QrSender.UNKNOWN),
         ((255, 255, 255), QrSender.COUNTERPARTY),
     ):
         img = Image.new("RGB", (900, 500), (225, 232, 240))
         ImageDraw.Draw(img).rounded_rectangle((320, 40, 580, 460), 18, fill=color)
         img.paste(qr.resize((220, 220)), (340, 130))
         (a,) = attribute_qr_sender(img)
-        assert 0.48 <= a.detection.x_center / 900 <= 0.52
         assert a.sender is expected
+        assert a.should_check
+
+
+def test_ec_ai02_single_qr_slightly_right_still_checked() -> None:
+    """EC-AI02 (review a): ảnh QR đơn lẻ lệch phải (nền xám, không bong bóng) vẫn bị kiểm."""
+    qr = render_qr(build_vietqr(account="9999000011112"))
+    img = Image.new("RGB", (900, 500), (235, 235, 235))
+    img.paste(qr.resize((240, 240)), (500, 130))  # tâm ~0.69W
+    (a,) = attribute_qr_sender(img)
+    assert a.sender is not QrSender.SELF and a.should_check
+
+
+def test_ec_ai02_left_white_bubble_qr_offset_right_still_checked() -> None:
+    """EC-AI02 (review b): bong bóng trắng căn trái nhưng QR nằm lệch phải trong ảnh."""
+    qr = render_qr(build_vietqr(account="9999000011112"))
+    img = Image.new("RGB", (900, 500), (225, 232, 240))
+    ImageDraw.Draw(img).rounded_rectangle((30, 40, 800, 460), 18, fill=(255, 255, 255))
+    img.paste(qr.resize((220, 220)), (540, 130))  # tâm ~0.7W
+    (a,) = attribute_qr_sender(img)
+    assert a.sender is QrSender.COUNTERPARTY and a.should_check
+
+
+def test_ec_ai02_faint_scam_qr_next_to_clear_qr_is_found() -> None:
+    """EC-AI02 (review blocker): QR mờ bên trái không bị bỏ vì QR rõ bên phải đọc được."""
+    scam = build_vietqr(account="9999000011112", memo="TAI KHOAN KY THUAT")
+    mine = build_vietqr(account="0011001234567", memo="CO LAN")
+    faint = np.asarray(render_qr(scam).convert("L"), dtype=np.float32)
+    faint_img = Image.fromarray(np.uint8(150 + faint * 0.08)).convert("RGB")
+    img = chat_image(None, render_qr(mine))
+    ImageDraw.Draw(img).rounded_rectangle((30, 40, 360, 380), 18, fill=(150, 150, 150))
+    img.paste(faint_img.resize((260, 260)), (50, 70))
+    texts = {d.text for d in detect_qr_codes(img)}
+    assert mine in texts
+    assert scam in texts
+    by_text = {a.detection.text: a for a in attribute_qr_sender(img)}
+    assert by_text[scam].should_check
+    assert by_text[mine].sender is QrSender.SELF
+
+
+@pytest.mark.parametrize(
+    ("tag", "value"),
+    [("54", "1e5"), ("54", "1500000.123"), ("54", "-5"), ("54", "abc")],
+)
+def test_ec_ai03_bad_amount_format_rejected(tag: str, value: str) -> None:
+    """Tag 54 phải khớp dạng số tiền hợp lệ (số nguyên hoặc tối đa 2 chữ số thập phân)."""
+    body = tlv("00", "01") + tlv("01", "12")
+    t38 = tlv("00", "A000000727") + tlv("01", tlv("00", "970436") + tlv("01", "123456"))
+    body += tlv("38", t38) + tlv("53", "704") + tlv(tag, value) + tlv("58", "VN") + "6304"
+    with pytest.raises(VietQrError):
+        decode_vietqr(body + f"{crc16_ccitt(body.encode()):04X}")
+
+
+def test_ec_ai03_wrong_format_indicator_or_currency_rejected() -> None:
+    t38 = tlv("00", "A000000727") + tlv("01", tlv("00", "970436") + tlv("01", "123456"))
+    for head, cur in (("02", "704"), ("01", "840")):
+        body = tlv("00", head) + tlv("38", t38) + tlv("53", cur) + tlv("58", "VN") + "6304"
+        with pytest.raises(VietQrError):
+            decode_vietqr(body + f"{crc16_ccitt(body.encode()):04X}")
 
 
 def test_ec_ai02_middle_band_ambiguous_still_checked() -> None:

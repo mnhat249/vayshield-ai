@@ -10,6 +10,7 @@ import pytest
 from PIL import Image
 
 from ai_pipeline.vision import canonicalize_text, receipt_forensics
+from ai_pipeline.vision.text import fold_diacritics
 
 
 def test_ec_ai06_napas_247_stuck_with_fee_is_flagged() -> None:
@@ -98,12 +99,35 @@ def test_s2_ec19_cyrillic_homoglyphs_mapped() -> None:
 
 
 def test_s2_ec19_leet_inside_words_only() -> None:
-    assert canonicalize_text("tài kh0ản kỹ thuật") == "tài khoản kỹ thuật"
-    assert canonicalize_text("kh1 vay") == "kh1 vay"  # chữ số cuối từ không phải giữa 2 chữ cái
+    assert fold_diacritics("tài kh0ản kỹ thuật") == "tai khoan ky thuat"
+    assert fold_diacritics("kh1 vay") == "kh1 vay"  # chữ số cuối từ không phải giữa 2 chữ cái
     assert canonicalize_text("vay 3tr lãi 1.5%/tháng, 100k") == "vay 3tr lãi 1.5%/tháng, 100k"
+
+
+def test_s2_ec19_canonicalize_does_not_corrupt_amounts_or_codes() -> None:
+    """Review: canonicalize_text không áp leet -> số tiền/mã giữ nguyên."""
+    assert canonicalize_text("1tr5k") == "1tr5k"
+    assert canonicalize_text("HD1A3B") == "HD1A3B"
+
+
+def test_ec_ai06_pending_receipt_with_free_fee_not_flagged() -> None:
+    """EC-AI06 (review): 'đồng'/'Miễn phí' không phải đòi phí giải tỏa."""
+    text = "Số tiền: 500.000 đồng. Phí giao dịch: Miễn phí. Trạng thái: Đang chờ xử lý"
+    assert not receipt_forensics("Chuyển khoản nhanh 24/7 " + text).fake_receipt_napas_impossible
+    assert not receipt_forensics(text).fake_receipt_napas_impossible
 
 
 def test_ec_ai25_decimal_point_not_swallowed_by_canonicalizer() -> None:
     """EC-AI25: "1.5%/tháng" không bị nối thành "15%" (dấu chấm thập phân được bảo toàn)."""
     assert canonicalize_text("1.5%/tháng") == "1.5%/tháng"
     assert canonicalize_text("lãi 0.05% và 2.5 triệu") == "lãi 0.05% và 2.5 triệu"
+
+
+def test_ec_ai06_ela_region_negative_indices_are_clipped() -> None:
+    """EC-AI06 (review): region âm không được wrap quanh mảng."""
+    from ai_pipeline.vision.forensics import ela_region_ratio
+
+    img = Image.new("RGB", (64, 64), (200, 200, 200))
+    a = ela_region_ratio(img, (-10, -10, 20, 20))
+    b = ela_region_ratio(img, (0, 0, 20, 20))
+    assert a == b

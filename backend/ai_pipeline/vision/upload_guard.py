@@ -12,7 +12,9 @@ from dataclasses import dataclass
 from PIL import Image, UnidentifiedImageError
 
 MAX_PIXELS = 25_000_000  # EC-DB05: 25MP
-MAX_DECODED_BYTES = 128 * 1024 * 1024  # trần bitmap RGBA sau giải nén (25MP*4 = 100MB)
+MAX_DECODED_BYTES = 64 * 1024 * 1024  # EC-DB05: bitmap RGBA sau giải nén <= 64MB
+
+Image.MAX_IMAGE_PIXELS = MAX_PIXELS
 
 
 class ImageRejectedError(ValueError):
@@ -43,6 +45,8 @@ def sniff_format(data: bytes) -> str:
 
 def read_header(data: bytes, max_pixels: int = MAX_PIXELS) -> ImageHeader:
     """Đọc header (không cấp phát bitmap) và kiểm tra giới hạn pixel."""
+    if len(data) > MAX_DECODED_BYTES:  # file thô quá lớn: từ chối trước khi mở
+        raise ImageRejectedError("IMAGE_TOO_LARGE", "Dung lượng file vượt giới hạn.")
     fmt = sniff_format(data)
     try:
         with Image.open(io.BytesIO(data)) as probe:

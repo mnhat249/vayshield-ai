@@ -21,10 +21,12 @@ _STUCK = re.compile(
     r"\b(treo|bi treo|dang cho|cho (nguoi nhan|xu ly|giai toa|duyet)|"
     r"pending|bi giu|tam giu|dong bang|phong toa)\b"
 )
+_PAY = r"(?:nop|(?<!\d)(?<!\d )dong|chuyen them|gui them|thanh toan)"
+_UNLOCK = r"(?:giai toa|mo bang|mo khoa|giai ngan|kich hoat)"
 _FEE = re.compile(
-    r"(phi|nop|dong|tra|thanh toan|gui them|chuyen them)\b.{0,40}"
-    r"(giai toa|mo bang|mo khoa|giai ngan|xac thuc|kich hoat|bao hiem|thue|phi)"
-    r"|(giai toa|mo bang|mo khoa).{0,40}(phi|nop|dong)|\bnop\b.{0,20}\d+ ?%"
+    rf"\b{_PAY}\b.{{0,40}}\b{_UNLOCK}\b"
+    rf"|\b{_UNLOCK}\b.{{0,40}}\b{_PAY}\b"
+    rf"|\b(?:nop|chuyen them)\b.{{0,12}}\d+ ?%"
 )
 
 
@@ -62,7 +64,9 @@ def ela_region_ratio(
 ) -> tuple[float, float, float]:
     """(ELA trung bình vùng, ELA trung bình phần còn lại, tỉ lệ vùng/còn lại)."""
     ela = ela_map(image)
-    x0, y0, x1, y1 = region
+    h, w = ela.shape
+    x0, y0 = max(0, min(w, region[0])), max(0, min(h, region[1]))
+    x1, y1 = max(0, min(w, region[2])), max(0, min(h, region[3]))
     mask = np.zeros(ela.shape, bool)
     mask[y0:y1, x0:x1] = True
     if not mask.any() or mask.all():

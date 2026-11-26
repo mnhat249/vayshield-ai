@@ -15,7 +15,7 @@ from ai_pipeline.vision import (
     sanitize_image,
     strip_red_stamp,
 )
-from ai_pipeline.vision.upload_guard import MAX_PIXELS
+from ai_pipeline.vision.upload_guard import MAX_DECODED_BYTES, MAX_PIXELS, read_header
 from tests.ai_pipeline.vision.helpers import font, png_with_declared_size, to_bytes
 
 
@@ -77,7 +77,7 @@ def test_ec_ai05_red_stamp_removed_digits_recovered() -> None:
     ImageDraw.Draw(stamp).rectangle((30, 20, 330, 100), fill=255)
     m = (np.asarray(stamp) > 0)[..., None]
     red = np.array([220, 30, 30], np.float32)
-    stamped = np.where(m, 0.55 * red + 0.45 * stamped, stamped).astype(np.uint8)
+    stamped = np.where(m, 0.65 * red + 0.35 * stamped, stamped).astype(np.uint8)
     res = strip_red_stamp(Image.fromarray(stamped))
     assert res.detected and res.overlaps_text
     out = np.asarray(res.image).astype(int)
@@ -85,6 +85,17 @@ def test_ec_ai05_red_stamp_removed_digits_recovered() -> None:
     ink_clean = np.asarray(clean).astype(int).sum(axis=2) < 200
     ink_out = out.sum(axis=2) < 200
     assert (ink_out & ink_clean).sum() >= 0.8 * ink_clean.sum()
+
+
+def test_ec_ai05_dark_red_stamp_not_painted_black() -> None:
+    """EC-AI05 (review): mộc đỏ tối (140,25,30) không được tô đen thành mực giả."""
+    img = Image.new("RGB", (480, 120), (255, 255, 255))
+    ImageDraw.Draw(img).rectangle((30, 20, 330, 100), fill=(140, 25, 30))
+    res = strip_red_stamp(img)
+    assert res.detected and not res.overlaps_text
+    out = np.asarray(res.image).astype(int)
+    assert out.sum(axis=2).min() > 300  # không có điểm gần đen
+    assert not ((out[..., 0] > 100) & (out[..., 1] < 60)).any()
 
 
 def test_ec_ai05_no_stamp_is_untouched() -> None:
@@ -168,3 +179,19 @@ async def test_ec_ops12_cpu_bound_runs_off_event_loop() -> None:
 
     width, _ = await asyncio.gather(run_cpu_bound(work), ticker())
     assert width == 200 and seen[0] != main and ticks == 3
+
+
+def test_ec_db05_decoded_bitmap_limit_64mb_boundary() -> None:
+    """EC-DB05 (review): trần bitmap RGBA 64MB; PNG 4000x5000 (80MB) bị từ chối."""
+    assert MAX_DECODED_BYTES == 64 * 1024 * 1024
+    assert Image.MAX_IMAGE_PIXELS == MAX_PIXELS
+    with pytest.raises(ImageRejectedError) as ei:
+        sanitize_image(png_with_declared_size(4000, 5000))
+    assert ei.value.code == "IMAGE_TOO_LARGE"
+    assert read_header(png_with_declared_size(4000, 4000)).width == 4000  # đúng biên 64MB
+
+
+def test_ec_db05_oversized_raw_bytes_rejected_before_open() -> None:
+    with pytest.raises(ImageRejectedError) as ei:
+        sanitize_image(b"\x89PNG\r\n\x1a\n" + b"\x00" * (MAX_DECODED_BYTES + 1))
+    assert ei.value.code == "IMAGE_TOO_LARGE"

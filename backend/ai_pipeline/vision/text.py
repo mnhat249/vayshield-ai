@@ -32,8 +32,8 @@ _LEET_RE = re.compile(rf"(?<={_LETTER})([013457])(?={_LETTER})")
 _WS = re.compile(r"[ \t ]+")
 
 
-def canonicalize_text(text: str) -> str:
-    """NFKC → bỏ ký tự zero-width → ánh xạ homoglyph → nối chữ bị chèn dấu → giải leet.
+def canonicalize_text(text: str, *, leet: bool = False) -> str:
+    """NFKC → bỏ ký tự zero-width → ánh xạ homoglyph → nối chữ bị chèn dấu (leet chỉ khi leet=True).
 
     Leet chỉ áp dụng khi chữ số nằm giữa hai chữ cái ("kh0ản" → "khoản"), nên số
     tiền/lãi suất như "1.5%", "100k", "3tr" không bị đổi.
@@ -41,13 +41,14 @@ def canonicalize_text(text: str) -> str:
     out = unicodedata.normalize("NFKC", text).translate(_INVISIBLE)
     out = out.translate(_HOMOGLYPHS)
     out = _SPLIT_RUN.sub(lambda m: _SEP_RE.sub("", m.group(1)), out)
-    out = _LEET_RE.sub(lambda m: _LEET[m.group(1)], out)
+    if leet:
+        out = _LEET_RE.sub(lambda m: _LEET[m.group(1)], out)
     out = unicodedata.normalize("NFKC", out)
     return _WS.sub(" ", out).strip()
 
 
 def fold_diacritics(text: str) -> str:
     """Bỏ dấu tiếng Việt + lowercase, dùng cho so khớp từ khóa tất định."""
-    nfd = unicodedata.normalize("NFD", canonicalize_text(text).lower())
+    nfd = unicodedata.normalize("NFD", canonicalize_text(text, leet=True).lower())
     stripped = "".join(c for c in nfd if unicodedata.category(c) != "Mn")
     return stripped.replace("đ", "d")

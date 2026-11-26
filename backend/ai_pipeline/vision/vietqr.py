@@ -111,6 +111,10 @@ def decode_vietqr(payload: str) -> VietQrPayload:
         raise VietQrError("CRC_MISMATCH", "CRC16 không khớp: mã QR bị sửa hoặc hỏng.")
 
     tags = parse_tlv(s)
+    if tags.get("00") != "01":
+        raise VietQrError("NOT_VIETQR", "Tag 00 (Payload Format Indicator) phải là 01.")
+    if "53" in tags and tags["53"] != "704":
+        raise VietQrError("BAD_CURRENCY", "Tag 53 phải là 704 (VND).")
     if "38" not in tags:
         raise VietQrError("NOT_VIETQR", "Không có Tag 38 (NAPAS VietQR).")
     t38 = parse_tlv(tags["38"])
@@ -125,11 +129,13 @@ def decode_vietqr(payload: str) -> VietQrPayload:
 
     amount: int | None = None
     if "54" in tags:
+        if not re.fullmatch(r"\d+(\.\d{1,2})?", tags["54"]):
+            raise VietQrError("BAD_AMOUNT", "Tag 54 phải khớp dạng số tiền hợp lệ.")
         try:
             dec = Decimal(tags["54"])
         except InvalidOperation as exc:
             raise VietQrError("BAD_AMOUNT", "Tag 54 không phải số.") from exc
-        if not dec.is_finite() or dec < 0 or dec != dec.to_integral_value():
+        if dec != dec.to_integral_value():
             raise VietQrError("BAD_AMOUNT", "Số tiền VND phải là số nguyên không âm.")
         amount = int(dec)
 
@@ -227,40 +233,76 @@ def _dewarp_candidates(gray: U8) -> list[tuple[U8, Box]]:
     return out
 
 
+def _iou(a: Box, b: Box) -> float:
+    ix = max(0, min(a[2], b[2]) - max(a[0], b[0]))
+    iy = max(0, min(a[3], b[3]) - max(a[1], b[1]))
+    inter = ix * iy
+    union = (a[2] - a[0]) * (a[3] - a[1]) + (b[2] - b[0]) * (b[3] - b[1]) - inter
+    return inter / union if union > 0 else 0.0
+
+
+def _local_contrast(gray: U8) -> U8:
+    """Trừ nền cục bộ rồi khuếch đại: cứu QR mờ/tương phản thấp."""
+    f = gray.astype(np.float32)
+    flat = (f - cv2.GaussianBlur(f, (0, 0), 25)) * 8.0 + 128.0
+    return np.asarray(np.clip(flat, 0, 255), dtype=np.uint8)
+
+
+def _merge(found: list[QrDetection], new: list[QrDetection]) -> None:
+    for d in new:
+        if not any(d.text == f.text and _iou(d.bbox, f.bbox) > 0.3 for f in found):
+            found.append(d)
+
+
 def detect_qr_codes(image: Image.Image) -> list[QrDetection]:
-    """Quét mọi QR trong ảnh; fallback: ngưỡng thích nghi, phóng ×2, dewarp 4 điểm."""
+    """Quét mọi QR trong ảnh.
+
+    LUÔN chạy mọi biến thể (gốc, tương phản cục bộ, CLAHE, ngưỡng thích nghi, x2, dewarp 4
+    điểm) và gộp kết quả (dedupe theo text + IoU bbox): QR mờ của kẻ gian không được bị bỏ
+    chỉ vì đã đọc được QR rõ khác trong cùng ảnh (EC-AI02).
+    """
     rgb = np.ascontiguousarray(np.asarray(image.convert("RGB"), dtype=np.uint8))
-    hits = _read(rgb)
-    if hits:
-        return hits
+    found = _read(rgb)
     gray = np.asarray(cv2.cvtColor(rgb, cv2.COLOR_RGB2GRAY), dtype=np.uint8)
+    clahe = cv2.createCLAHE(clipLimit=4.0, tileGridSize=(8, 8)).apply(gray)
     adaptive = cv2.adaptiveThreshold(
         gray, 255, cv2.ADAPTIVE_THRESH_GAUSSIAN_C, cv2.THRESH_BINARY, 41, 10
     )
-    up = cv2.resize(gray, None, fx=2, fy=2, interpolation=cv2.INTER_CUBIC)
-    for variant, scale in ((adaptive, 1.0), (up, 2.0)):
-        scaled = [
-            QrDetection(
-                d.text,
-                d.x_center / scale,
-                d.y_center / scale,
-                (
-                    int(d.bbox[0] / scale),
-                    int(d.bbox[1] / scale),
-                    int(d.bbox[2] / scale),
-                    int(d.bbox[3] / scale),
-                ),
-            )
-            for d in _read(np.ascontiguousarray(variant))
-        ]
-        if scaled:
-            return scaled
+    up = np.asarray(
+        cv2.resize(gray, None, fx=2, fy=2, interpolation=cv2.INTER_CUBIC), dtype=np.uint8
+    )
+    for variant, scale in (
+        (_local_contrast(gray), 1.0),
+        (clahe, 1.0),
+        (adaptive, 1.0),
+        (up, 2.0),
+        (_local_contrast(up), 2.0),
+    ):
+        _merge(
+            found,
+            [
+                QrDetection(
+                    d.text,
+                    d.x_center / scale,
+                    d.y_center / scale,
+                    (
+                        int(d.bbox[0] / scale),
+                        int(d.bbox[1] / scale),
+                        int(d.bbox[2] / scale),
+                        int(d.bbox[3] / scale),
+                    ),
+                )
+                for d in _read(np.ascontiguousarray(variant))
+            ],
+        )
+    known = {d.text for d in found}
     for warped, box in _dewarp_candidates(gray):
-        decoded = _read(warped)
-        if decoded:
-            cx, cy = (box[0] + box[2]) / 2, (box[1] + box[3]) / 2
-            return [QrDetection(d.text, cx, cy, box) for d in decoded]
-    return []
+        cx, cy = (box[0] + box[2]) / 2, (box[1] + box[3]) / 2
+        # Tọa độ ảnh nắn phẳng vô nghĩa: chỉ nhận text CHƯA thấy ở bước trước.
+        extra = [QrDetection(d.text, cx, cy, box) for d in _read(warped) if d.text not in known]
+        known.update(d.text for d in extra)
+        found.extend(extra)
+    return found
 
 
 def _bubble_color(rgb: U8, bbox: Box) -> tuple[float, float, float]:
@@ -284,35 +326,51 @@ def _is_blue_bubble(color: tuple[float, float, float]) -> bool:
     return b - r >= 25 and b >= g
 
 
+def _bubble_right_edge(rgb: U8, bbox: Box, color: tuple[float, float, float]) -> int:
+    """Mép phải bong bóng: quét ngang từ ngoài quiet-zone khi màu còn khớp màu bong bóng."""
+    x0, y0, x1, y1 = bbox
+    h, w, _ = rgb.shape
+    pad = max(8, int(0.35 * max(x1 - x0, y1 - y0)))
+    row = rgb[min(h - 1, max(0, (y0 + y1) // 2))].astype(np.float32)
+    ref = np.array(color, np.float32)
+    x = x1
+    limit = min(w - 1, x1 + pad)
+    while x < limit and np.abs(row[x] - ref).max() > 18:  # bỏ qua quiet-zone trắng của QR
+        x += 1
+    if np.abs(row[x] - ref).max() > 18:
+        return x1
+    while x + 1 < w and np.abs(row[x + 1] - ref).max() <= 18:
+        x += 1
+    return x + 1
+
+
 def attribute_qr_sender(
     image: Image.Image,
     detections: list[QrDetection] | None = None,
     *,
-    left_max: float = 0.48,
-    right_min: float = 0.52,
+    right_edge_min: float = 0.9,
 ) -> list[AttributedQr]:
     """Left-vs-Right Chat Bubble Attribution (EC-AI02).
 
-    x_center < 0.48W → đối phương; > 0.52W → chính người dùng (loại khỏi kiểm tra mồi).
-    Vùng 0.48..0.52 dùng màu bong bóng (xanh = của mình, trắng/xám = đối phương); không rõ
-    → UNKNOWN (vẫn `should_check`, ưu tiên không bỏ sót QR của kẻ gian).
+    Chỉ kết luận SELF (loại khỏi kiểm tra mồi) khi BONG BÓNG xanh VÀ căn phải (mép phải bong
+    bóng >= 0.9W). Bong bóng trắng/xám -> COUNTERPARTY; còn lại -> COUNTERPARTY nếu tâm QR ở
+    nửa trái (< 0.48W), ngược lại UNKNOWN. Mọi kết quả khác SELF đều `should_check`.
     """
     dets = detect_qr_codes(image) if detections is None else detections
     rgb = np.ascontiguousarray(np.asarray(image.convert("RGB"), dtype=np.uint8))
     width = rgb.shape[1]
     result: list[AttributedQr] = []
     for d in dets:
-        ratio = d.x_center / width
-        if ratio < left_max:
-            result.append(AttributedQr(d, QrSender.COUNTERPARTY, "x_center<0.48W"))
-        elif ratio > right_min:
-            result.append(AttributedQr(d, QrSender.SELF, "x_center>0.52W"))
-        else:
-            color = _bubble_color(rgb, d.bbox)
-            if _is_blue_bubble(color):
-                result.append(AttributedQr(d, QrSender.SELF, "mid_band_blue_bubble"))
-            elif min(color) >= 200:
-                result.append(AttributedQr(d, QrSender.COUNTERPARTY, "mid_band_white_bubble"))
+        color = _bubble_color(rgb, d.bbox)
+        if _is_blue_bubble(color):
+            if _bubble_right_edge(rgb, d.bbox, color) >= right_edge_min * width:
+                result.append(AttributedQr(d, QrSender.SELF, "right_aligned_blue_bubble"))
             else:
-                result.append(AttributedQr(d, QrSender.UNKNOWN, "mid_band_ambiguous"))
+                result.append(AttributedQr(d, QrSender.UNKNOWN, "blue_bubble_not_right_aligned"))
+        elif min(color) >= 200:
+            result.append(AttributedQr(d, QrSender.COUNTERPARTY, "white_bubble"))
+        elif d.x_center / width < 0.48:
+            result.append(AttributedQr(d, QrSender.COUNTERPARTY, "x_center<0.48W"))
+        else:
+            result.append(AttributedQr(d, QrSender.UNKNOWN, "ambiguous_bubble"))
     return result

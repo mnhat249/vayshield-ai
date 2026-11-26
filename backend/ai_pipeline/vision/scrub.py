@@ -103,7 +103,8 @@ def sanitize_image(data: bytes, max_pixels: int = MAX_PIXELS) -> SanitizedImage:
 
 RED_SAT_MIN = 0.45
 RED_DETECT_RATIO = 0.001
-INK_VALUE_MAX = 0.6  # điểm đỏ tối (mực đen lộ qua mộc) → coi là chữ
+INK_LOCAL_RATIO = 0.7  # tương phản cục bộ so với mực mộc
+INK_VALUE_MAX = 0.25  # chỉ điểm đỏ RẤT tối (mực đen lộ qua mộc) mới coi là chữ
 
 
 @dataclass(frozen=True)
@@ -122,12 +123,14 @@ def strip_red_stamp(image: Image.Image) -> StampResult:
     rgb = np.ascontiguousarray(np.asarray(image.convert("RGB"), dtype=np.uint8))
     hsv = cv2.cvtColor(rgb, cv2.COLOR_RGB2HSV)
     hue, sat, val = hsv[..., 0], hsv[..., 1], hsv[..., 2]  # OpenCV: H 0..179 (độ/2)
-    red = ((hue <= 6) | (hue >= 172)) & (sat > RED_SAT_MIN * 255)
+    red = ((hue <= 6) | (hue >= 173)) & (sat > RED_SAT_MIN * 255)
     ratio = float(np.count_nonzero(red)) / red.size
     if ratio < RED_DETECT_RATIO:
         return StampResult(Image.fromarray(rgb, mode="RGB"), False, ratio, False)
 
-    ink = red & (val < INK_VALUE_MAX * 255)
+    # Mực = V rất thấp, hoặc tối rõ rệt so với nền mộc cục bộ (trung vị V vùng đỏ).
+    stamp_v = float(np.median(val[red]))
+    ink = red & ((val < INK_VALUE_MAX * 255) | (val < INK_LOCAL_RATIO * stamp_v))
     dark_text = (val < 110) & (sat < 90)
     near_red = cv2.dilate(red.astype(np.uint8), np.ones((5, 5), np.uint8)).astype(bool)
     overlaps = bool(np.any(ink) or np.any(near_red & dark_text))
