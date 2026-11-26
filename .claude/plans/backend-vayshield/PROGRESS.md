@@ -36,7 +36,7 @@ Plan: [`../backend-vayshield.md`](../backend-vayshield.md) · Cập nhật %: `n
 | T01 | WP1-01 | PostgreSQL schema + RLS + hash-chain | 1 | M1 | T00 | 10 | merged | task/backend-vayshield/T01 | pass local + CI pg (PR#1) | approve sau sửa (2 major); CI pg xanh | – | |
 | T02 | WP1-03 | Kernel tài chính APR/XIRR/khoảng/MIRR | 1 | M1 | T00 | 8 | merged | task/backend-vayshield/T02 | pass (177✓) | approve sau sửa (1 major); bản sửa chỉ verify, chưa review lại | – | ≥35 pytest |
 | T03 | WP1-04 | Thị giác đối kháng + VietQR | 1 | M1 | T00 | 10 | merged | task/backend-vayshield/T03 | pass (210✓) sau sửa | approve sau 2 vòng sửa (1 blocker + 7 major); vòng 2 chỉ verify, chưa review lại | – | |
-| T04 | WP1-05 | Trích xuất LLM + Conformal + Voice | 1 | M1 | T00 | 12 | verified | task/backend-vayshield/T04 | pass (244✓) | review đang chạy | – | |
+| T04 | WP1-05 | Trích xuất LLM + Conformal + Voice | 1 | M1 | T00 | 12 | verified | task/backend-vayshield/T04 | pass (244✓) | changes (2 blocker, 7 major) | – | |
 | T05 | WP1-07 | Redis HSM + Lua smurf + idempotency | 1 | M2 | T00 | 8 | implemented | task/backend-vayshield/T05 | pass (416✓), Lua redis thật chờ CI PR#2 | changes (2 blocker, 4 major) | – | |
 | T06 | WP1-11 | Dataset Bench-340 (data + nhãn) | 1 | M3 | T00 | 2 | implemented | task/backend-vayshield/T06 | validate pass | changes (nhãn lệch spec) | – | |
 | T07 | WP1-08 | Ontology 10 trục C1–C10 | 1 | M2 | T00 | 4 | merged | task/backend-vayshield/T07 | pass (188✓) | approve (sau 1 vòng sửa) | – | |
@@ -73,3 +73,5 @@ Plan: [`../backend-vayshield.md`](../backend-vayshield.md) · Cập nhật %: `n
 | 2026-11-26 | T03 re-review: blocker cũ đã sửa; sinh 3 major mới (SELF trên nền xanh, hồi quy _FEE, CPU/RAM detect_qr_codes) → agent đang sửa vòng 2 |
 | 2026-11-26 | T04 implemented + verified (113 test riêng; schema int đồng thay float, có chủ đích) → review đang chạy. Đang chạy song song: T03 sửa vòng 2, T05 sửa blocker, T04 review |
 | 2026-11-26 | T03 merged (approve sau 2 vòng sửa (1 blocker + 7 major); vòng 2 chỉ verify, chưa review lại) |
+| 2026-11-26 | T03 merged (419✓). T04 review: 2 blocker (số tiền lóng: "10 triệu một tháng" → 10.100.000) + 7 major (gộp nhầm 2 thương hiệu, mất phí khi hợp nhất Pro, pool key dùng chung...) → agent đang sửa. T06 agent mới đang sửa nhãn |
+| 2026-11-26 | T06 merged (approve; nhãn APR đối chiếu solver T02: 63/63 khớp, 17 null (advance-fee)) |
