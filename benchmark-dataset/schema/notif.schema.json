@@ -1,0 +1,62 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "VS-Notif-100 sample",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "id",
+    "bank",
+    "category",
+    "text",
+    "is_disbursement",
+    "contains_otp",
+    "otp_value",
+    "pii_spans",
+    "expected_masked"
+  ],
+  "properties": {
+    "id": {
+      "type": "string",
+      "pattern": "^NT-\\d{3}$"
+    },
+    "bank": {
+      "type": "string",
+      "minLength": 1
+    },
+    "category": {
+      "enum": [
+        "DISBURSEMENT",
+        "SALARY_P2P",
+        "DEBIT_REFUND",
+        "OTP"
+      ]
+    },
+    "text": {
+      "type": "string",
+      "minLength": 1
+    },
+    "is_disbursement": {
+      "type": "boolean"
+    },
+    "contains_otp": {
+      "type": "boolean"
+    },
+    "otp_value": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "pii_spans": {
+      "type": "array",
+      "items": {
+        "type": "string",
+        "minLength": 1
+      }
+    },
+    "expected_masked": {
+      "type": "string",
+      "minLength": 1
+    }
+  }
+}

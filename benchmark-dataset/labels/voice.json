@@ -1,0 +1,962 @@
+[
+ {
+  "id": "VT-001",
+  "region": "bac",
+  "noise_db": 80,
+  "transcript": "Tôi mượn mười ba củ rưỡi, mỗi tuần đóng 750 k, đóng tám tuần ạ.",
+  "audio_file": null,
+  "audio_pending": true,
+  "slots": {
+   "principal_vnd": 13500000,
+   "installment_vnd": 750000,
+   "period": "week",
+   "n_installments": 8
+  },
+  "slang_terms": [
+   {
+    "surface": "mười ba củ rưỡi",
+    "value_vnd": 13500000
+   },
+   {
+    "surface": "750 k",
+    "value_vnd": 750000
+   }
+  ]
+ },
+ {
+  "id": "VT-002",
+  "region": "bac",
+  "noise_db": 65,
+  "transcript": "Em vay mười chín chai, mỗi ngày đóng 250 k, đóng bốn ngày ạ.",
+  "audio_file": null,
+  "audio_pending": true,
+  "slots": {
+   "principal_vnd": 19000000,
+   "installment_vnd": 250000,
+   "period": "day",
+   "n_installments": 4
+  },
+  "slang_terms": [
+   {
+    "surface": "mười chín chai",
+    "value_vnd": 19000000
+   },
+   {
+    "surface": "250 k",
+    "value_vnd": 250000
+   }
+  ]
+ },
+ {
+  "id": "VT-003",
+  "region": "bac",
+  "noise_db": 80,
+  "transcript": "Tôi mượn mười hai củ, mỗi tháng đóng hai chai rưỡi, đóng sáu tháng ạ.",
+  "audio_file": null,
+  "audio_pending": true,
+  "slots": {
+   "principal_vnd": 12000000,
+   "installment_vnd": 2500000,
+   "period": "month",
+   "n_installments": 6
+  },
+  "slang_terms": [
+   {
+    "surface": "mười hai củ",
+    "value_vnd": 12000000
+   },
+   {
+    "surface": "hai chai rưỡi",
+    "value_vnd": 2500000
+   }
+  ]
+ },
+ {
+  "id": "VT-004",
+  "region": "bac",
+  "noise_db": 55,
+  "transcript": "Em vay bốn chai rưỡi, mỗi tuần đóng 200 k, đóng bốn tuần nhé.",
+  "audio_file": null,
+  "audio_pending": true,
+  "slots": {
+   "principal_vnd": 4500000,
+   "installment_vnd": 200000,
+   "period": "week",
+   "n_installments": 4
+  },
+  "slang_terms": [
+   {
+    "surface": "bốn chai rưỡi",
+    "value_vnd": 4500000
+   },
+   {
+    "surface": "200 k",
+    "value_vnd": 200000
+   }
+  ]
+ },
+ {
+  "id": "VT-005",
+  "region": "bac",
+  "noise_db": 80,
+  "transcript": "Tôi mượn bốn củ rưỡi, mỗi ngày đóng 850 k, đóng mười hai ngày nhé.",
+  "audio_file": null,
+  "audio_pending": true,
+  "slots": {
+   "principal_vnd": 4500000,
+   "installment_vnd": 850000,
+   "period": "day",
+   "n_installments": 12
+  },
+  "slang_terms": [
+   {
+    "surface": "bốn củ rưỡi",
+    "value_vnd": 4500000
+   },
+   {
+    "surface": "850 k",
+    "value_vnd": 850000
+   }
+  ]
+ },
+ {
+  "id": "VT-006",
+  "region": "bac",
+  "noise_db": 55,
+  "transcript": "Em vay hai chai rưỡi, mỗi tháng đóng hai củ rưỡi, đóng bốn tháng ạ.",
+  "audio_file": null,
+  "audio_pending": true,
+  "slots": {
+   "principal_vnd": 2500000,
+   "installment_vnd": 2500000,
+   "period": "month",
+   "n_installments": 4
+  },
+  "slang_terms": [
+   {
+    "surface": "hai chai rưỡi",
+    "value_vnd": 2500000
+   },
+   {
+    "surface": "hai củ rưỡi",
+    "value_vnd": 2500000
+   }
+  ]
+ },
+ {
+  "id": "VT-007",
+  "region": "bac",
+  "noise_db": 80,
+  "transcript": "Em vay mười hai chai, mỗi tuần đóng 750 k, đóng sáu tuần ạ.",
+  "audio_file": null,
+  "audio_pending": true,
+  "slots": {
+   "principal_vnd": 12000000,
+   "installment_vnd": 750000,
+   "period": "week",
+   "n_installments": 6
+  },
+  "slang_terms": [
+   {
+    "surface": "mười hai chai",
+    "value_vnd": 12000000
+   },
+   {
+    "surface": "750 k",
+    "value_vnd": 750000
+   }
+  ]
+ },
+ {
+  "id": "VT-008",
+  "region": "bac",
+  "noise_db": 65,
+  "transcript": "Em vay mười ba chai rưỡi, mỗi ngày đóng bốn xị, đóng bốn ngày nhé.",
+  "audio_file": null,
+  "audio_pending": true,
+  "slots": {
+   "principal_vnd": 13500000,
+   "installment_vnd": 400000,
+   "period": "day",
+   "n_installments": 4
+  },
+  "slang_terms": [
+   {
+    "surface": "mười ba chai rưỡi",
+    "value_vnd": 13500000
+   },
+   {
+    "surface": "bốn xị",
+    "value_vnd": 400000
+   }
+  ]
+ },
+ {
+  "id": "VT-009",
+  "region": "bac",
+  "noise_db": 80,
+  "transcript": "Tôi mượn ba chai, mỗi tháng đóng hai củ, đóng bốn tháng nhé.",
+  "audio_file": null,
+  "audio_pending": true,
+  "slots": {
+   "principal_vnd": 3000000,
+   "installment_vnd": 2000000,
+   "period": "month",
+   "n_installments": 4
+  },
+  "slang_terms": [
+   {
+    "surface": "ba chai",
+    "value_vnd": 3000000
+   },
+   {
+    "surface": "hai củ",
+    "value_vnd": 2000000
+   }
+  ]
+ },
+ {
+  "id": "VT-010",
+  "region": "bac",
+  "noise_db": 45,
+  "transcript": "Tôi mượn mười tám củ, mỗi tuần đóng 700 k, đóng mười hai tuần ạ.",
+  "audio_file": null,
+  "audio_pending": true,
+  "slots": {
+   "principal_vnd": 18000000,
+   "installment_vnd": 700000,
+   "period": "week",
+   "n_installments": 12
+  },
+  "slang_terms": [
+   {
+    "surface": "mười tám củ",
+    "value_vnd": 18000000
+   },
+   {
+    "surface": "700 k",
+    "value_vnd": 700000
+   }
+  ]
+ },
+ {
+  "id": "VT-011",
+  "region": "bac",
+  "noise_db": 80,
+  "transcript": "Em vay mười tám củ, mỗi ngày đóng 550 k, đóng sáu ngày ạ.",
+  "audio_file": null,
+  "audio_pending": true,
+  "slots": {
+   "principal_vnd": 18000000,
+   "installment_vnd": 550000,
+   "period": "day",
+   "n_installments": 6
+  },
+  "slang_terms": [
+   {
+    "surface": "mười tám củ",
+    "value_vnd": 18000000
+   },
+   {
+    "surface": "550 k",
+    "value_vnd": 550000
+   }
+  ]
+ },
+ {
+  "id": "VT-012",
+  "region": "bac",
+  "noise_db": 65,
+  "transcript": "Tôi mượn bảy chai rưỡi, mỗi tháng đóng hai củ, đóng tám tháng ạ.",
+  "audio_file": null,
+  "audio_pending": true,
+  "slots": {
+   "principal_vnd": 7500000,
+   "installment_vnd": 2000000,
+   "period": "month",
+   "n_installments": 8
+  },
+  "slang_terms": [
+   {
+    "surface": "bảy chai rưỡi",
+    "value_vnd": 7500000
+   },
+   {
+    "surface": "hai củ",
+    "value_vnd": 2000000
+   }
+  ]
+ },
+ {
+  "id": "VT-013",
+  "region": "bac",
+  "noise_db": 80,
+  "transcript": "Tôi mượn ba củ, mỗi tuần đóng tám xị, đóng mười hai tuần ạ.",
+  "audio_file": null,
+  "audio_pending": true,
+  "slots": {
+   "principal_vnd": 3000000,
+   "installment_vnd": 800000,
+   "period": "week",
+   "n_installments": 12
+  },
+  "slang_terms": [
+   {
+    "surface": "ba củ",
+    "value_vnd": 3000000
+   },
+   {
+    "surface": "tám xị",
+    "value_vnd": 800000
+   }
+  ]
+ },
+ {
+  "id": "VT-014",
+  "region": "bac",
+  "noise_db": 65,
+  "transcript": "Em vay năm chai, mỗi ngày đóng 250 k, đóng bốn ngày ạ.",
+  "audio_file": null,
+  "audio_pending": true,
+  "slots": {
+   "principal_vnd": 5000000,
+   "installment_vnd": 250000,
+   "period": "day",
+   "n_installments": 4
+  },
+  "slang_terms": [
+   {
+    "surface": "năm chai",
+    "value_vnd": 5000000
+   },
+   {
+    "surface": "250 k",
+    "value_vnd": 250000
+   }
+  ]
+ },
+ {
+  "id": "VT-015",
+  "region": "trung",
+  "noise_db": 80,
+  "transcript": "Tui mượn sáu củ, mỗi tháng đóng ba chai, đóng bốn tháng nghe.",
+  "audio_file": null,
+  "audio_pending": true,
+  "slots": {
+   "principal_vnd": 6000000,
+   "installment_vnd": 3000000,
+   "period": "month",
+   "n_installments": 4
+  },
+  "slang_terms": [
+   {
+    "surface": "sáu củ",
+    "value_vnd": 6000000
+   },
+   {
+    "surface": "ba chai",
+    "value_vnd": 3000000
+   }
+  ]
+ },
+ {
+  "id": "VT-016",
+  "region": "trung",
+  "noise_db": 65,
+  "transcript": "Em vay sáu củ rưỡi, mỗi tuần đóng 900 k, đóng mười hai tuần nghe.",
+  "audio_file": null,
+  "audio_pending": true,
+  "slots": {
+   "principal_vnd": 6500000,
+   "installment_vnd": 900000,
+   "period": "week",
+   "n_installments": 12
+  },
+  "slang_terms": [
+   {
+    "surface": "sáu củ rưỡi",
+    "value_vnd": 6500000
+   },
+   {
+    "surface": "900 k",
+    "value_vnd": 900000
+   }
+  ]
+ },
+ {
+  "id": "VT-017",
+  "region": "trung",
+  "noise_db": 80,
+  "transcript": "Tui mượn mười bảy chai, mỗi ngày đóng tám xị, đóng sáu ngày rứa.",
+  "audio_file": null,
+  "audio_pending": true,
+  "slots": {
+   "principal_vnd": 17000000,
+   "installment_vnd": 800000,
+   "period": "day",
+   "n_installments": 6
+  },
+  "slang_terms": [
+   {
+    "surface": "mười bảy chai",
+    "value_vnd": 17000000
+   },
+   {
+    "surface": "tám xị",
+    "value_vnd": 800000
+   }
+  ]
+ },
+ {
+  "id": "VT-018",
+  "region": "trung",
+  "noise_db": 55,
+  "transcript": "Em vay sáu chai, mỗi tháng đóng hai củ rưỡi, đóng bốn tháng nghe.",
+  "audio_file": null,
+  "audio_pending": true,
+  "slots": {
+   "principal_vnd": 6000000,
+   "installment_vnd": 2500000,
+   "period": "month",
+   "n_installments": 4
+  },
+  "slang_terms": [
+   {
+    "surface": "sáu chai",
+    "value_vnd": 6000000
+   },
+   {
+    "surface": "hai củ rưỡi",
+    "value_vnd": 2500000
+   }
+  ]
+ },
+ {
+  "id": "VT-019",
+  "region": "trung",
+  "noise_db": 80,
+  "transcript": "Tui mượn mười bốn củ rưỡi, mỗi tuần đóng 950 k, đóng mười tuần rứa.",
+  "audio_file": null,
+  "audio_pending": true,
+  "slots": {
+   "principal_vnd": 14500000,
+   "installment_vnd": 950000,
+   "period": "week",
+   "n_installments": 10
+  },
+  "slang_terms": [
+   {
+    "surface": "mười bốn củ rưỡi",
+    "value_vnd": 14500000
+   },
+   {
+    "surface": "950 k",
+    "value_vnd": 950000
+   }
+  ]
+ },
+ {
+  "id": "VT-020",
+  "region": "trung",
+  "noise_db": 55,
+  "transcript": "Tui mượn mười bốn củ rưỡi, mỗi ngày đóng 650 k, đóng mười ngày rứa.",
+  "audio_file": null,
+  "audio_pending": true,
+  "slots": {
+   "principal_vnd": 14500000,
+   "installment_vnd": 650000,
+   "period": "day",
+   "n_installments": 10
+  },
+  "slang_terms": [
+   {
+    "surface": "mười bốn củ rưỡi",
+    "value_vnd": 14500000
+   },
+   {
+    "surface": "650 k",
+    "value_vnd": 650000
+   }
+  ]
+ },
+ {
+  "id": "VT-021",
+  "region": "trung",
+  "noise_db": 80,
+  "transcript": "Tui mượn mười chín củ rưỡi, mỗi tháng đóng hai chai, đóng sáu tháng nghe.",
+  "audio_file": null,
+  "audio_pending": true,
+  "slots": {
+   "principal_vnd": 19500000,
+   "installment_vnd": 2000000,
+   "period": "month",
+   "n_installments": 6
+  },
+  "slang_terms": [
+   {
+    "surface": "mười chín củ rưỡi",
+    "value_vnd": 19500000
+   },
+   {
+    "surface": "hai chai",
+    "value_vnd": 2000000
+   }
+  ]
+ },
+ {
+  "id": "VT-022",
+  "region": "trung",
+  "noise_db": 65,
+  "transcript": "Tui mượn bảy chai rưỡi, mỗi tuần đóng 800 k, đóng bốn tuần nghe.",
+  "audio_file": null,
+  "audio_pending": true,
+  "slots": {
+   "principal_vnd": 7500000,
+   "installment_vnd": 800000,
+   "period": "week",
+   "n_installments": 4
+  },
+  "slang_terms": [
+   {
+    "surface": "bảy chai rưỡi",
+    "value_vnd": 7500000
+   },
+   {
+    "surface": "800 k",
+    "value_vnd": 800000
+   }
+  ]
+ },
+ {
+  "id": "VT-023",
+  "region": "trung",
+  "noise_db": 80,
+  "transcript": "Em vay mười ba củ rưỡi, mỗi ngày đóng 650 k, đóng tám ngày nghe.",
+  "audio_file": null,
+  "audio_pending": true,
+  "slots": {
+   "principal_vnd": 13500000,
+   "installment_vnd": 650000,
+   "period": "day",
+   "n_installments": 8
+  },
+  "slang_terms": [
+   {
+    "surface": "mười ba củ rưỡi",
+    "value_vnd": 13500000
+   },
+   {
+    "surface": "650 k",
+    "value_vnd": 650000
+   }
+  ]
+ },
+ {
+  "id": "VT-024",
+  "region": "trung",
+  "noise_db": 45,
+  "transcript": "Tui mượn bốn chai rưỡi, mỗi tháng đóng một củ, đóng mười tháng rứa.",
+  "audio_file": null,
+  "audio_pending": true,
+  "slots": {
+   "principal_vnd": 4500000,
+   "installment_vnd": 1000000,
+   "period": "month",
+   "n_installments": 10
+  },
+  "slang_terms": [
+   {
+    "surface": "bốn chai rưỡi",
+    "value_vnd": 4500000
+   },
+   {
+    "surface": "một củ",
+    "value_vnd": 1000000
+   }
+  ]
+ },
+ {
+  "id": "VT-025",
+  "region": "trung",
+  "noise_db": 80,
+  "transcript": "Em vay mười bốn chai, mỗi tuần đóng 550 k, đóng bốn tuần nghe.",
+  "audio_file": null,
+  "audio_pending": true,
+  "slots": {
+   "principal_vnd": 14000000,
+   "installment_vnd": 550000,
+   "period": "week",
+   "n_installments": 4
+  },
+  "slang_terms": [
+   {
+    "surface": "mười bốn chai",
+    "value_vnd": 14000000
+   },
+   {
+    "surface": "550 k",
+    "value_vnd": 550000
+   }
+  ]
+ },
+ {
+  "id": "VT-026",
+  "region": "trung",
+  "noise_db": 55,
+  "transcript": "Tui mượn mười một củ rưỡi, mỗi ngày đóng sáu lít, đóng tám ngày nghe.",
+  "audio_file": null,
+  "audio_pending": true,
+  "slots": {
+   "principal_vnd": 11500000,
+   "installment_vnd": 600000,
+   "period": "day",
+   "n_installments": 8
+  },
+  "slang_terms": [
+   {
+    "surface": "mười một củ rưỡi",
+    "value_vnd": 11500000
+   },
+   {
+    "surface": "sáu lít",
+    "value_vnd": 600000
+   }
+  ]
+ },
+ {
+  "id": "VT-027",
+  "region": "trung",
+  "noise_db": 80,
+  "transcript": "Tui mượn mười hai củ rưỡi, mỗi tháng đóng ba chai, đóng sáu tháng nghe.",
+  "audio_file": null,
+  "audio_pending": true,
+  "slots": {
+   "principal_vnd": 12500000,
+   "installment_vnd": 3000000,
+   "period": "month",
+   "n_installments": 6
+  },
+  "slang_terms": [
+   {
+    "surface": "mười hai củ rưỡi",
+    "value_vnd": 12500000
+   },
+   {
+    "surface": "ba chai",
+    "value_vnd": 3000000
+   }
+  ]
+ },
+ {
+  "id": "VT-028",
+  "region": "nam",
+  "noise_db": 55,
+  "transcript": "Con vay mười bảy củ rưỡi, mỗi tuần đóng 650 k, đóng mười hai tuần nha.",
+  "audio_file": null,
+  "audio_pending": true,
+  "slots": {
+   "principal_vnd": 17500000,
+   "installment_vnd": 650000,
+   "period": "week",
+   "n_installments": 12
+  },
+  "slang_terms": [
+   {
+    "surface": "mười bảy củ rưỡi",
+    "value_vnd": 17500000
+   },
+   {
+    "surface": "650 k",
+    "value_vnd": 650000
+   }
+  ]
+ },
+ {
+  "id": "VT-029",
+  "region": "nam",
+  "noise_db": 80,
+  "transcript": "Tui mượn mười bảy chai rưỡi, mỗi ngày đóng sáu lít, đóng bốn ngày đó.",
+  "audio_file": null,
+  "audio_pending": true,
+  "slots": {
+   "principal_vnd": 17500000,
+   "installment_vnd": 600000,
+   "period": "day",
+   "n_installments": 4
+  },
+  "slang_terms": [
+   {
+    "surface": "mười bảy chai rưỡi",
+    "value_vnd": 17500000
+   },
+   {
+    "surface": "sáu lít",
+    "value_vnd": 600000
+   }
+  ]
+ },
+ {
+  "id": "VT-030",
+  "region": "nam",
+  "noise_db": 45,
+  "transcript": "Tui mượn mười một củ rưỡi, mỗi tháng đóng hai chai rưỡi, đóng tám tháng nha.",
+  "audio_file": null,
+  "audio_pending": true,
+  "slots": {
+   "principal_vnd": 11500000,
+   "installment_vnd": 2500000,
+   "period": "month",
+   "n_installments": 8
+  },
+  "slang_terms": [
+   {
+    "surface": "mười một củ rưỡi",
+    "value_vnd": 11500000
+   },
+   {
+    "surface": "hai chai rưỡi",
+    "value_vnd": 2500000
+   }
+  ]
+ },
+ {
+  "id": "VT-031",
+  "region": "nam",
+  "noise_db": 80,
+  "transcript": "Tui mượn sáu chai, mỗi tuần đóng 250 k, đóng bốn tuần nha.",
+  "audio_file": null,
+  "audio_pending": true,
+  "slots": {
+   "principal_vnd": 6000000,
+   "installment_vnd": 250000,
+   "period": "week",
+   "n_installments": 4
+  },
+  "slang_terms": [
+   {
+    "surface": "sáu chai",
+    "value_vnd": 6000000
+   },
+   {
+    "surface": "250 k",
+    "value_vnd": 250000
+   }
+  ]
+ },
+ {
+  "id": "VT-032",
+  "region": "nam",
+  "noise_db": 55,
+  "transcript": "Tui mượn bảy chai, mỗi ngày đóng 950 k, đóng sáu ngày đó.",
+  "audio_file": null,
+  "audio_pending": true,
+  "slots": {
+   "principal_vnd": 7000000,
+   "installment_vnd": 950000,
+   "period": "day",
+   "n_installments": 6
+  },
+  "slang_terms": [
+   {
+    "surface": "bảy chai",
+    "value_vnd": 7000000
+   },
+   {
+    "surface": "950 k",
+    "value_vnd": 950000
+   }
+  ]
+ },
+ {
+  "id": "VT-033",
+  "region": "nam",
+  "noise_db": 80,
+  "transcript": "Con vay mười sáu chai rưỡi, mỗi tháng đóng một củ rưỡi, đóng sáu tháng đó.",
+  "audio_file": null,
+  "audio_pending": true,
+  "slots": {
+   "principal_vnd": 16500000,
+   "installment_vnd": 1500000,
+   "period": "month",
+   "n_installments": 6
+  },
+  "slang_terms": [
+   {
+    "surface": "mười sáu chai rưỡi",
+    "value_vnd": 16500000
+   },
+   {
+    "surface": "một củ rưỡi",
+    "value_vnd": 1500000
+   }
+  ]
+ },
+ {
+  "id": "VT-034",
+  "region": "nam",
+  "noise_db": 55,
+  "transcript": "Tui mượn bốn củ rưỡi, mỗi tuần đóng bốn lít, đóng bốn tuần nha.",
+  "audio_file": null,
+  "audio_pending": true,
+  "slots": {
+   "principal_vnd": 4500000,
+   "installment_vnd": 400000,
+   "period": "week",
+   "n_installments": 4
+  },
+  "slang_terms": [
+   {
+    "surface": "bốn củ rưỡi",
+    "value_vnd": 4500000
+   },
+   {
+    "surface": "bốn lít",
+    "value_vnd": 400000
+   }
+  ]
+ },
+ {
+  "id": "VT-035",
+  "region": "nam",
+  "noise_db": 80,
+  "transcript": "Con vay bảy chai rưỡi, mỗi ngày đóng 550 k, đóng bốn ngày đó.",
+  "audio_file": null,
+  "audio_pending": true,
+  "slots": {
+   "principal_vnd": 7500000,
+   "installment_vnd": 550000,
+   "period": "day",
+   "n_installments": 4
+  },
+  "slang_terms": [
+   {
+    "surface": "bảy chai rưỡi",
+    "value_vnd": 7500000
+   },
+   {
+    "surface": "550 k",
+    "value_vnd": 550000
+   }
+  ]
+ },
+ {
+  "id": "VT-036",
+  "region": "nam",
+  "noise_db": 65,
+  "transcript": "Tui mượn chín chai rưỡi, mỗi tháng đóng hai chai, đóng bốn tháng nha.",
+  "audio_file": null,
+  "audio_pending": true,
+  "slots": {
+   "principal_vnd": 9500000,
+   "installment_vnd": 2000000,
+   "period": "month",
+   "n_installments": 4
+  },
+  "slang_terms": [
+   {
+    "surface": "chín chai rưỡi",
+    "value_vnd": 9500000
+   },
+   {
+    "surface": "hai chai",
+    "value_vnd": 2000000
+   }
+  ]
+ },
+ {
+  "id": "VT-037",
+  "region": "nam",
+  "noise_db": 80,
+  "transcript": "Con vay mười ba củ rưỡi, mỗi tuần đóng 350 k, đóng mười hai tuần đó.",
+  "audio_file": null,
+  "audio_pending": true,
+  "slots": {
+   "principal_vnd": 13500000,
+   "installment_vnd": 350000,
+   "period": "week",
+   "n_installments": 12
+  },
+  "slang_terms": [
+   {
+    "surface": "mười ba củ rưỡi",
+    "value_vnd": 13500000
+   },
+   {
+    "surface": "350 k",
+    "value_vnd": 350000
+   }
+  ]
+ },
+ {
+  "id": "VT-038",
+  "region": "nam",
+  "noise_db": 45,
+  "transcript": "Con vay mười lăm củ rưỡi, mỗi ngày đóng 650 k, đóng mười hai ngày đó.",
+  "audio_file": null,
+  "audio_pending": true,
+  "slots": {
+   "principal_vnd": 15500000,
+   "installment_vnd": 650000,
+   "period": "day",
+   "n_installments": 12
+  },
+  "slang_terms": [
+   {
+    "surface": "mười lăm củ rưỡi",
+    "value_vnd": 15500000
+   },
+   {
+    "surface": "650 k",
+    "value_vnd": 650000
+   }
+  ]
+ },
+ {
+  "id": "VT-039",
+  "region": "nam",
+  "noise_db": 80,
+  "transcript": "Tui mượn mười chín chai rưỡi, mỗi tháng đóng ba chai, đóng mười tháng đó.",
+  "audio_file": null,
+  "audio_pending": true,
+  "slots": {
+   "principal_vnd": 19500000,
+   "installment_vnd": 3000000,
+   "period": "month",
+   "n_installments": 10
+  },
+  "slang_terms": [
+   {
+    "surface": "mười chín chai rưỡi",
+    "value_vnd": 19500000
+   },
+   {
+    "surface": "ba chai",
+    "value_vnd": 3000000
+   }
+  ]
+ },
+ {
+  "id": "VT-040",
+  "region": "nam",
+  "noise_db": 45,
+  "transcript": "Con vay sáu chai, mỗi tuần đóng 500 k, đóng bốn tuần nha.",
+  "audio_file": null,
+  "audio_pending": true,
+  "slots": {
+   "principal_vnd": 6000000,
+   "installment_vnd": 500000,
+   "period": "week",
+   "n_installments": 4
+  },
+  "slang_terms": [
+   {
+    "surface": "sáu chai",
+    "value_vnd": 6000000
+   },
+   {
+    "surface": "500 k",
+    "value_vnd": 500000
+   }
+  ]
+ }
+]

@@ -1,0 +1,1625 @@
+[
+ {
+  "id": "CO-001",
+  "audio_mode": "SPEAKERPHONE",
+  "media_projection": false,
+  "time_since_disb_min": 18,
+  "user_utterance": "Em muốn hủy khoản vay nên chuyển lại cho anh bên công ty (giọng thì thầm, có người nhắc)",
+  "amount_vnd": 5000000,
+  "label": "SCAM",
+  "axes": [
+   "C1"
+  ],
+  "coached": false,
+  "expected_action": "RED_ESCALATION"
+ },
+ {
+  "id": "CO-002",
+  "audio_mode": "SPEAKERPHONE",
+  "media_projection": false,
+  "time_since_disb_min": 90,
+  "user_utterance": "Chuyển số tiền vừa vay cho sếp tuyển dụng để nhận hoa hồng",
+  "amount_vnd": 17000000,
+  "label": "SCAM",
+  "axes": [
+   "C9"
+  ],
+  "coached": false,
+  "expected_action": "RED_ESCALATION"
+ },
+ {
+  "id": "CO-003",
+  "audio_mode": "NORMAL",
+  "media_projection": false,
+  "time_since_disb_min": 10842,
+  "user_utterance": "Trả tiền nhà tháng này",
+  "amount_vnd": 3600000,
+  "label": "ROUTINE",
+  "axes": [],
+  "coached": false,
+  "expected_action": "ALLOW"
+ },
+ {
+  "id": "CO-004",
+  "audio_mode": "SPEAKERPHONE",
+  "media_projection": false,
+  "time_since_disb_min": 79,
+  "user_utterance": "Tạo dòng tiền đối ứng chứng minh khả năng trả nợ gấp lắm",
+  "amount_vnd": 18000000,
+  "label": "SCAM",
+  "axes": [
+   "C3"
+  ],
+  "coached": false,
+  "expected_action": "RED_ESCALATION"
+ },
+ {
+  "id": "CO-005",
+  "audio_mode": "SPEAKERPHONE",
+  "media_projection": true,
+  "time_since_disb_min": 56,
+  "user_utterance": "Chuyển vào tài khoản kỹ thuật để bảo lãnh khoản vay gấp lắm",
+  "amount_vnd": 29000000,
+  "label": "SCAM",
+  "axes": [
+   "C4"
+  ],
+  "coached": false,
+  "expected_action": "RED_ESCALATION"
+ },
+ {
+  "id": "CO-006",
+  "audio_mode": "IN_CALL",
+  "media_projection": true,
+  "time_since_disb_min": 91,
+  "user_utterance": "Chuyển tiền để nâng điểm CIC rồi họ hoàn lại ngay (giọng thì thầm, có người nhắc)",
+  "amount_vnd": 15000000,
+  "label": "SCAM",
+  "axes": [
+   "C3"
+  ],
+  "coached": false,
+  "expected_action": "RED_ESCALATION"
+ },
+ {
+  "id": "CO-007",
+  "audio_mode": "IN_CALL",
+  "media_projection": false,
+  "time_since_disb_min": 177,
+  "user_utterance": "Sai tên căn cước nên phải chuyển tiền để kích hoạt lại lệnh giải ngân",
+  "amount_vnd": 25000000,
+  "label": "SCAM",
+  "axes": [
+   "C2"
+  ],
+  "coached": false,
+  "expected_action": "RED_ESCALATION"
+ },
+ {
+  "id": "CO-008",
+  "audio_mode": "SPEAKERPHONE",
+  "media_projection": true,
+  "time_since_disb_min": 70,
+  "user_utterance": "Anh tuyển dụng nhờ vay hộ và chuyển tiền cho anh ấy lấy hoa hồng",
+  "amount_vnd": 21000000,
+  "label": "SCAM",
+  "axes": [
+   "C9"
+  ],
+  "coached": false,
+  "expected_action": "RED_ESCALATION"
+ },
+ {
+  "id": "CO-009",
+  "audio_mode": "NORMAL",
+  "media_projection": false,
+  "time_since_disb_min": 41593,
+  "user_utterance": "Mua đồ ăn cho cả tuần",
+  "amount_vnd": 3900000,
+  "label": "ROUTINE",
+  "axes": [],
+  "coached": false,
+  "expected_action": "ALLOW"
+ },
+ {
+  "id": "CO-010",
+  "audio_mode": "IN_CALL",
+  "media_projection": true,
+  "time_since_disb_min": 176,
+  "user_utterance": "Tôi đứng tên vay giùm bạn rồi chuyển lại tiền cho họ (giọng thì thầm, có người nhắc)",
+  "amount_vnd": 25000000,
+  "label": "SCAM",
+  "axes": [
+   "C9"
+  ],
+  "coached": false,
+  "expected_action": "RED_ESCALATION"
+ },
+ {
+  "id": "CO-011",
+  "audio_mode": "IN_CALL",
+  "media_projection": true,
+  "time_since_disb_min": 106,
+  "user_utterance": "Chuyển số tiền vừa vay cho sếp tuyển dụng để nhận hoa hồng gấp lắm",
+  "amount_vnd": 17000000,
+  "label": "SCAM",
+  "axes": [
+   "C9"
+  ],
+  "coached": false,
+  "expected_action": "RED_ESCALATION"
+ },
+ {
+  "id": "CO-012",
+  "audio_mode": "IN_CALL",
+  "media_projection": false,
+  "time_since_disb_min": 69,
+  "user_utterance": "Công an bảo chuyển hết tiền vào tài khoản tạm giữ điều tra rửa tiền",
+  "amount_vnd": 11000000,
+  "label": "SCAM",
+  "axes": [
+   "C10"
+  ],
+  "coached": false,
+  "expected_action": "RED_ESCALATION"
+ },
+ {
+  "id": "CO-013",
+  "audio_mode": "NORMAL",
+  "media_projection": false,
+  "time_since_disb_min": 20405,
+  "user_utterance": "Trả tiền nhà tháng này",
+  "amount_vnd": 500000,
+  "label": "ROUTINE",
+  "axes": [],
+  "coached": false,
+  "expected_action": "ALLOW"
+ },
+ {
+  "id": "CO-014",
+  "audio_mode": "IN_CALL",
+  "media_projection": true,
+  "time_since_disb_min": 12,
+  "user_utterance": "Anh tuyển dụng nhờ vay hộ và chuyển tiền cho anh ấy lấy hoa hồng gấp lắm",
+  "amount_vnd": 11000000,
+  "label": "SCAM",
+  "axes": [
+   "C9"
+  ],
+  "coached": false,
+  "expected_action": "RED_ESCALATION"
+ },
+ {
+  "id": "CO-015",
+  "audio_mode": "IN_CALL",
+  "media_projection": false,
+  "time_since_disb_min": 127,
+  "user_utterance": "Chuyển sang tài khoản trung gian bảo đảm họ vừa đọc cho tôi (giọng thì thầm, có người nhắc)",
+  "amount_vnd": 12000000,
+  "label": "SCAM",
+  "axes": [
+   "C4",
+   "C7"
+  ],
+  "coached": true,
+  "expected_action": "RED_ESCALATION"
+ },
+ {
+  "id": "CO-016",
+  "audio_mode": "NORMAL",
+  "media_projection": true,
+  "time_since_disb_min": 108,
+  "user_utterance": "Đóng phí bảo hiểm khoản vay để được rút tiền",
+  "amount_vnd": 10000000,
+  "label": "SCAM",
+  "axes": [
+   "C6"
+  ],
+  "coached": false,
+  "expected_action": "RED_ESCALATION"
+ },
+ {
+  "id": "CO-017",
+  "audio_mode": "SPEAKERPHONE",
+  "media_projection": true,
+  "time_since_disb_min": 152,
+  "user_utterance": "Chuyển trước để chứng minh năng lực tài chính, xong được hoàn",
+  "amount_vnd": 10000000,
+  "label": "SCAM",
+  "axes": [
+   "C3"
+  ],
+  "coached": false,
+  "expected_action": "RED_ESCALATION"
+ },
+ {
+  "id": "CO-018",
+  "audio_mode": "NORMAL",
+  "media_projection": false,
+  "time_since_disb_min": 20757,
+  "user_utterance": "Gửi tiền cho mẹ ở quê",
+  "amount_vnd": 800000,
+  "label": "ROUTINE",
+  "axes": [],
+  "coached": false,
+  "expected_action": "ALLOW"
+ },
+ {
+  "id": "CO-019",
+  "audio_mode": "IN_CALL",
+  "media_projection": false,
+  "time_since_disb_min": 172,
+  "user_utterance": "Người tự xưng tòa án bảo chuyển tiền vào tài khoản tạm giữ gấp lắm",
+  "amount_vnd": 3000000,
+  "label": "SCAM",
+  "axes": [
+   "C10"
+  ],
+  "coached": false,
+  "expected_action": "RED_ESCALATION"
+ },
+ {
+  "id": "CO-020",
+  "audio_mode": "SPEAKERPHONE",
+  "media_projection": false,
+  "time_since_disb_min": 153,
+  "user_utterance": "Viện kiểm sát yêu cầu chuyển tiền vào tài khoản phong tỏa để chứng minh trong sạch",
+  "amount_vnd": 3000000,
+  "label": "SCAM",
+  "axes": [
+   "C10"
+  ],
+  "coached": false,
+  "expected_action": "RED_ESCALATION"
+ },
+ {
+  "id": "CO-021",
+  "audio_mode": "IN_CALL",
+  "media_projection": true,
+  "time_since_disb_min": 6,
+  "user_utterance": "Phải nộp thuế thu nhập sau khi tiền về mới rút được gấp lắm",
+  "amount_vnd": 19000000,
+  "label": "SCAM",
+  "axes": [
+   "C6"
+  ],
+  "coached": false,
+  "expected_action": "RED_ESCALATION"
+ },
+ {
+  "id": "CO-022",
+  "audio_mode": "IN_CALL",
+  "media_projection": false,
+  "time_since_disb_min": 57,
+  "user_utterance": "Chuyển sang tài khoản trung gian bảo đảm họ vừa đọc cho tôi gấp lắm",
+  "amount_vnd": 21000000,
+  "label": "SCAM",
+  "axes": [
+   "C4"
+  ],
+  "coached": false,
+  "expected_action": "RED_ESCALATION"
+ },
+ {
+  "id": "CO-023",
+  "audio_mode": "IN_CALL",
+  "media_projection": false,
+  "time_since_disb_min": 130,
+  "user_utterance": "Việc riêng gấp lắm",
+  "amount_vnd": 5000000,
+  "label": "SCAM",
+  "axes": [
+   "C7"
+  ],
+  "coached": true,
+  "expected_action": "RED_ESCALATION"
+ },
+ {
+  "id": "CO-024",
+  "audio_mode": "IN_CALL",
+  "media_projection": false,
+  "time_since_disb_min": 177,
+  "user_utterance": "Chuyển phí hồ sơ phát sinh sau giải ngân (giọng thì thầm, có người nhắc)",
+  "amount_vnd": 19000000,
+  "label": "SCAM",
+  "axes": [
+   "C6"
+  ],
+  "coached": false,
+  "expected_action": "RED_ESCALATION"
+ },
+ {
+  "id": "CO-025",
+  "audio_mode": "NORMAL",
+  "media_projection": false,
+  "time_since_disb_min": 17232,
+  "user_utterance": "Trả góp điện thoại tại cửa hàng",
+  "amount_vnd": 3900000,
+  "label": "ROUTINE",
+  "axes": [],
+  "coached": false,
+  "expected_action": "ALLOW"
+ },
+ {
+  "id": "CO-026",
+  "audio_mode": "NORMAL",
+  "media_projection": false,
+  "time_since_disb_min": 29529,
+  "user_utterance": "Chuyển tiền ăn cho em trai",
+  "amount_vnd": 3300000,
+  "label": "ROUTINE",
+  "axes": [],
+  "coached": false,
+  "expected_action": "ALLOW"
+ },
+ {
+  "id": "CO-027",
+  "audio_mode": "IN_CALL",
+  "media_projection": false,
+  "time_since_disb_min": 62,
+  "user_utterance": "Họ dọa báo công an và gửi giấy về công ty nếu không chuyển trong 30 phút gấp lắm",
+  "amount_vnd": 2000000,
+  "label": "SCAM",
+  "axes": [
+   "C5"
+  ],
+  "coached": false,
+  "expected_action": "RED_ESCALATION"
+ },
+ {
+  "id": "CO-028",
+  "audio_mode": "SPEAKERPHONE",
+  "media_projection": true,
+  "time_since_disb_min": 140,
+  "user_utterance": "Việc riêng",
+  "amount_vnd": 10000000,
+  "label": "SCAM",
+  "axes": [
+   "C7"
+  ],
+  "coached": true,
+  "expected_action": "RED_ESCALATION"
+ },
+ {
+  "id": "CO-029",
+  "audio_mode": "IN_CALL",
+  "media_projection": true,
+  "time_since_disb_min": 35,
+  "user_utterance": "Chuyển cho con (giọng thì thầm, có người nhắc)",
+  "amount_vnd": 14000000,
+  "label": "SCAM",
+  "axes": [
+   "C7"
+  ],
+  "coached": true,
+  "expected_action": "RED_ESCALATION"
+ },
+ {
+  "id": "CO-030",
+  "audio_mode": "IN_CALL",
+  "media_projection": true,
+  "time_since_disb_min": 63,
+  "user_utterance": "Trả tiền hàng (giọng thì thầm, có người nhắc)",
+  "amount_vnd": 22000000,
+  "label": "SCAM",
+  "axes": [
+   "C7"
+  ],
+  "coached": true,
+  "expected_action": "RED_ESCALATION"
+ },
+ {
+  "id": "CO-031",
+  "audio_mode": "SPEAKERPHONE",
+  "media_projection": false,
+  "time_since_disb_min": 30,
+  "user_utterance": "Họ nói nếu chậm sẽ gửi giấy về nhà máy, cho tôi chuyển gấp (giọng thì thầm, có người nhắc)",
+  "amount_vnd": 23000000,
+  "label": "SCAM",
+  "axes": [
+   "C5"
+  ],
+  "coached": false,
+  "expected_action": "RED_ESCALATION"
+ },
+ {
+  "id": "CO-032",
+  "audio_mode": "SPEAKERPHONE",
+  "media_projection": true,
+  "time_since_disb_min": 6,
+  "user_utterance": "Chuyển trả lại tiền giải ngân nhầm vào số tài khoản anh đọc",
+  "amount_vnd": 28000000,
+  "label": "SCAM",
+  "axes": [
+   "C1"
+  ],
+  "coached": false,
+  "expected_action": "RED_ESCALATION"
+ },
+ {
+  "id": "CO-033",
+  "audio_mode": "SPEAKERPHONE",
+  "media_projection": true,
+  "time_since_disb_min": 89,
+  "user_utterance": "Quét mã thanh toán khống để rút tiền mặt từ ví trả sau",
+  "amount_vnd": 18000000,
+  "label": "SCAM",
+  "axes": [
+   "C8"
+  ],
+  "coached": false,
+  "expected_action": "RED_ESCALATION"
+ },
+ {
+  "id": "CO-034",
+  "audio_mode": "SPEAKERPHONE",
+  "media_projection": false,
+  "time_since_disb_min": 103,
+  "user_utterance": "Chuyển phí hồ sơ phát sinh sau giải ngân",
+  "amount_vnd": 6000000,
+  "label": "SCAM",
+  "axes": [
+   "C6"
+  ],
+  "coached": false,
+  "expected_action": "RED_ESCALATION"
+ },
+ {
+  "id": "CO-035",
+  "audio_mode": "SPEAKERPHONE",
+  "media_projection": false,
+  "time_since_disb_min": 69,
+  "user_utterance": "Phải nộp thuế thu nhập sau khi tiền về mới rút được (giọng thì thầm, có người nhắc)",
+  "amount_vnd": 15000000,
+  "label": "SCAM",
+  "axes": [
+   "C6"
+  ],
+  "coached": false,
+  "expected_action": "RED_ESCALATION"
+ },
+ {
+  "id": "CO-036",
+  "audio_mode": "NORMAL",
+  "media_projection": false,
+  "time_since_disb_min": 8946,
+  "user_utterance": "Đóng học phí cho con",
+  "amount_vnd": 2050000,
+  "label": "ROUTINE",
+  "axes": [],
+  "coached": false,
+  "expected_action": "ALLOW"
+ },
+ {
+  "id": "CO-037",
+  "audio_mode": "SPEAKERPHONE",
+  "media_projection": true,
+  "time_since_disb_min": 144,
+  "user_utterance": "Họ nói nếu chậm sẽ gửi giấy về nhà máy, cho tôi chuyển gấp gấp lắm",
+  "amount_vnd": 21000000,
+  "label": "SCAM",
+  "axes": [
+   "C5"
+  ],
+  "coached": false,
+  "expected_action": "RED_ESCALATION"
+ },
+ {
+  "id": "CO-038",
+  "audio_mode": "SPEAKERPHONE",
+  "media_projection": true,
+  "time_since_disb_min": 104,
+  "user_utterance": "Người tự xưng tòa án bảo chuyển tiền vào tài khoản tạm giữ (giọng thì thầm, có người nhắc)",
+  "amount_vnd": 3000000,
+  "label": "SCAM",
+  "axes": [
+   "C10"
+  ],
+  "coached": false,
+  "expected_action": "RED_ESCALATION"
+ },
+ {
+  "id": "CO-039",
+  "audio_mode": "NORMAL",
+  "media_projection": false,
+  "time_since_disb_min": 13297,
+  "user_utterance": "Mua đồ ăn cho cả tuần",
+  "amount_vnd": 1450000,
+  "label": "ROUTINE",
+  "axes": [],
+  "coached": false,
+  "expected_action": "ALLOW"
+ },
+ {
+  "id": "CO-040",
+  "audio_mode": "IN_CALL",
+  "media_projection": true,
+  "time_since_disb_min": 100,
+  "user_utterance": "Đóng tiền giải tỏa lệnh treo liên ngân hàng (giọng thì thầm, có người nhắc)",
+  "amount_vnd": 15000000,
+  "label": "SCAM",
+  "axes": [
+   "C2"
+  ],
+  "coached": false,
+  "expected_action": "RED_ESCALATION"
+ },
+ {
+  "id": "CO-041",
+  "audio_mode": "SPEAKERPHONE",
+  "media_projection": false,
+  "time_since_disb_min": 172,
+  "user_utterance": "Tôi sợ bị phạt hợp đồng nên phải chuyển ngay gấp lắm",
+  "amount_vnd": 24000000,
+  "label": "SCAM",
+  "axes": [
+   "C5"
+  ],
+  "coached": false,
+  "expected_action": "RED_ESCALATION"
+ },
+ {
+  "id": "CO-042",
+  "audio_mode": "IN_CALL",
+  "media_projection": true,
+  "time_since_disb_min": 53,
+  "user_utterance": "Anh môi giới bảo mua hàng ảo rồi nhận tiền mặt từ hạn mức trả chậm",
+  "amount_vnd": 28000000,
+  "label": "SCAM",
+  "axes": [
+   "C8"
+  ],
+  "coached": false,
+  "expected_action": "RED_ESCALATION"
+ },
+ {
+  "id": "CO-043",
+  "audio_mode": "NORMAL",
+  "media_projection": false,
+  "time_since_disb_min": 26927,
+  "user_utterance": "Chuyển tiền ăn cho em trai",
+  "amount_vnd": 1950000,
+  "label": "ROUTINE",
+  "axes": [],
+  "coached": false,
+  "expected_action": "ALLOW"
+ },
+ {
+  "id": "CO-044",
+  "audio_mode": "SPEAKERPHONE",
+  "media_projection": true,
+  "time_since_disb_min": 113,
+  "user_utterance": "Chuyển để sửa lỗi sai một chữ số tài khoản bị treo gấp lắm",
+  "amount_vnd": 28000000,
+  "label": "SCAM",
+  "axes": [
+   "C2"
+  ],
+  "coached": false,
+  "expected_action": "RED_ESCALATION"
+ },
+ {
+  "id": "CO-045",
+  "audio_mode": "NORMAL",
+  "media_projection": false,
+  "time_since_disb_min": 13,
+  "user_utterance": "Đóng phí bảo hiểm khoản vay để được rút tiền gấp lắm",
+  "amount_vnd": 16000000,
+  "label": "SCAM",
+  "axes": [
+   "C6"
+  ],
+  "coached": false,
+  "expected_action": "RED_ESCALATION"
+ },
+ {
+  "id": "CO-046",
+  "audio_mode": "NORMAL",
+  "media_projection": false,
+  "time_since_disb_min": 22626,
+  "user_utterance": "Trả nợ bạn mượn tuần trước",
+  "amount_vnd": 4450000,
+  "label": "ROUTINE",
+  "axes": [],
+  "coached": false,
+  "expected_action": "ALLOW"
+ },
+ {
+  "id": "CO-047",
+  "audio_mode": "IN_CALL",
+  "media_projection": true,
+  "time_since_disb_min": 161,
+  "user_utterance": "Chuyển sang tài khoản trung gian bảo đảm họ vừa đọc cho tôi",
+  "amount_vnd": 28000000,
+  "label": "SCAM",
+  "axes": [
+   "C4"
+  ],
+  "coached": false,
+  "expected_action": "RED_ESCALATION"
+ },
+ {
+  "id": "CO-048",
+  "audio_mode": "SPEAKERPHONE",
+  "media_projection": false,
+  "time_since_disb_min": 2,
+  "user_utterance": "Họ dọa báo công an và gửi giấy về công ty nếu không chuyển trong 30 phút (giọng thì thầm, có người nhắc)",
+  "amount_vnd": 27000000,
+  "label": "SCAM",
+  "axes": [
+   "C5"
+  ],
+  "coached": false,
+  "expected_action": "RED_ESCALATION"
+ },
+ {
+  "id": "CO-049",
+  "audio_mode": "NORMAL",
+  "media_projection": false,
+  "time_since_disb_min": 8658,
+  "user_utterance": "Đóng học phí cho con",
+  "amount_vnd": 2250000,
+  "label": "ROUTINE",
+  "axes": [],
+  "coached": false,
+  "expected_action": "ALLOW"
+ },
+ {
+  "id": "CO-050",
+  "audio_mode": "SPEAKERPHONE",
+  "media_projection": false,
+  "time_since_disb_min": 8,
+  "user_utterance": "Viện kiểm sát yêu cầu chuyển tiền vào tài khoản phong tỏa để chứng minh trong sạch (giọng thì thầm, có người nhắc)",
+  "amount_vnd": 10000000,
+  "label": "SCAM",
+  "axes": [
+   "C10"
+  ],
+  "coached": false,
+  "expected_action": "RED_ESCALATION"
+ },
+ {
+  "id": "CO-051",
+  "audio_mode": "SPEAKERPHONE",
+  "media_projection": true,
+  "time_since_disb_min": 89,
+  "user_utterance": "Trả tiền hàng gấp lắm",
+  "amount_vnd": 15000000,
+  "label": "SCAM",
+  "axes": [
+   "C7"
+  ],
+  "coached": true,
+  "expected_action": "RED_ESCALATION"
+ },
+ {
+  "id": "CO-052",
+  "audio_mode": "SPEAKERPHONE",
+  "media_projection": false,
+  "time_since_disb_min": 85,
+  "user_utterance": "Em muốn hủy khoản vay nên chuyển lại cho anh bên công ty",
+  "amount_vnd": 29000000,
+  "label": "SCAM",
+  "axes": [
+   "C1"
+  ],
+  "coached": false,
+  "expected_action": "RED_ESCALATION"
+ },
+ {
+  "id": "CO-053",
+  "audio_mode": "NORMAL",
+  "media_projection": false,
+  "time_since_disb_min": 15418,
+  "user_utterance": "Đóng tiền bảo hiểm y tế",
+  "amount_vnd": 2200000,
+  "label": "ROUTINE",
+  "axes": [],
+  "coached": false,
+  "expected_action": "ALLOW"
+ },
+ {
+  "id": "CO-054",
+  "audio_mode": "IN_CALL",
+  "media_projection": true,
+  "time_since_disb_min": 29,
+  "user_utterance": "Trả tiền hàng",
+  "amount_vnd": 6000000,
+  "label": "SCAM",
+  "axes": [
+   "C7"
+  ],
+  "coached": true,
+  "expected_action": "RED_ESCALATION"
+ },
+ {
+  "id": "CO-055",
+  "audio_mode": "SPEAKERPHONE",
+  "media_projection": false,
+  "time_since_disb_min": 174,
+  "user_utterance": "Họ dọa báo công an và gửi giấy về công ty nếu không chuyển trong 30 phút",
+  "amount_vnd": 9000000,
+  "label": "SCAM",
+  "axes": [
+   "C5"
+  ],
+  "coached": false,
+  "expected_action": "RED_ESCALATION"
+ },
+ {
+  "id": "CO-056",
+  "audio_mode": "SPEAKERPHONE",
+  "media_projection": true,
+  "time_since_disb_min": 143,
+  "user_utterance": "Chuyển khoản cho cửa hàng để họ đưa lại tiền mặt trừ phí",
+  "amount_vnd": 3000000,
+  "label": "SCAM",
+  "axes": [
+   "C8"
+  ],
+  "coached": false,
+  "expected_action": "RED_ESCALATION"
+ },
+ {
+  "id": "CO-057",
+  "audio_mode": "IN_CALL",
+  "media_projection": true,
+  "time_since_disb_min": 142,
+  "user_utterance": "Công an bảo chuyển hết tiền vào tài khoản tạm giữ điều tra rửa tiền (giọng thì thầm, có người nhắc)",
+  "amount_vnd": 10000000,
+  "label": "SCAM",
+  "axes": [
+   "C10"
+  ],
+  "coached": false,
+  "expected_action": "RED_ESCALATION"
+ },
+ {
+  "id": "CO-058",
+  "audio_mode": "SPEAKERPHONE",
+  "media_projection": true,
+  "time_since_disb_min": 176,
+  "user_utterance": "Sai tên căn cước nên phải chuyển tiền để kích hoạt lại lệnh giải ngân (giọng thì thầm, có người nhắc)",
+  "amount_vnd": 11000000,
+  "label": "SCAM",
+  "axes": [
+   "C2"
+  ],
+  "coached": false,
+  "expected_action": "RED_ESCALATION"
+ },
+ {
+  "id": "CO-059",
+  "audio_mode": "SPEAKERPHONE",
+  "media_projection": true,
+  "time_since_disb_min": 162,
+  "user_utterance": "Em muốn hủy khoản vay nên chuyển lại cho anh bên công ty gấp lắm",
+  "amount_vnd": 6000000,
+  "label": "SCAM",
+  "axes": [
+   "C1"
+  ],
+  "coached": false,
+  "expected_action": "RED_ESCALATION"
+ },
+ {
+  "id": "CO-060",
+  "audio_mode": "IN_CALL",
+  "media_projection": true,
+  "time_since_disb_min": 101,
+  "user_utterance": "Viện kiểm sát yêu cầu chuyển tiền vào tài khoản phong tỏa để chứng minh trong sạch gấp lắm",
+  "amount_vnd": 13000000,
+  "label": "SCAM",
+  "axes": [
+   "C10"
+  ],
+  "coached": false,
+  "expected_action": "RED_ESCALATION"
+ },
+ {
+  "id": "CO-061",
+  "audio_mode": "IN_CALL",
+  "media_projection": false,
+  "time_since_disb_min": 129,
+  "user_utterance": "Người tự xưng tòa án bảo chuyển tiền vào tài khoản tạm giữ",
+  "amount_vnd": 17000000,
+  "label": "SCAM",
+  "axes": [
+   "C10"
+  ],
+  "coached": false,
+  "expected_action": "RED_ESCALATION"
+ },
+ {
+  "id": "CO-062",
+  "audio_mode": "SPEAKERPHONE",
+  "media_projection": false,
+  "time_since_disb_min": 55,
+  "user_utterance": "Anh tuyển dụng nhờ vay hộ và chuyển tiền cho anh ấy lấy hoa hồng (giọng thì thầm, có người nhắc)",
+  "amount_vnd": 17000000,
+  "label": "SCAM",
+  "axes": [
+   "C9",
+   "C7"
+  ],
+  "coached": true,
+  "expected_action": "RED_ESCALATION"
+ },
+ {
+  "id": "CO-063",
+  "audio_mode": "SPEAKERPHONE",
+  "media_projection": true,
+  "time_since_disb_min": 54,
+  "user_utterance": "Tôi chuyển tiền để hoàn trả khoản vay vừa nhận theo hướng dẫn nhân viên gấp lắm",
+  "amount_vnd": 29000000,
+  "label": "SCAM",
+  "axes": [
+   "C1"
+  ],
+  "coached": false,
+  "expected_action": "RED_ESCALATION"
+ },
+ {
+  "id": "CO-064",
+  "audio_mode": "IN_CALL",
+  "media_projection": true,
+  "time_since_disb_min": 115,
+  "user_utterance": "Chuyển tiền để nâng điểm CIC rồi họ hoàn lại ngay gấp lắm",
+  "amount_vnd": 17000000,
+  "label": "SCAM",
+  "axes": [
+   "C3"
+  ],
+  "coached": false,
+  "expected_action": "RED_ESCALATION"
+ },
+ {
+  "id": "CO-065",
+  "audio_mode": "NORMAL",
+  "media_projection": false,
+  "time_since_disb_min": 31026,
+  "user_utterance": "Mua đồ ăn cho cả tuần",
+  "amount_vnd": 2450000,
+  "label": "ROUTINE",
+  "axes": [],
+  "coached": false,
+  "expected_action": "ALLOW"
+ },
+ {
+  "id": "CO-066",
+  "audio_mode": "IN_CALL",
+  "media_projection": true,
+  "time_since_disb_min": 136,
+  "user_utterance": "Quét mã thanh toán khống để rút tiền mặt từ ví trả sau gấp lắm",
+  "amount_vnd": 26000000,
+  "label": "SCAM",
+  "axes": [
+   "C8"
+  ],
+  "coached": false,
+  "expected_action": "RED_ESCALATION"
+ },
+ {
+  "id": "CO-067",
+  "audio_mode": "NORMAL",
+  "media_projection": false,
+  "time_since_disb_min": 22353,
+  "user_utterance": "Đóng học phí cho con",
+  "amount_vnd": 3750000,
+  "label": "ROUTINE",
+  "axes": [],
+  "coached": false,
+  "expected_action": "ALLOW"
+ },
+ {
+  "id": "CO-068",
+  "audio_mode": "IN_CALL",
+  "media_projection": false,
+  "time_since_disb_min": 167,
+  "user_utterance": "Chuyển vào tài khoản kỹ thuật để bảo lãnh khoản vay",
+  "amount_vnd": 22000000,
+  "label": "SCAM",
+  "axes": [
+   "C4"
+  ],
+  "coached": false,
+  "expected_action": "RED_ESCALATION"
+ },
+ {
+  "id": "CO-069",
+  "audio_mode": "IN_CALL",
+  "media_projection": false,
+  "time_since_disb_min": 126,
+  "user_utterance": "Tạo dòng tiền đối ứng chứng minh khả năng trả nợ",
+  "amount_vnd": 26000000,
+  "label": "SCAM",
+  "axes": [
+   "C3"
+  ],
+  "coached": false,
+  "expected_action": "RED_ESCALATION"
+ },
+ {
+  "id": "CO-070",
+  "audio_mode": "NORMAL",
+  "media_projection": false,
+  "time_since_disb_min": 9851,
+  "user_utterance": "Trả góp điện thoại tại cửa hàng",
+  "amount_vnd": 3600000,
+  "label": "ROUTINE",
+  "axes": [],
+  "coached": false,
+  "expected_action": "ALLOW"
+ },
+ {
+  "id": "CO-071",
+  "audio_mode": "NORMAL",
+  "media_projection": false,
+  "time_since_disb_min": 37392,
+  "user_utterance": "Thanh toán tiền điện nước",
+  "amount_vnd": 250000,
+  "label": "ROUTINE",
+  "axes": [],
+  "coached": false,
+  "expected_action": "ALLOW"
+ },
+ {
+  "id": "CO-072",
+  "audio_mode": "IN_CALL",
+  "media_projection": true,
+  "time_since_disb_min": 117,
+  "user_utterance": "Anh môi giới bảo mua hàng ảo rồi nhận tiền mặt từ hạn mức trả chậm (giọng thì thầm, có người nhắc)",
+  "amount_vnd": 26000000,
+  "label": "SCAM",
+  "axes": [
+   "C8"
+  ],
+  "coached": false,
+  "expected_action": "RED_ESCALATION"
+ },
+ {
+  "id": "CO-073",
+  "audio_mode": "SPEAKERPHONE",
+  "media_projection": false,
+  "time_since_disb_min": 5,
+  "user_utterance": "Họ nói nếu chậm sẽ gửi giấy về nhà máy, cho tôi chuyển gấp",
+  "amount_vnd": 7000000,
+  "label": "SCAM",
+  "axes": [
+   "C5"
+  ],
+  "coached": false,
+  "expected_action": "RED_ESCALATION"
+ },
+ {
+  "id": "CO-074",
+  "audio_mode": "SPEAKERPHONE",
+  "media_projection": true,
+  "time_since_disb_min": 89,
+  "user_utterance": "Tôi sợ bị phạt hợp đồng nên phải chuyển ngay",
+  "amount_vnd": 18000000,
+  "label": "SCAM",
+  "axes": [
+   "C5"
+  ],
+  "coached": false,
+  "expected_action": "RED_ESCALATION"
+ },
+ {
+  "id": "CO-075",
+  "audio_mode": "NORMAL",
+  "media_projection": false,
+  "time_since_disb_min": 20470,
+  "user_utterance": "Trả góp điện thoại tại cửa hàng",
+  "amount_vnd": 1850000,
+  "label": "ROUTINE",
+  "axes": [],
+  "coached": false,
+  "expected_action": "ALLOW"
+ },
+ {
+  "id": "CO-076",
+  "audio_mode": "NORMAL",
+  "media_projection": false,
+  "time_since_disb_min": 24761,
+  "user_utterance": "Thanh toán tiền điện nước",
+  "amount_vnd": 4700000,
+  "label": "ROUTINE",
+  "axes": [],
+  "coached": false,
+  "expected_action": "ALLOW"
+ },
+ {
+  "id": "CO-077",
+  "audio_mode": "IN_CALL",
+  "media_projection": true,
+  "time_since_disb_min": 117,
+  "user_utterance": "Công an bảo chuyển hết tiền vào tài khoản tạm giữ điều tra rửa tiền gấp lắm",
+  "amount_vnd": 2000000,
+  "label": "SCAM",
+  "axes": [
+   "C10"
+  ],
+  "coached": false,
+  "expected_action": "RED_ESCALATION"
+ },
+ {
+  "id": "CO-078",
+  "audio_mode": "NORMAL",
+  "media_projection": false,
+  "time_since_disb_min": 19844,
+  "user_utterance": "Đóng tiền bảo hiểm y tế",
+  "amount_vnd": 1200000,
+  "label": "ROUTINE",
+  "axes": [],
+  "coached": false,
+  "expected_action": "ALLOW"
+ },
+ {
+  "id": "CO-079",
+  "audio_mode": "IN_CALL",
+  "media_projection": false,
+  "time_since_disb_min": 177,
+  "user_utterance": "Chuyển cho con",
+  "amount_vnd": 7000000,
+  "label": "SCAM",
+  "axes": [
+   "C7"
+  ],
+  "coached": true,
+  "expected_action": "RED_ESCALATION"
+ },
+ {
+  "id": "CO-080",
+  "audio_mode": "NORMAL",
+  "media_projection": false,
+  "time_since_disb_min": 31761,
+  "user_utterance": "Gửi tiền cho mẹ ở quê",
+  "amount_vnd": 4600000,
+  "label": "ROUTINE",
+  "axes": [],
+  "coached": false,
+  "expected_action": "ALLOW"
+ },
+ {
+  "id": "CO-081",
+  "audio_mode": "NORMAL",
+  "media_projection": false,
+  "time_since_disb_min": 22889,
+  "user_utterance": "Nạp tiền điện thoại",
+  "amount_vnd": 1250000,
+  "label": "ROUTINE",
+  "axes": [],
+  "coached": false,
+  "expected_action": "ALLOW"
+ },
+ {
+  "id": "CO-082",
+  "audio_mode": "IN_CALL",
+  "media_projection": true,
+  "time_since_disb_min": 98,
+  "user_utterance": "Tôi chuyển tiền để hoàn trả khoản vay vừa nhận theo hướng dẫn nhân viên (giọng thì thầm, có người nhắc)",
+  "amount_vnd": 27000000,
+  "label": "SCAM",
+  "axes": [
+   "C1"
+  ],
+  "coached": false,
+  "expected_action": "RED_ESCALATION"
+ },
+ {
+  "id": "CO-083",
+  "audio_mode": "IN_CALL",
+  "media_projection": false,
+  "time_since_disb_min": 103,
+  "user_utterance": "Chuyển cho con gấp lắm",
+  "amount_vnd": 18000000,
+  "label": "SCAM",
+  "axes": [
+   "C7"
+  ],
+  "coached": true,
+  "expected_action": "RED_ESCALATION"
+ },
+ {
+  "id": "CO-084",
+  "audio_mode": "SPEAKERPHONE",
+  "media_projection": true,
+  "time_since_disb_min": 146,
+  "user_utterance": "Chuyển vào tài khoản kỹ thuật để bảo lãnh khoản vay (giọng thì thầm, có người nhắc)",
+  "amount_vnd": 19000000,
+  "label": "SCAM",
+  "axes": [
+   "C4"
+  ],
+  "coached": false,
+  "expected_action": "RED_ESCALATION"
+ },
+ {
+  "id": "CO-085",
+  "audio_mode": "IN_CALL",
+  "media_projection": true,
+  "time_since_disb_min": 35,
+  "user_utterance": "Chuyển khoản cho cửa hàng để họ đưa lại tiền mặt trừ phí gấp lắm",
+  "amount_vnd": 11000000,
+  "label": "SCAM",
+  "axes": [
+   "C8"
+  ],
+  "coached": false,
+  "expected_action": "RED_ESCALATION"
+ },
+ {
+  "id": "CO-086",
+  "audio_mode": "SPEAKERPHONE",
+  "media_projection": true,
+  "time_since_disb_min": 42,
+  "user_utterance": "Chuyển trả lại tiền giải ngân nhầm vào số tài khoản anh đọc (giọng thì thầm, có người nhắc)",
+  "amount_vnd": 17000000,
+  "label": "SCAM",
+  "axes": [
+   "C1",
+   "C7"
+  ],
+  "coached": true,
+  "expected_action": "RED_ESCALATION"
+ },
+ {
+  "id": "CO-087",
+  "audio_mode": "NORMAL",
+  "media_projection": false,
+  "time_since_disb_min": 18455,
+  "user_utterance": "Nạp tiền điện thoại",
+  "amount_vnd": 2750000,
+  "label": "ROUTINE",
+  "axes": [],
+  "coached": false,
+  "expected_action": "ALLOW"
+ },
+ {
+  "id": "CO-088",
+  "audio_mode": "SPEAKERPHONE",
+  "media_projection": true,
+  "time_since_disb_min": 148,
+  "user_utterance": "Chuyển phí hồ sơ phát sinh sau giải ngân gấp lắm",
+  "amount_vnd": 26000000,
+  "label": "SCAM",
+  "axes": [
+   "C6"
+  ],
+  "coached": false,
+  "expected_action": "RED_ESCALATION"
+ },
+ {
+  "id": "CO-089",
+  "audio_mode": "SPEAKERPHONE",
+  "media_projection": true,
+  "time_since_disb_min": 67,
+  "user_utterance": "Chuyển khoản cho cửa hàng để họ đưa lại tiền mặt trừ phí (giọng thì thầm, có người nhắc)",
+  "amount_vnd": 26000000,
+  "label": "SCAM",
+  "axes": [
+   "C8"
+  ],
+  "coached": false,
+  "expected_action": "RED_ESCALATION"
+ },
+ {
+  "id": "CO-090",
+  "audio_mode": "SPEAKERPHONE",
+  "media_projection": true,
+  "time_since_disb_min": 139,
+  "user_utterance": "Tôi đứng tên vay giùm bạn rồi chuyển lại tiền cho họ gấp lắm",
+  "amount_vnd": 25000000,
+  "label": "SCAM",
+  "axes": [
+   "C9"
+  ],
+  "coached": false,
+  "expected_action": "RED_ESCALATION"
+ },
+ {
+  "id": "CO-091",
+  "audio_mode": "SPEAKERPHONE",
+  "media_projection": true,
+  "time_since_disb_min": 51,
+  "user_utterance": "Chuyển trước để chứng minh năng lực tài chính, xong được hoàn gấp lắm",
+  "amount_vnd": 21000000,
+  "label": "SCAM",
+  "axes": [
+   "C3"
+  ],
+  "coached": false,
+  "expected_action": "RED_ESCALATION"
+ },
+ {
+  "id": "CO-092",
+  "audio_mode": "SPEAKERPHONE",
+  "media_projection": false,
+  "time_since_disb_min": 52,
+  "user_utterance": "Việc riêng (giọng thì thầm, có người nhắc)",
+  "amount_vnd": 27000000,
+  "label": "SCAM",
+  "axes": [
+   "C7"
+  ],
+  "coached": true,
+  "expected_action": "RED_ESCALATION"
+ },
+ {
+  "id": "CO-093",
+  "audio_mode": "IN_CALL",
+  "media_projection": false,
+  "time_since_disb_min": 128,
+  "user_utterance": "Chuyển để sửa lỗi sai một chữ số tài khoản bị treo",
+  "amount_vnd": 17000000,
+  "label": "SCAM",
+  "axes": [
+   "C2"
+  ],
+  "coached": false,
+  "expected_action": "RED_ESCALATION"
+ },
+ {
+  "id": "CO-094",
+  "audio_mode": "SPEAKERPHONE",
+  "media_projection": false,
+  "time_since_disb_min": 107,
+  "user_utterance": "Tôi chuyển tiền để hoàn trả khoản vay vừa nhận theo hướng dẫn nhân viên",
+  "amount_vnd": 11000000,
+  "label": "SCAM",
+  "axes": [
+   "C1"
+  ],
+  "coached": false,
+  "expected_action": "RED_ESCALATION"
+ },
+ {
+  "id": "CO-095",
+  "audio_mode": "IN_CALL",
+  "media_projection": true,
+  "time_since_disb_min": 117,
+  "user_utterance": "Sai tên căn cước nên phải chuyển tiền để kích hoạt lại lệnh giải ngân gấp lắm",
+  "amount_vnd": 3000000,
+  "label": "SCAM",
+  "axes": [
+   "C2"
+  ],
+  "coached": false,
+  "expected_action": "RED_ESCALATION"
+ },
+ {
+  "id": "CO-096",
+  "audio_mode": "SPEAKERPHONE",
+  "media_projection": true,
+  "time_since_disb_min": 83,
+  "user_utterance": "Chuyển để sửa lỗi sai một chữ số tài khoản bị treo (giọng thì thầm, có người nhắc)",
+  "amount_vnd": 26000000,
+  "label": "SCAM",
+  "axes": [
+   "C2"
+  ],
+  "coached": false,
+  "expected_action": "RED_ESCALATION"
+ },
+ {
+  "id": "CO-097",
+  "audio_mode": "NORMAL",
+  "media_projection": false,
+  "time_since_disb_min": 41687,
+  "user_utterance": "Gửi tiền cho mẹ ở quê",
+  "amount_vnd": 4400000,
+  "label": "ROUTINE",
+  "axes": [],
+  "coached": false,
+  "expected_action": "ALLOW"
+ },
+ {
+  "id": "CO-098",
+  "audio_mode": "NORMAL",
+  "media_projection": false,
+  "time_since_disb_min": 18273,
+  "user_utterance": "Thanh toán tiền điện nước",
+  "amount_vnd": 350000,
+  "label": "ROUTINE",
+  "axes": [],
+  "coached": false,
+  "expected_action": "ALLOW"
+ },
+ {
+  "id": "CO-099",
+  "audio_mode": "SPEAKERPHONE",
+  "media_projection": true,
+  "time_since_disb_min": 113,
+  "user_utterance": "Tạo dòng tiền đối ứng chứng minh khả năng trả nợ (giọng thì thầm, có người nhắc)",
+  "amount_vnd": 26000000,
+  "label": "SCAM",
+  "axes": [
+   "C3"
+  ],
+  "coached": false,
+  "expected_action": "RED_ESCALATION"
+ },
+ {
+  "id": "CO-100",
+  "audio_mode": "NORMAL",
+  "media_projection": true,
+  "time_since_disb_min": 34,
+  "user_utterance": "Đóng phí bảo hiểm khoản vay để được rút tiền (giọng thì thầm, có người nhắc)",
+  "amount_vnd": 17000000,
+  "label": "SCAM",
+  "axes": [
+   "C6"
+  ],
+  "coached": false,
+  "expected_action": "RED_ESCALATION"
+ },
+ {
+  "id": "CO-101",
+  "audio_mode": "NORMAL",
+  "media_projection": false,
+  "time_since_disb_min": 6272,
+  "user_utterance": "Trả nợ bạn mượn tuần trước",
+  "amount_vnd": 3950000,
+  "label": "ROUTINE",
+  "axes": [],
+  "coached": false,
+  "expected_action": "ALLOW"
+ },
+ {
+  "id": "CO-102",
+  "audio_mode": "NORMAL",
+  "media_projection": false,
+  "time_since_disb_min": 42383,
+  "user_utterance": "Trả nợ bạn mượn tuần trước",
+  "amount_vnd": 400000,
+  "label": "ROUTINE",
+  "axes": [],
+  "coached": false,
+  "expected_action": "ALLOW"
+ },
+ {
+  "id": "CO-103",
+  "audio_mode": "NORMAL",
+  "media_projection": false,
+  "time_since_disb_min": 39416,
+  "user_utterance": "Nạp tiền điện thoại",
+  "amount_vnd": 3300000,
+  "label": "ROUTINE",
+  "axes": [],
+  "coached": false,
+  "expected_action": "ALLOW"
+ },
+ {
+  "id": "CO-104",
+  "audio_mode": "NORMAL",
+  "media_projection": false,
+  "time_since_disb_min": 34614,
+  "user_utterance": "Trả tiền nhà tháng này",
+  "amount_vnd": 4900000,
+  "label": "ROUTINE",
+  "axes": [],
+  "coached": false,
+  "expected_action": "ALLOW"
+ },
+ {
+  "id": "CO-105",
+  "audio_mode": "SPEAKERPHONE",
+  "media_projection": false,
+  "time_since_disb_min": 12,
+  "user_utterance": "Chuyển trả lại tiền giải ngân nhầm vào số tài khoản anh đọc gấp lắm",
+  "amount_vnd": 10000000,
+  "label": "SCAM",
+  "axes": [
+   "C1"
+  ],
+  "coached": false,
+  "expected_action": "RED_ESCALATION"
+ },
+ {
+  "id": "CO-106",
+  "audio_mode": "IN_CALL",
+  "media_projection": false,
+  "time_since_disb_min": 141,
+  "user_utterance": "Anh môi giới bảo mua hàng ảo rồi nhận tiền mặt từ hạn mức trả chậm gấp lắm",
+  "amount_vnd": 17000000,
+  "label": "SCAM",
+  "axes": [
+   "C8"
+  ],
+  "coached": false,
+  "expected_action": "RED_ESCALATION"
+ },
+ {
+  "id": "CO-107",
+  "audio_mode": "SPEAKERPHONE",
+  "media_projection": false,
+  "time_since_disb_min": 74,
+  "user_utterance": "Gửi vào két an toàn kho bạc theo mã định danh thu hộ gấp lắm",
+  "amount_vnd": 17000000,
+  "label": "SCAM",
+  "axes": [
+   "C4"
+  ],
+  "coached": false,
+  "expected_action": "RED_ESCALATION"
+ },
+ {
+  "id": "CO-108",
+  "audio_mode": "IN_CALL",
+  "media_projection": false,
+  "time_since_disb_min": 107,
+  "user_utterance": "Đóng tiền giải tỏa lệnh treo liên ngân hàng",
+  "amount_vnd": 3000000,
+  "label": "SCAM",
+  "axes": [
+   "C2"
+  ],
+  "coached": false,
+  "expected_action": "RED_ESCALATION"
+ },
+ {
+  "id": "CO-109",
+  "audio_mode": "NORMAL",
+  "media_projection": false,
+  "time_since_disb_min": 6845,
+  "user_utterance": "Đóng tiền bảo hiểm y tế",
+  "amount_vnd": 4400000,
+  "label": "ROUTINE",
+  "axes": [],
+  "coached": false,
+  "expected_action": "ALLOW"
+ },
+ {
+  "id": "CO-110",
+  "audio_mode": "SPEAKERPHONE",
+  "media_projection": true,
+  "time_since_disb_min": 164,
+  "user_utterance": "Tôi sợ bị phạt hợp đồng nên phải chuyển ngay (giọng thì thầm, có người nhắc)",
+  "amount_vnd": 21000000,
+  "label": "SCAM",
+  "axes": [
+   "C5"
+  ],
+  "coached": false,
+  "expected_action": "RED_ESCALATION"
+ },
+ {
+  "id": "CO-111",
+  "audio_mode": "SPEAKERPHONE",
+  "media_projection": false,
+  "time_since_disb_min": 126,
+  "user_utterance": "Chuyển tiền để nâng điểm CIC rồi họ hoàn lại ngay",
+  "amount_vnd": 25000000,
+  "label": "SCAM",
+  "axes": [
+   "C3"
+  ],
+  "coached": false,
+  "expected_action": "RED_ESCALATION"
+ },
+ {
+  "id": "CO-112",
+  "audio_mode": "IN_CALL",
+  "media_projection": false,
+  "time_since_disb_min": 35,
+  "user_utterance": "Phải nộp thuế thu nhập sau khi tiền về mới rút được",
+  "amount_vnd": 20000000,
+  "label": "SCAM",
+  "axes": [
+   "C6"
+  ],
+  "coached": false,
+  "expected_action": "RED_ESCALATION"
+ },
+ {
+  "id": "CO-113",
+  "audio_mode": "IN_CALL",
+  "media_projection": true,
+  "time_since_disb_min": 161,
+  "user_utterance": "Chuyển số tiền vừa vay cho sếp tuyển dụng để nhận hoa hồng (giọng thì thầm, có người nhắc)",
+  "amount_vnd": 15000000,
+  "label": "SCAM",
+  "axes": [
+   "C9"
+  ],
+  "coached": false,
+  "expected_action": "RED_ESCALATION"
+ },
+ {
+  "id": "CO-114",
+  "audio_mode": "IN_CALL",
+  "media_projection": true,
+  "time_since_disb_min": 107,
+  "user_utterance": "Chuyển trước để chứng minh năng lực tài chính, xong được hoàn (giọng thì thầm, có người nhắc)",
+  "amount_vnd": 28000000,
+  "label": "SCAM",
+  "axes": [
+   "C3"
+  ],
+  "coached": false,
+  "expected_action": "RED_ESCALATION"
+ },
+ {
+  "id": "CO-115",
+  "audio_mode": "NORMAL",
+  "media_projection": false,
+  "time_since_disb_min": 5679,
+  "user_utterance": "Chuyển tiền ăn cho em trai",
+  "amount_vnd": 3800000,
+  "label": "ROUTINE",
+  "axes": [],
+  "coached": false,
+  "expected_action": "ALLOW"
+ },
+ {
+  "id": "CO-116",
+  "audio_mode": "SPEAKERPHONE",
+  "media_projection": false,
+  "time_since_disb_min": 54,
+  "user_utterance": "Đóng tiền giải tỏa lệnh treo liên ngân hàng gấp lắm",
+  "amount_vnd": 26000000,
+  "label": "SCAM",
+  "axes": [
+   "C2"
+  ],
+  "coached": false,
+  "expected_action": "RED_ESCALATION"
+ },
+ {
+  "id": "CO-117",
+  "audio_mode": "IN_CALL",
+  "media_projection": false,
+  "time_since_disb_min": 90,
+  "user_utterance": "Gửi vào két an toàn kho bạc theo mã định danh thu hộ (giọng thì thầm, có người nhắc)",
+  "amount_vnd": 10000000,
+  "label": "SCAM",
+  "axes": [
+   "C4"
+  ],
+  "coached": false,
+  "expected_action": "RED_ESCALATION"
+ },
+ {
+  "id": "CO-118",
+  "audio_mode": "SPEAKERPHONE",
+  "media_projection": true,
+  "time_since_disb_min": 4,
+  "user_utterance": "Quét mã thanh toán khống để rút tiền mặt từ ví trả sau (giọng thì thầm, có người nhắc)",
+  "amount_vnd": 11000000,
+  "label": "SCAM",
+  "axes": [
+   "C8"
+  ],
+  "coached": false,
+  "expected_action": "RED_ESCALATION"
+ },
+ {
+  "id": "CO-119",
+  "audio_mode": "IN_CALL",
+  "media_projection": false,
+  "time_since_disb_min": 87,
+  "user_utterance": "Tôi đứng tên vay giùm bạn rồi chuyển lại tiền cho họ",
+  "amount_vnd": 24000000,
+  "label": "SCAM",
+  "axes": [
+   "C9"
+  ],
+  "coached": false,
+  "expected_action": "RED_ESCALATION"
+ },
+ {
+  "id": "CO-120",
+  "audio_mode": "IN_CALL",
+  "media_projection": false,
+  "time_since_disb_min": 141,
+  "user_utterance": "Gửi vào két an toàn kho bạc theo mã định danh thu hộ",
+  "amount_vnd": 24000000,
+  "label": "SCAM",
+  "axes": [
+   "C4"
+  ],
+  "coached": false,
+  "expected_action": "RED_ESCALATION"
+ }
+]

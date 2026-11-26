@@ -1,0 +1,99 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "VS-VoiceTerms-40 sample",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "id",
+    "region",
+    "noise_db",
+    "transcript",
+    "audio_file",
+    "audio_pending",
+    "slots",
+    "slang_terms"
+  ],
+  "properties": {
+    "id": {
+      "type": "string",
+      "pattern": "^VT-\\d{3}$"
+    },
+    "region": {
+      "enum": [
+        "bac",
+        "trung",
+        "nam"
+      ]
+    },
+    "noise_db": {
+      "type": "integer",
+      "minimum": 0,
+      "maximum": 120
+    },
+    "transcript": {
+      "type": "string",
+      "minLength": 1
+    },
+    "audio_file": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "audio_pending": {
+      "type": "boolean"
+    },
+    "slots": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "principal_vnd",
+        "installment_vnd",
+        "period",
+        "n_installments"
+      ],
+      "properties": {
+        "principal_vnd": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "installment_vnd": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "period": {
+          "enum": [
+            "day",
+            "week",
+            "month"
+          ]
+        },
+        "n_installments": {
+          "type": "integer",
+          "minimum": 1
+        }
+      }
+    },
+    "slang_terms": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "surface",
+          "value_vnd"
+        ],
+        "properties": {
+          "surface": {
+            "type": "string",
+            "minLength": 1
+          },
+          "value_vnd": {
+            "type": "integer",
+            "minimum": 1
+          }
+        }
+      }
+    }
+  }
+}
