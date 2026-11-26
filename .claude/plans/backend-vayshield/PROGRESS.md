@@ -3,14 +3,14 @@
 Plan: [`../backend-vayshield.md`](../backend-vayshield.md) · Cập nhật %: `node .claude/scripts/progress.js backend-vayshield --write`
 
 <!-- progress:start -->
-**Tổng tiến độ: 47.4%** `[█████████░░░░░░░░░░░]` — merged 5/19 task · cập nhật 2026-11-26
+**Tổng tiến độ: 48.4%** `[██████████░░░░░░░░░░]` — merged 6/19 task · cập nhật 2026-11-26
 
 | Wave | Tiến độ | | Mốc | Tiến độ |
 |---|---|---|---|---|
 | W0 | 100% | | M0 | 100% |
-| W1 | 84% | | M1 | 70% |
+| W1 | 86% | | M1 | 70% |
 | W2 | 0% | | M2 | 21% |
-| W3 | 0% | | M3 | 25% |
+| W3 | 0% | | M3 | 50% |
 | W4 | 0% | | M4 | 0% |
 | W5 | 0% | |  |  |
 <!-- progress:end -->
@@ -38,7 +38,7 @@ Plan: [`../backend-vayshield.md`](../backend-vayshield.md) · Cập nhật %: `n
 | T03 | WP1-04 | Thị giác đối kháng + VietQR | 1 | M1 | T00 | 10 | merged | task/backend-vayshield/T03 | pass (210✓) sau sửa | approve sau 2 vòng sửa (1 blocker + 7 major); vòng 2 chỉ verify, chưa review lại | – | |
 | T04 | WP1-05 | Trích xuất LLM + Conformal + Voice | 1 | M1 | T00 | 12 | verified | task/backend-vayshield/T04 | pass (244✓) | changes (2 blocker, 7 major) | – | |
 | T05 | WP1-07 | Redis HSM + Lua smurf + idempotency | 1 | M2 | T00 | 8 | implemented | task/backend-vayshield/T05 | pass (416✓), Lua redis thật chờ CI PR#2 | changes (2 blocker, 4 major) | – | |
-| T06 | WP1-11 | Dataset Bench-340 (data + nhãn) | 1 | M3 | T00 | 2 | implemented | task/backend-vayshield/T06 | validate pass | changes (nhãn lệch spec) | – | |
+| T06 | WP1-11 | Dataset Bench-340 (data + nhãn) | 1 | M3 | T00 | 2 | merged | task/backend-vayshield/T06 | validate pass | approve; nhãn APR đối chiếu solver T02: 63 trên 63 khớp, 17 null (advance-fee) | – | |
 | T07 | WP1-08 | Ontology 10 trục C1–C10 | 1 | M2 | T00 | 4 | merged | task/backend-vayshield/T07 | pass (188✓) | approve (sau 1 vòng sửa) | – | |
 | T08 | WP1-02 | Seed registry + luật + mule mẫu | 2 | M2 | T01 | 6 | pending | task/backend-vayshield/T08 | – | – | – | Người xác minh dữ liệu thật |
 | T09 | WP1-03 | Ma trận 9 phán quyết + lookalike | 2 | M1 | T02,T01 | 4 | pending | task/backend-vayshield/T09 | – | – | – | |
@@ -74,4 +74,4 @@ Plan: [`../backend-vayshield.md`](../backend-vayshield.md) · Cập nhật %: `n
 | 2026-11-26 | T04 implemented + verified (113 test riêng; schema int đồng thay float, có chủ đích) → review đang chạy. Đang chạy song song: T03 sửa vòng 2, T05 sửa blocker, T04 review |
 | 2026-11-26 | T03 merged (approve sau 2 vòng sửa (1 blocker + 7 major); vòng 2 chỉ verify, chưa review lại) |
 | 2026-11-26 | T03 merged (419✓). T04 review: 2 blocker (số tiền lóng: "10 triệu một tháng" → 10.100.000) + 7 major (gộp nhầm 2 thương hiệu, mất phí khi hợp nhất Pro, pool key dùng chung...) → agent đang sửa. T06 agent mới đang sửa nhãn |
-| 2026-11-26 | T06 merged (approve; nhãn APR đối chiếu solver T02: 63/63 khớp, 17 null (advance-fee)) |
+| 2026-11-26 | T06 merged (nhãn APR đối chiếu solver T02: 63 trên 63 khớp, 17 null do advance-fee). T05 sửa xong, CI Redis thật chạy, re-review đang chạy |
