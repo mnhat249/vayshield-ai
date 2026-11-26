@@ -83,8 +83,11 @@ class RescueService:
         )
 
     async def drain_queue(self, device_id: UUID) -> list[dict[str, Any]]:
-        """Thẻ chưa được ACK (phát lại khi người vay kết nối; KHÔNG xóa ở đây)."""
-        items: list[Any] = await self._redis.zrange(rescue_queue_key(device_id), 0, -1)
+        """Thẻ chưa ACK, phát lại mỗi lần nối (client lọc trùng theo ``rescue_card_id``)."""
+        key = rescue_queue_key(device_id)
+        cutoff = int(self._clock.now().timestamp() * 1000) - QUEUE_TTL_S * 1000
+        await self._redis.zremrangebyscore(key, "-inf", cutoff)  # thẻ > 24h không còn phát lại
+        items: list[Any] = await self._redis.zrange(key, 0, -1)
         out: list[dict[str, Any]] = []
         for raw in items:
             try:

@@ -4,9 +4,11 @@
   ``vs:pair:code:{code}`` HASH ``{link_id, device_id, fail_attempts}``; ``pairing_code_hash`` trong
   PostgreSQL là SHA-256 của mã.
 - Người thân nhập mã: mã bị lấy ra NGUYÊN TỬ (Lua) nên dùng đúng 1 lần dù 2 người cùng nhập.
-- Thử sai: mã không tồn tại thì không có phiên để đếm, nên bộ đếm sai đặt theo IP (băm SHA-256, TTL
-  = TTL mã). Sai ``pairing_max_fail_attempts`` (3) lần → 423 ``PAIRING_LOCKED`` cho tới hết TTL,
-  kể cả khi sau đó nhập đúng mã. Ngoài ra pair-confirm còn qua rate limit IP riêng.
+- Đếm sai THEO MÃ: ``fail_attempts`` trong HASH, tối đa ``pairing_max_fail_attempts`` (3) lần thử
+  sai trên chính mã đó (đầu vào không hợp lệ) → 423 ``PAIRING_LOCKED`` cho mã đó.
+- Đoán mã KHÔNG tồn tại không có phiên để đếm: chỉ có bộ đếm phụ theo IP (băm SHA-256, TTL = TTL
+  mã, ngưỡng ``IP_MAX_FAILS`` = 10, không phải 3) + rate limit IP riêng. Khóa IP chỉ áp cho các lần
+  đoán mã không tồn tại; mã đúng không bị chặn bởi nó (không khóa nhầm cả CGNAT).
 - Phiên người thân = token mờ ``gst_...`` (Redis ``vs:guardian:session:{sha256}``); chỉ lưu băm.
 """
 
@@ -154,17 +156,17 @@ class PairingService:
             problem = ErrorDetail(field="body.webpush_subscription.endpoint", issue="not_allowed")
 
         fail_key = pair_fail_key(client_ip)
-        if int(await self._redis.get(fail_key) or 0) >= IP_MAX_FAILS:
-            raise AppError(ErrorCode.PAIRING_LOCKED, 423)
-
         # Đếm sai THEO MÃ (fail_attempts trong HASH, tối đa 3): người lạ không đoán đúng mã thì
-        # không khóa được người thân thật dùng mã đúng (không thuộc bộ đếm của mã đó).
+        # không khóa được người thân thật. Khóa theo IP chỉ áp cho các lần đoán mã KHÔNG tồn tại,
+        # nên mã đúng luôn vượt qua được kể cả khi IP chung (CGNAT) đã bị đoán bừa nhiều lần.
         res = await self._attempt_script(
             keys=[pair_code_key(body.pairing_code)],
             args=[self.max_fail_attempts, 0 if problem else 1],
         )
         outcome = int(res[0])
         if outcome == 0:
+            if int(await self._redis.get(fail_key) or 0) >= IP_MAX_FAILS:
+                raise AppError(ErrorCode.PAIRING_LOCKED, 423)
             count = int(await self._ip_fail_script(keys=[fail_key], args=[self.code_ttl_s]))
             raise AppError(
                 ErrorCode.PAIRING_LOCKED

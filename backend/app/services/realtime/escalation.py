@@ -87,15 +87,16 @@ return 0
 """
 
 
-# KEYS[1]=ZSET hạn; ARGV: now_ms, batch. Nhận quyền xử lý bằng ZREM (đúng 1 instance thắng mỗi mã).
+# KEYS[1]=ZSET hạn; ARGV: now_ms, batch, lease_ms. Claim = đẩy điểm số ra sau (lease); chỉ
+# ZREM khi xử lý xong từng mã. Lỗi giữa chừng → lease hết hạn thì mã tự được thử lại.
 _CLAIM_DUE_LUA: Final = """
 local ids = redis.call('ZRANGEBYSCORE', KEYS[1], '-inf', ARGV[1], 'LIMIT', 0, tonumber(ARGV[2]))
-local out = {}
 for _, id in ipairs(ids) do
-  if redis.call('ZREM', KEYS[1], id) == 1 then out[#out + 1] = id end
+  redis.call('ZADD', KEYS[1], tonumber(ARGV[1]) + tonumber(ARGV[3]), id)
 end
-return out
+return ids
 """
+LEASE_MS: Final = 30_000
 
 
 def ack_timer_key(escalation_id: UUID) -> str:
@@ -330,6 +331,7 @@ class EscalationService:
         if push_result is PushResult.GONE:
             # EC-DB14: subscription chết → cập nhật trạng thái, nhảy thẳng SMS/Email, không chờ 10s.
             await self._repo.mark_push_expired(link.link_id)
+            await self._mark_done(escalation_id, link)
             chan = await self._send_fallback(
                 device_id, escalation_id, link, alert, "PUSH_EXPIRED_410"
             )
@@ -337,11 +339,17 @@ class EscalationService:
         if push_result is not PushResult.DELIVERED:
             live = await self._hub.is_live(device_id, RealtimeRole.GUARDIAN, link_id=link.link_id)
             if not live:
+                await self._mark_done(escalation_id, link)
                 chan = await self._send_fallback(
                     device_id, escalation_id, link, alert, "NO_LIVE_SOCKET"
                 )
                 return _Outcome(link, push_attempted, chan, handled=True)
         return _Outcome(link, push_attempted, None, handled=False)
+
+    async def _mark_done(self, escalation_id: UUID, link: GuardianLink) -> None:
+        """Đánh dấu link đã (sắp) nhận SMS NGAY, trước khi gửi: sweeper chạy song song (giao chậm
+        > 10s) sẽ bỏ qua link này, không gửi SMS lần 2."""
+        await self._redis.hset(ack_timer_key(escalation_id), f"done:{link.link_id}", "1")
 
     async def _send_fallback(
         self,
@@ -395,17 +403,37 @@ class EscalationService:
 
     async def sweep_due(self) -> int:
         """Xử lý các leo thang quá hạn ACK: PENDING→FALLBACK nguyên tử rồi gửi SMS/Email.
-        An toàn khi nhiều instance cùng gọi (ZREM + Lua chuyển trạng thái chọn đúng 1 bên thắng)."""
+        An toàn khi nhiều instance cùng gọi (lease trong ZSET + Lua chuyển trạng thái). Mỗi mã xử
+        lý độc lập: lỗi ở 1 mã không làm mất mã khác; mã lỗi được thử lại khi lease hết hạn."""
         now_ms = int(self._clock.now().timestamp() * 1000)
-        ids = await self._claim_due(keys=[ACK_DUE_KEY], args=[now_ms, SWEEP_BATCH])
+        ids = await self._claim_due(keys=[ACK_DUE_KEY], args=[now_ms, SWEEP_BATCH, LEASE_MS])
         handled = 0
         for raw in ids:
             esc = UUID(raw.decode() if isinstance(raw, bytes) else str(raw))
-            if await self._transition(esc, (STATUS_PENDING,), STATUS_FALLBACK) != 1:
-                continue  # đã ACK hoặc hash hết hạn
-            await self._fallback_for(esc)
-            handled += 1
+            try:
+                if await self._sweep_one(esc):
+                    handled += 1
+            except asyncio.CancelledError:
+                raise
+            except Exception:
+                logger.exception("ack_sweep_item_failed")  # giữ lease → tự retry
         return handled
+
+    async def _sweep_one(self, esc: UUID) -> bool:
+        key = ack_timer_key(esc)
+        moved = await self._transition(esc, (STATUS_PENDING,), STATUS_FALLBACK)
+        if moved != 1:
+            status = await self._redis.hget(key, "status")
+            status_s = status.decode() if isinstance(status, bytes) else status
+            finished = status_s != STATUS_FALLBACK or await self._redis.hexists(key, "fb_done")
+            if finished:  # đã ACK / hash hết hạn / đã gửi xong
+                await self._redis.zrem(ACK_DUE_KEY, str(esc))
+                return False
+            # moved == 0 và đang FALLBACK chưa xong: lần trước lỗi giữa chừng → làm tiếp
+        await self._fallback_for(esc)
+        await self._redis.hset(key, "fb_done", "1")
+        await self._redis.zrem(ACK_DUE_KEY, str(esc))
+        return True
 
     async def _fallback_for(self, escalation_id: UUID) -> None:
         data = await self._redis.hgetall(ack_timer_key(escalation_id))
@@ -429,6 +457,8 @@ class EscalationService:
                 continue
             alert = EmergencyAlert.model_validate_json(raw_alert)
             await self._send_fallback(device_id, escalation_id, link, alert, "ACK_TIMEOUT")
+            # Đánh dấu SAU khi gửi: lỗi giữa chừng thì retry vẫn gửi lại (thà trùng còn hơn mất).
+            await self._redis.hset(ack_timer_key(escalation_id), f"done:{link_id}", "1")
 
     async def _transition(self, escalation_id: UUID, sources: tuple[str, ...], target: str) -> int:
         res = await self._transition_script(

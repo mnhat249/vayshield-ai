@@ -15,7 +15,7 @@ from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
 from typing import Annotated, Any
 
-from fastapi import Depends
+from fastapi import Depends, FastAPI
 from fastapi.requests import HTTPConnection
 from redis.asyncio import Redis
 
@@ -171,6 +171,28 @@ async def get_services(
     services = build_services(redis=core_redis.get_redis(), clock=clock, settings=get_settings())
     conn.app.state.realtime_services = services
     return services
+
+
+async def start_realtime(app: FastAPI) -> None:
+    """Gọi trong lifespan: dựng dịch vụ + bật hub pub/sub và sweeper ACK ngay khi khởi động (pod
+    mới sau restart phải quét ``vs:ack:due``, S2-EC44). Không có Redis (LOCAL/TEST) → bỏ qua."""
+    existing: RealtimeServices | None = getattr(app.state, "realtime_services", None)
+    if existing is None:
+        redis = core_redis.init_redis()
+        if redis is None:
+            return
+        existing = build_services(redis=redis, clock=get_clock(), settings=get_settings())
+        app.state.realtime_services = existing
+    try:
+        await existing.startup()
+    except Exception:  # Redis chưa sẵn sàng không được làm app không khởi động; sẽ bật lười sau
+        logger.exception("realtime_startup_failed")
+
+
+async def stop_realtime(app: FastAPI) -> None:
+    services: RealtimeServices | None = getattr(app.state, "realtime_services", None)
+    if services is not None:
+        await services.shutdown()
 
 
 Services = Annotated[RealtimeServices, Depends(get_services)]

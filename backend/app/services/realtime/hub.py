@@ -6,6 +6,10 @@
 - Hiện diện (presence): ZSET ``vs:ws:presence:{device_id}`` (score = hạn, ms) để biết người thân /
   người vay có socket sống không, độc lập instance. Heartbeat làm mới hạn; socket treo nửa chừng
   (half-open, S2-EC44) tự hết hạn.
+- Hàng đợi gửi mỗi socket có giới hạn; đầy hoặc gửi quá hạn thì socket bị gỡ KÈM toàn bộ frame đang
+  chờ. Frame cho người vay như EVENT_ESCALATION_ACKNOWLEDGED/FALLBACK không được lưu lại: client
+  PHẢI đồng bộ lại trạng thái qua REST khi nối lại (thẻ giải cứu và cảnh báo người thân thì được
+  phát lại từ Redis khi nối).
 - Giả định: Redis đơn (PSUBSCRIBE trên Cluster cần shard pub/sub — ghi trong báo cáo).
 """
 

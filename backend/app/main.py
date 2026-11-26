@@ -20,6 +20,7 @@ from app.core.logging import configure_logging
 from app.core.openapi import install_openapi
 from app.core.redis import check_redis, close_redis
 from app.core.schemas.health import HealthChecks, HealthResponse
+from app.services.realtime.container import start_realtime, stop_realtime
 
 API_DESCRIPTION = (
     "VayShield AI — bảo vệ người đi vay khỏi app vay lừa đảo, lãi cắt cổ, chiếm đoạt OTP. "
@@ -29,8 +30,10 @@ API_DESCRIPTION = (
 
 
 @asynccontextmanager
-async def lifespan(_: FastAPI) -> AsyncIterator[None]:
+async def lifespan(app: FastAPI) -> AsyncIterator[None]:
+    await start_realtime(app)  # T12: hub WS + sweeper ACK (bỏ qua khi không có Redis)
     yield
+    await stop_realtime(app)
     await close_redis()
     await dispose_engine()
 

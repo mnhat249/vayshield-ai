@@ -282,6 +282,9 @@ async def _handle_frame(
             await services.escalation.acknowledge(link, ack.escalation_id)
             return True
         if frame_type == "CLIENT_RESCUE_CARD_ACK":
+            if link is not None:  # chỉ người VAY được ACK thẻ giải cứu
+                await _reject(websocket, services, WS_CLOSE_ROLE_FORBIDDEN, "ROLE_FORBIDDEN")
+                return False
             rc_ack = ClientRescueCardAck.model_validate(payload)
             await services.rescue.ack(conn.device_id, rc_ack.rescue_card_id)
             return True

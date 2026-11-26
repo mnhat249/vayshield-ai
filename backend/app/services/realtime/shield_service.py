@@ -132,8 +132,7 @@ class ShieldService:
                 source=SOURCE_FROM_ORIGIN[body.trigger_origin],
                 shield_ms=body.shield_duration_hours * HOUR_MS,
             )
-            if fiber is None:
-                await release()
+            if fiber is None:  # except bên dưới sẽ nhả khóa
                 raise AppError(
                     ErrorCode.CONFLICT,
                     409,
