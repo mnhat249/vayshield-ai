@@ -159,6 +159,11 @@ async def erase_device_and_commit(
         receipt = await erase_device(conn, device_id)
     if redis is None or not receipt.erased:
         return receipt
-    deleted = await erase_device_redis(redis, device_id)
+    try:
+        deleted = await erase_device_redis(redis, device_id)
+    except Exception:
+        # PG đã commit (dữ liệu bền vững đã xóa); khóa Redis đều có TTL nên tự hết hạn.
+        logger.warning("erasure: xóa khóa Redis lỗi sau commit — để TTL tự dọn")
+        return receipt
     logger.info("erasure: redis_keys_deleted=%d", deleted)
     return replace(receipt, redis_keys_deleted=deleted)

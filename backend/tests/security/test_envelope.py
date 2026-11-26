@@ -140,7 +140,7 @@ def test_from_settings_with_prev() -> None:
 
 def test_record_aad_normalizes_uuid_forms() -> None:
     rid = uuid.UUID("019361a0-0000-7000-8000-0000000000ab")
-    forms = [rid, str(rid), str(rid).upper(), rid.hex, "{" + str(rid) + "}"]
+    forms: list[uuid.UUID | str] = [rid, str(rid), str(rid).upper(), rid.hex, "{" + str(rid) + "}"]
     aads = {record_aad("t", "c", f) for f in forms}
     assert aads == {f"t|c|{rid}".encode()}
     cipher = EnvelopeCipher(KEK_A)

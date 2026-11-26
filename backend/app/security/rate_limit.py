@@ -50,8 +50,9 @@ local function load(key, cap)
   if now > ts then
     tokens = math.min(cap, tokens + (now - ts) * cap / window)
   end
-  -- ts = max(ts, now): đồng hồ worker lệch/lùi không làm nạp token 2 lần
-  return tokens, math.max(ts, now)
+  -- ts = max(ts, now): đồng hồ worker lệch/lùi không làm nạp token 2 lần;
+  -- chặn trần now + window để 1 worker chạy nhanh không khóa bucket quá lâu
+  return tokens, math.min(math.max(ts, now), now + window)
 end
 local function wait_ms(tokens, cap)
   return math.ceil((1 - tokens) * window / cap)

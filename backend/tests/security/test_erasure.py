@@ -262,3 +262,24 @@ async def test_ec_db21_pg_quorum_preserved_after_erasure(
                 text("DELETE FROM anonymous_devices WHERE id IN (:a, :b, :t)"),
                 {"a": dev_a, "b": dev_b, "t": receipt.tombstone_id},
             )
+
+
+async def test_ec_db21_redis_failure_after_commit_still_returns_receipt(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    """EC-DB21 Redis lỗi sau commit: PG đã xóa → trả receipt, redis_keys_deleted=0, log không id."""
+
+    class BrokenRedis:
+        def scan_iter(self, *a: object, **k: object) -> Any:
+            raise ConnectionError("redis down")
+
+        async def delete(self, *a: object) -> int:
+            raise ConnectionError("redis down")
+
+    engine = FakeEngine(FakeConn(exists=True, edges=2, partners=[]))
+    receipt = await erase_device_and_commit(engine, BrokenRedis(), DEV)  # type: ignore[arg-type]
+    assert engine.committed
+    assert receipt.erased and receipt.contributions_preserved == 2
+    assert receipt.redis_keys_deleted == 0
+    assert any("Redis lỗi sau commit" in r.getMessage() for r in caplog.records)
+    assert str(DEV) not in caplog.text

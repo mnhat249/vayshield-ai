@@ -137,3 +137,19 @@ async def test_ec_db25_redis_down_fails_closed_503() -> None:
         await limiter.check(device_id=uuid.UUID(int=1), ip="1.1.1.1", clock=FakeClock())
     assert exc.value.status_code == 503
     assert exc.value.code is ErrorCode.SERVICE_DEGRADED
+
+
+async def test_ec_db25_future_ts_capped_to_one_window(redis: fakeredis.FakeAsyncRedis) -> None:
+    """ts lưu bị chặn trần now + window: ts tương lai xa (worker lệch giờ) không khóa bucket mãi."""
+    limiter = CompositeRateLimiter(redis, device_rpm=60, ip_rpm=10_000)
+    dev = uuid.UUID(int=12)
+    clock = FakeClock()
+    now_ms = int(clock.now().timestamp() * 1000)
+    await redis.hset(f"vs:rl:dev:{dev}", mapping={"t": "10", "ts": str(now_ms + 10 * 86_400_000)})
+    await limiter.check(device_id=dev, ip="1.1.1.1", clock=clock)
+    stored_ts = int(float(await redis.hget(f"vs:rl:dev:{dev}", "ts") or 0))
+    assert stored_ts == now_ms + 60_000
+    clock.advance(120)  # sau 2 cửa sổ: bucket nạp lại bình thường
+    await limiter.check(device_id=dev, ip="1.1.1.1", clock=clock)
+    tokens = float(await redis.hget(f"vs:rl:dev:{dev}", "t") or 0)
+    assert tokens == pytest.approx(59, abs=0.01)

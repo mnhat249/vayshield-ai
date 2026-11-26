@@ -11,6 +11,8 @@ Header (đã khóa trong contract, xem ``app/core/auth_headers.py``)::
 - ``|now - ts| <= 300s`` (chịu lệch đồng hồ ~45s, cùng quy tắc EC-DB19) + chống phát lại:
   ``SET NX`` khóa (device_id, sha256(thông điệp)) trong 2× cửa sổ — không băm chữ ký (ECDSA dễ
   uốn). Thiếu Redis ngoài LOCAL/TEST → 503 (fail-closed).
+- Retry (mạng lỗi, 5xx, 429) PHẢI ký lại với ``ts`` mới: gửi lại nguyên header cũ sẽ bị coi là
+  phát lại → 401.
 - Mọi lỗi → 401 JSON; không tiết lộ thiết bị có tồn tại hay không. Không log header/chữ ký.
 
 Route dùng: ``device: Annotated[VerifiedDevice, Depends(verify_device_request)]`` (dependency này
