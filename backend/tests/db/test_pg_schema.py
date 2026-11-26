@@ -223,12 +223,23 @@ async def test_ec_db18_json_too_deep_rejected(pg: AsyncEngine, session_id: str) 
             )
 
 
+async def test_ec_db18_70kb_accepted_by_sql_pydantic_is_gate(
+    pg: AsyncEngine, session_id: str
+) -> None:
+    """70KB < 128KB: CHECK SQL (lưới an toàn) chấp nhận; chốt chặn 64KB là Pydantic."""
+    async with pg.begin() as c:
+        await c.execute(
+            text(_AUDIT_INSERT),
+            {"i": _uid(), "s": session_id, "j": json.dumps({"b": "x" * 70_000})},
+        )
+
+
 async def test_ec_db18_json_too_heavy_rejected(pg: AsyncEngine, session_id: str) -> None:
     with pytest.raises(DBAPIError, match="ck_masked_extraction_size"):
         async with pg.begin() as c:
             await c.execute(
                 text(_AUDIT_INSERT),
-                {"i": _uid(), "s": session_id, "j": json.dumps({"b": "x" * 70_000})},
+                {"i": _uid(), "s": session_id, "j": json.dumps({"b": "x" * 140_000})},
             )
 
 
