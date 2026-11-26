@@ -134,8 +134,8 @@ def _apply(inp: VerdictInput, prov: Provenance, flag: str) -> tuple[VerdictInput
         return replace(inp, distinct_loan_brands_count=2), prov
     if flag == "apk_bad":
         return inp, replace(prov, apk_signature_ok=False)
-    if flag == "pawn_flip":  # cờ cầm cố do LLM: lật chiều nào cũng không được hạ mức
-        return replace(inp, is_pawn_asset_secured=not inp.is_pawn_asset_secured), prov
+    if flag == "pawn_flip":  # chiều rủi ro của cờ cầm cố (LLM): không có tài sản
+        return replace(inp, is_pawn_asset_secured=False), prov
     if flag == "personal_account":
         return inp, replace(prov, beneficiary_is_personal_account=True)
     return inp, replace(prov, account_frozen_notice=True)
@@ -214,3 +214,20 @@ def test_widening_upper_bound_never_lowers_severity(
     narrow = _run(inp, apr(lo, lo + width), prov)
     wide = _run(inp, apr(lo, lo + width + extra), prov)
     assert _rank(wide) <= _rank(narrow), (narrow, wide)
+
+
+_SUFFIX = st.text(alphabet="bcdfgjklqwxz", min_size=3, max_size=8)
+
+
+@settings(max_examples=200, deadline=None)
+@given(
+    brand=st.sampled_from(["Home Credit", "FE Credit", "Shinhan Finance", "Vietcombank"]),
+    suffix=_SUFFIX,
+)
+def test_brand_plus_random_foreign_suffix_is_lookalike(brand: str, suffix: str) -> None:
+    """Re-review BLOCKER: tên thật + token ngẫu nhiên ngoài danh sách từ lành → LOOKALIKE."""
+    from app.verdict import MatchStatus, detect_lookalike_brand
+
+    hit = detect_lookalike_brand(f"{brand} {suffix}", _REGISTRY)
+    assert hit.status is MatchStatus.LOOKALIKE, (brand, suffix, hit)
+    assert hit.record is not None and hit.record.official_short_name == brand

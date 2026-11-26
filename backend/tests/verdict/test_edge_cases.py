@@ -164,8 +164,9 @@ def test_s2_ec17_p2p_over_cap_with_usury_rate_is_criminal(decide: Decide) -> Non
 def test_s2_ec17_boundary_exactly_100m_is_within_cap(decide: Decide) -> None:
     ok = VerdictInput(claimed_lender_name="Lendzy Demo", principal_vnd=100_000_000)
     over = VerdictInput(claimed_lender_name="Lendzy Demo", principal_vnd=100_000_001)
-    assert decide(ok, apr(0.15)).verdict_code is V.V_GREEN_TRANSPARENT
-    assert decide(over, apr(0.15)).verdict_code is V.V_ORANGE_CIVIL_CAP_EXCEEDED
+    verified = Provenance(apk_signature_ok=True)
+    assert decide(ok, apr(0.15), verified).verdict_code is V.V_GREEN_TRANSPARENT
+    assert decide(over, apr(0.15), verified).verdict_code is V.V_ORANGE_CIVIL_CAP_EXCEEDED
 
 
 # ------------------------------------------------------------------ S2-EC41 / EC-AI24 ---
@@ -235,12 +236,13 @@ def test_s2_ec41_one_unknown_scenario_makes_interval_unknown() -> None:
 def test_s2_ec42_half_point_tolerance_at_20(decide: Decide, rate: float, expected: V) -> None:
     """S2-EC42: dời ngày nghỉ làm APR nhích 20,x% — dung sai ±0,5 điểm % không báo oan."""
     inp = VerdictInput(claimed_lender_name="Lendzy Demo", principal_vnd=50_000_000)
-    assert decide(inp, apr(rate)).verdict_code is expected
+    assert decide(inp, apr(rate), Provenance(apk_signature_ok=True)).verdict_code is expected
 
 
 def test_s2_ec42_interval_inside_tolerance_band_is_not_crossing(decide: Decide) -> None:
     inp = VerdictInput(claimed_lender_name="Lendzy Demo", principal_vnd=50_000_000)
-    assert decide(inp, apr(0.196, 0.204)).verdict_code is V.V_GREEN_TRANSPARENT
+    v = decide(inp, apr(0.196, 0.204), Provenance(apk_signature_ok=True))
+    assert v.verdict_code is V.V_GREEN_TRANSPARENT
 
 
 # ----------------------------------------------------------------- AprInterval / RateReport ---

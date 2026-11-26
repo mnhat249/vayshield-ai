@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import pytest
+
 from app.core.verdict_codes import KernelSignal, Severity, VerdictCode
 from app.verdict import (
     AprInterval,
@@ -225,7 +227,8 @@ def test_pawn_high_fee_positive_near_100(decide: Decide) -> None:
 
 def test_pawn_high_fee_boundary_civil_tolerance(decide: Decide) -> None:
     """Review C: cầm đồ có APR > 20,5% tối thiểu CAM; trong dung sai 20,5% vẫn xanh."""
-    assert decide(PAWN, apr(0.205)).verdict_code is V.V_GREEN_TRANSPARENT
+    assert decide(PAWN, apr(0.205), APK_OK).verdict_code is V.V_GREEN_TRANSPARENT
+    assert decide(PAWN, apr(0.205)).verdict_code is V.V_AMBER_INCOMPLETE_DOC
     assert decide(PAWN, apr(0.2051)).verdict_code is V.V_ORANGE_PAWN_HIGH_FEE
     assert decide(PAWN, apr(0.30)).verdict_code is V.V_ORANGE_PAWN_HIGH_FEE
     assert decide(PAWN, apr(0.5, 1.2)).verdict_code is V.V_ORANGE_PAWN_HIGH_FEE
@@ -334,18 +337,18 @@ def test_green_positive_finco(decide: Decide) -> None:
 
 def test_green_positive_p2p_at_cap_exactly(decide: Decide) -> None:
     inp = _with(P2P, principal_vnd=100_000_000)
-    v = decide(inp, apr(0.18))
+    v = decide(inp, apr(0.18), APK_OK)
     assert v.verdict_code is V.V_GREEN_TRANSPARENT
     assert "ND_94_2025" in v.legal_basis_ids
 
 
 def test_green_positive_bnpl_provider(decide: Decide) -> None:
-    assert decide(BNPL, apr(0.10)).verdict_code is V.V_GREEN_TRANSPARENT
+    assert decide(BNPL, apr(0.10), APK_OK).verdict_code is V.V_GREEN_TRANSPARENT
 
 
 def test_green_boundary_p2p_tolerance_band(decide: Decide) -> None:
     """Biên S2-EC42: P2P 20,5% vẫn xanh; 20,6% → vượt trần."""
-    assert decide(P2P, apr(0.205)).verdict_code is V.V_GREEN_TRANSPARENT
+    assert decide(P2P, apr(0.205), APK_OK).verdict_code is V.V_GREEN_TRANSPARENT
     assert decide(P2P, apr(0.206)).verdict_code is V.V_ORANGE_CIVIL_CAP_EXCEEDED
 
 
@@ -376,3 +379,53 @@ def test_p2p_over_cap_checked_before_crossing_20(decide: Decide) -> None:
 def test_p2p_within_cap_20_to_35_stays_civil_cap_assumption(decide: Decide) -> None:
     """Giả định chờ người duyệt: P2P (không phải TCTD) 20–35% → CAM ĐẬM, không XANH."""
     assert decide(P2P, apr(0.30)).verdict_code is V.V_ORANGE_CIVIL_CAP_EXCEEDED
+
+
+def test_unverified_pawn_p2p_bnpl_never_green(decide: Decide) -> None:
+    """Re-review: quy tắc "chỉ ảnh chụp → tối đa AMBER" áp cả cho cầm đồ / P2P / ví trả sau."""
+    for base in (PAWN, P2P, BNPL):
+        v = decide(base, apr(0.10))
+        assert v.verdict_code is V.V_AMBER_INCOMPLETE_DOC
+        assert Contradiction.LENDER_NOT_VERIFIED in v.contradictions
+        assert decide(base, apr(0.10), APK_OK).verdict_code is V.V_GREEN_TRANSPARENT
+
+
+def test_pawn_without_pledged_asset_is_at_most_amber(decide: Decide) -> None:
+    """Re-review: chuỗi cầm đồ nhưng ``is_pawn_asset_secured=False`` → không XANH; nhãn CAM giữ."""
+    no_asset = _with(PAWN, is_pawn_asset_secured=False)
+    v = decide(no_asset, apr(0.10), APK_OK)
+    assert v.verdict_code is V.V_AMBER_INCOMPLETE_DOC
+    assert Contradiction.PAWN_ASSET_NOT_CONFIRMED in v.contradictions
+    assert decide(no_asset, apr(0.45), APK_OK).verdict_code is V.V_ORANGE_PAWN_HIGH_FEE
+
+
+def test_unverified_licensed_still_flags_bundled_insurance(decide: Decide) -> None:
+    """Re-review: nhánh chưa xác thực vẫn ghi BUNDLED_INSURANCE trước khi trả AMBER."""
+    inp = _with(VCB, deducted_fees=(DeductedFee(label="Bảo hiểm khoản vay", amount_vnd=900_000),))
+    v = decide(inp, apr(0.15))
+    assert v.verdict_code is V.V_AMBER_INCOMPLETE_DOC
+    assert Contradiction.BUNDLED_INSURANCE in v.contradictions
+    assert Contradiction.LENDER_NOT_VERIFIED in v.contradictions
+
+
+@pytest.mark.parametrize(
+    "name",
+    [
+        "Home Credit Official",
+        "Home Credit Pro",
+        "Home Credit Plus",
+        "Home Credit Express",
+        "Home Credit Care",
+    ],
+)
+def test_s2_ec16_brand_plus_foreign_suffix_with_personal_account_is_spoof(
+    decide: Decide, name: str
+) -> None:
+    """Re-review BLOCKER (bẫy G02): tên thật + hậu tố lạ, APR 50% + STK cá nhân → MẠO DANH."""
+    v = decide(
+        VerdictInput(claimed_lender_name=name),
+        apr(0.5),
+        Provenance(beneficiary_is_personal_account=True),
+    )
+    assert v.verdict_code is V.V_RED_BRAND_SPOOF
+    assert v.lookalike_of == "Home Credit"

@@ -39,6 +39,7 @@ class Contradiction(StrEnum):
     MULTIPLE_LOANS_MIXED = "MULTIPLE_LOANS_MIXED"
     LENDER_NOT_VERIFIED = "LENDER_NOT_VERIFIED"
     BUNDLED_INSURANCE = "BUNDLED_INSURANCE"
+    PAWN_ASSET_NOT_CONFIRMED = "PAWN_ASSET_NOT_CONFIRMED"
 
 
 def fmt_pct(rate: float) -> str:
@@ -112,6 +113,9 @@ _REASONS: Final = MappingProxyType(
         ),
         Contradiction.LENDER_NOT_VERIFIED: (
             "Không thấy bên cho vay trong danh sách tổ chức được cấp phép."
+        ),
+        Contradiction.PAWN_ASSET_NOT_CONFIRMED: (
+            "Chưa thấy giấy tờ cầm cố tài sản thật (xe, đăng ký xe…), cần xác nhận thêm."
         ),
         Contradiction.BUNDLED_INSURANCE: (
             "Có phí bảo hiểm tính kèm khoản vay; người vay có quyền từ chối bảo hiểm không bắt "

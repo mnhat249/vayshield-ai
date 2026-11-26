@@ -4,9 +4,11 @@ from __future__ import annotations
 
 import pytest
 
+from app.core.schemas.common import LegalCategory
 from app.verdict import (
     LOOKALIKE_THRESHOLD,
     InMemoryLenderRegistry,
+    LenderRecord,
     LenderRegistry,
     MatchStatus,
     brand_similarity,
@@ -14,7 +16,14 @@ from app.verdict import (
     detect_lookalike_domain,
 )
 from app.verdict.lookalike import normalize_host, normalize_text
-from tests.verdict._helpers import FE_CREDIT, HOME_CREDIT, RETIRED, SHINHAN, VIETCOMBANK
+from tests.verdict._helpers import (
+    ALL_RECORDS,
+    FE_CREDIT,
+    HOME_CREDIT,
+    RETIRED,
+    SHINHAN,
+    VIETCOMBANK,
+)
 
 
 def test_threshold_is_spec_value() -> None:
@@ -197,3 +206,63 @@ def test_ec16_ambiguous_core_shared_by_two_entities_is_not_exact() -> None:
     )
     reg = InMemoryLenderRegistry([SHINHAN, bank])
     assert detect_lookalike_brand("Shinhan Việt Nam", reg).method != "EXACT_CORE"
+
+
+_REAL_BANKS = (
+    LenderRecord(
+        entity_code="BANK_TPB",
+        legal_category=LegalCategory.COMMERCIAL_BANK,
+        official_short_name="TPBank",
+        official_legal_name="Ngân hàng TMCP Tiên Phong",
+    ),
+    LenderRecord(
+        entity_code="BANK_VIB",
+        legal_category=LegalCategory.COMMERCIAL_BANK,
+        official_short_name="VIB",
+        official_legal_name="Ngân hàng TMCP Quốc tế Việt Nam",
+    ),
+    LenderRecord(
+        entity_code="BANK_HDB",
+        legal_category=LegalCategory.COMMERCIAL_BANK,
+        official_short_name="HDBank",
+        official_legal_name="Ngân hàng TMCP Phát triển Thành phố Hồ Chí Minh",
+    ),
+    LenderRecord(
+        entity_code="BANK_TCB",
+        legal_category=LegalCategory.COMMERCIAL_BANK,
+        official_short_name="Techcombank",
+        official_legal_name="Ngân hàng TMCP Kỹ Thương Việt Nam",
+    ),
+)
+
+
+@pytest.mark.parametrize(
+    ("name", "code"),
+    [
+        ("Ngân hàng Tiên Phong", "BANK_TPB"),
+        ("Ngân hàng Quốc tế VIB", "BANK_VIB"),
+        ("Ngân hàng Phát triển TP Hồ Chí Minh", "BANK_HDB"),
+        ("Ngân hàng Phát triển Thành phố Hồ Chí Minh", "BANK_HDB"),
+        ("Ngân hàng Kỹ Thương", "BANK_TCB"),
+        ("Ngân hàng Thương mại Cổ phần Kỹ Thương Việt Nam", "BANK_TCB"),
+    ],
+)
+def test_ec16_real_legal_names_with_common_words_are_exact(name: str, code: str) -> None:
+    """Re-review MAJOR: tên pháp nhân thật chứa "tiên", "quốc tế", "hồ", "thương" không bị đỏ."""
+    reg = InMemoryLenderRegistry((*ALL_RECORDS, *_REAL_BANKS))
+    hit = detect_lookalike_brand(name, reg)
+    assert hit.status is MatchStatus.EXACT, (name, hit)
+    assert hit.record is not None and hit.record.entity_code == code
+
+
+def test_ec16_ky_thuong_without_techcombank_not_mapped_to_other_bank(
+    registry: InMemoryLenderRegistry,
+) -> None:
+    """Re-review MAJOR: lõi ngắn "Kỹ Thương" không bị gán nhái VietinBank."""
+    assert detect_lookalike_brand("Ngân hàng Kỹ Thương", registry).status is MatchStatus.NONE
+
+
+@pytest.mark.parametrize("name", ["TPBank Vay Nhanh", "VIB Official", "Techcombank Pro"])
+def test_ec16_real_bank_plus_foreign_suffix_is_lookalike(name: str) -> None:
+    reg = InMemoryLenderRegistry((*ALL_RECORDS, *_REAL_BANKS))
+    assert detect_lookalike_brand(name, reg).status is MatchStatus.LOOKALIKE

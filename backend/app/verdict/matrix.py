@@ -171,21 +171,34 @@ def _financial_rule(
     bundled_insurance: bool,
     p2p_over_cap: bool,
     channel_verified: bool,
+    pawn_asset_secured: bool,
     contradictions: list[Contradiction],
 ) -> VerdictCode:
+    def green_or_amber() -> VerdictCode:
+        # "Chỉ ảnh chụp → tối đa AMBER" áp cho MỌI nhánh có thể ra XANH (cầm đồ / P2P / BNPL);
+        # cầm đồ còn cần có tài sản cầm cố thật. Thiếu điều kiện → AMBER (chỉ thay XANH, không
+        # hạ nhãn CAM/ĐỎ nào).
+        if path is LenderPath.PAWN_CHAIN and not pawn_asset_secured:
+            contradictions.append(Contradiction.PAWN_ASSET_NOT_CONFIRMED)
+            return VerdictCode.V_AMBER_INCOMPLETE_DOC
+        if not channel_verified:
+            contradictions.append(Contradiction.LENDER_NOT_VERIFIED)
+            return VerdictCode.V_AMBER_INCOMPLETE_DOC
+        return VerdictCode.V_GREEN_TRANSPARENT
+
     lo, hi = interval.apr_min, interval.apr_max
     if lo is None or hi is None:
         contradictions.append(Contradiction.APR_UNAVAILABLE)
         return VerdictCode.V_AMBER_INCOMPLETE_DOC
 
     if path is LenderPath.LICENSED_TCTD:
+        if bundled_insurance:
+            contradictions.append(Contradiction.BUNDLED_INSURANCE)
         if not channel_verified:
             # Quyết định của người dùng: chỉ có ảnh chụp (chưa kiểm chữ ký APK) thì tên khớp
             # ngân hàng/FinCo cũng không đủ để ra XANH/VÀNG CAM → tối đa AMBER.
             contradictions.append(Contradiction.LENDER_NOT_VERIFIED)
             return VerdictCode.V_AMBER_INCOMPLETE_DOC
-        if bundled_insurance:
-            contradictions.append(Contradiction.BUNDLED_INSURANCE)
         if hi > HIGH_COST_THRESHOLD or bundled_insurance:
             return VerdictCode.V_YELLOW_HIGH_COST_LICENSED
         return VerdictCode.V_GREEN_TRANSPARENT
@@ -204,11 +217,7 @@ def _financial_rule(
     if path is LenderPath.PAWN_CHAIN:
         if above_civil:  # cận dưới đã > 20,5%: tối thiểu CAM (khoảng cắt 100% không hạ nhãn)
             return VerdictCode.V_ORANGE_PAWN_HIGH_FEE
-        return (
-            VerdictCode.V_AMBER_INCOMPLETE_DOC
-            if crosses_civil
-            else (VerdictCode.V_GREEN_TRANSPARENT)
-        )
+        return VerdictCode.V_AMBER_INCOMPLETE_DOC if crosses_civil else green_or_amber()
 
     if above_civil:  # chắc chắn vượt trần dân sự dù cận trên có cắt mốc 100% (S2-EC41)
         return VerdictCode.V_ORANGE_CIVIL_CAP_EXCEEDED
@@ -217,7 +226,7 @@ def _financial_rule(
     if crosses_civil:
         return VerdictCode.V_AMBER_INCOMPLETE_DOC
     if path is LenderPath.REGISTERED_NON_TCTD:
-        return VerdictCode.V_GREEN_TRANSPARENT
+        return green_or_amber()
     contradictions.append(Contradiction.LENDER_NOT_VERIFIED)
     return VerdictCode.V_AMBER_INCOMPLETE_DOC
 
@@ -347,6 +356,7 @@ def decide_verdict(
                 bundled_insurance=has_bundled_insurance(extraction.deducted_fees),
                 p2p_over_cap=p2p_over_cap,
                 channel_verified=provenance.apk_signature_ok is True,
+                pawn_asset_secured=extraction.is_pawn_asset_secured,
                 contradictions=contradictions,
             )
         )

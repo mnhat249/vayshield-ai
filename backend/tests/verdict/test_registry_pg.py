@@ -1,4 +1,4 @@
-"""Repo PG của ``LenderRegistry``: ánh xạ dòng (không cần PG) + đọc thật (``@pytest.mark.pg``)."""
+"""Repo PG của ``LenderRegistry``: ánh xạ dòng (không cần PG) + đọc thật (mark ``pg``)."""
 
 from __future__ import annotations
 
@@ -11,8 +11,15 @@ from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncEngine
 
 from app.core.schemas.common import LegalCategory
-from app.verdict import LenderRegistry, MatchStatus, detect_lookalike_brand
-from app.verdict.registry_pg import PgLenderRegistry, record_from_row
+from app.verdict import (
+    LenderRegistry,
+    MatchStatus,
+    Provenance,
+    VerdictInput,
+    detect_lookalike_brand,
+    match_lender,
+)
+from app.verdict.registry_pg import PgLenderRegistry, RegistryNotLoadedError, record_from_row
 
 
 def test_record_from_row_maps_jsonb_packages_and_arrays() -> None:
@@ -31,6 +38,7 @@ def test_record_from_row_maps_jsonb_packages_and_arrays() -> None:
     assert rec.android_packages == ("vn.x.app", "vn.x.lite")
     assert rec.official_hotlines == ("1900 0009",)
     assert rec.aliases == ()  # chưa có cột aliases → cần migration mới
+    assert rec.registry_id is None
 
 
 def test_record_from_row_p2p_cap() -> None:
@@ -47,10 +55,32 @@ def test_record_from_row_p2p_cap() -> None:
     assert record_from_row(row).p2p_cap_vnd == 100_000_000
 
 
-def test_unrefreshed_pg_registry_is_empty_and_satisfies_protocol() -> None:
+def test_record_from_row_maps_registry_id() -> None:
+    rid = uuid.uuid4()
+    row: dict[str, object] = {
+        "id": str(rid),
+        "entity_code": "B",
+        "legal_category": "COMMERCIAL_BANK",
+        "official_short_name": "B",
+        "official_legal_name": "B",
+    }
+    assert record_from_row(row).registry_id == rid
+    row["id"] = rid
+    assert record_from_row(row).registry_id == rid
+
+
+def test_unrefreshed_pg_registry_fails_closed() -> None:
+    """Re-review: registry PG chưa nạp KHÔNG được trả rỗng (sẽ tắt im lặng cờ mạo danh)."""
     reg = PgLenderRegistry(engine=None)  # type: ignore[arg-type]
     assert isinstance(reg, LenderRegistry)
-    assert reg.active_records() == ()
+    assert not reg.loaded
+    with pytest.raises(RegistryNotLoadedError):
+        reg.active_records()
+    with pytest.raises(RegistryNotLoadedError):
+        reg.get("FINCO_HOMECREDIT")
+    inp = VerdictInput(claimed_lender_name="Home Credit")
+    with pytest.raises(RegistryNotLoadedError):
+        match_lender(inp, Provenance(beneficiary_is_personal_account=True), reg)
 
 
 @pytest.mark.pg
@@ -78,8 +108,10 @@ async def test_pg_registry_reads_active_rows(pg: AsyncEngine, pg_admin: AsyncEng
     try:
         reg = PgLenderRegistry(pg)
         assert await reg.refresh(date.today()) >= 1
+        assert reg.loaded
         rec = reg.get(code)
         assert rec is not None and rec.android_packages == ("vn.t09.demo",)
+        assert rec.registry_id is not None
         assert rec.official_domains == ("t09demo.vn",)
         assert reg.get(gone) is None
         assert detect_lookalike_brand(rec.official_short_name, reg).status is MatchStatus.EXACT

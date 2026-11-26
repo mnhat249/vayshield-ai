@@ -9,6 +9,7 @@ from __future__ import annotations
 from collections.abc import Iterable, Sequence
 from dataclasses import dataclass
 from typing import Final, Protocol, runtime_checkable
+from uuid import UUID
 
 from app.core.schemas.common import LegalCategory
 
@@ -37,6 +38,8 @@ class LenderRecord:
     android_packages: tuple[str, ...] = ()
     sandbox_cap_vnd: int | None = None
     is_active: bool = True
+    # ``licensed_lender_registry.id`` — T11 điền matched_lender_id / impersonated_lender_id.
+    registry_id: UUID | None = None
 
     @property
     def names(self) -> tuple[str, ...]:

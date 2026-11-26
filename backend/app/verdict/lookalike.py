@@ -11,9 +11,12 @@ Thuật toán tất định:
    >= 4 ký tự, độ dài lệch <= 20%, cùng ký tự đầu) hoặc lõi này chứa trọn lõi kia qua 1 token
    thương hiệu "mạnh" (vd "Tín dụng FE Việt" ⊂ "FE Credit") → ``LOOKALIKE``.
 
-Trước bước 3: ``EXACT_CORE`` nếu lõi thương hiệu (không quy đồng hình) trùng đúng 1 pháp nhân và
-phần còn lại chỉ là từ chung chung lành ("Home Credit Việt Nam", "Vietcombank VN"). Hậu tố đáng
-ngờ ("Vay Nhanh", "Quốc Tế"…) chặn EXACT_CORE để vẫn bắt tên nhái.
+Trước bước 3 — **khớp lõi** (không quy đồng hình): lõi của 1 tên chuẩn (bỏ từ lành: công ty,
+tài chính, ngân hàng, TMCP, Việt Nam…) nằm trọn trong tên dò. Nếu mọi token còn lại đều là từ
+lành hoặc từ có trong chính tên của pháp nhân đó ("Ngân hàng Quốc tế VIB", "Home Credit Việt
+Nam") → ``EXACT_CORE`` (chỉ khi duy nhất 1 pháp nhân). Có BẤT KỲ token lạ nào ("Home Credit
+Official/Pro/Care", "Shinhan Vay Nhanh") → ``LOOKALIKE``. Nếu chỉ khớp sau khi quy đồng hình
+("H0me Credit") → ``LOOKALIKE``. Lưu ý: "Ngân hàng Home Credit" → ``EXACT_CORE`` (chấp nhận).
 """
 
 from __future__ import annotations
@@ -72,14 +75,15 @@ _HOMOGLYPHS: Final = str.maketrans(
 _BENIGN_GENERIC_TOKENS: Final = frozenset(
     {
         "cong", "ty", "tnhh", "mtv", "mot", "thanh", "vien", "trach", "nhiem", "huu", "han",
-        "co", "phan", "cp", "tmcp", "thuong", "mai", "jsc", "ltd", "limited", "company", "group",
+        "co", "phan", "cp", "tmcp", "tm", "jsc", "ltd", "limited", "company", "group",
         "tai", "chinh", "tin", "dung", "tieu", "ngan", "hang", "bank", "finance", "financial",
         "viet", "nam", "vietnam", "vn", "the", "va",
     }
 )  # fmt: skip
 
-# Hậu tố "đáng ngờ" hay gặp ở tên nhái ("Shinhan Vay Nhanh", "HomeCredit Quốc Tế"): bị bỏ khi
-# lấy lõi thương hiệu nhưng KHÔNG cho phép kết luận EXACT_CORE (S2-EC16).
+# Từ quảng cáo hay gặp ở tên nhái: CHỈ bị bỏ ở bước khớp mờ (``brand_core``). Bước khớp lõi không
+# dùng danh sách này (nhiều tên thật chứa "tiên", "quốc tế", "hồ"…): ở đó mọi token lạ ngoài từ lành
+# và từ của chính pháp nhân đều làm tên thành nhái.
 _SUSPICIOUS_GENERIC_TOKENS: Final = frozenset(
     {
         "vay", "tien", "nhanh", "online", "app", "quoc", "te", "international", "dich", "vu",
@@ -88,6 +92,17 @@ _SUSPICIOUS_GENERIC_TOKENS: Final = frozenset(
 )  # fmt: skip
 
 _GENERIC_TOKENS: Final = _BENIGN_GENERIC_TOKENS | _SUSPICIOUS_GENERIC_TOKENS
+
+# Cụm viết tắt / cụm hình thức pháp lý nhiều token: chuẩn hóa trước khi tách lõi.
+_PHRASES: Final = (
+    ("thuong mai co phan", "tmcp"),
+    ("thuong mai", "tm"),
+    ("cong thuong", "congthuong"),  # "Công Thương" là tên riêng, không phải "công ty"
+    ("tphcm", "thanh pho ho chi minh"),
+    ("tp hcm", "thanh pho ho chi minh"),
+    ("tp", "thanh pho"),
+    ("hcm", "ho chi minh"),
+)
 
 # Token thương hiệu "yếu" (quá phổ biến): trùng riêng các token này không đủ kết luận nhái.
 _WEAK_BRAND_TOKENS: Final = frozenset(
@@ -137,17 +152,71 @@ def _skeleton_tokens(text: str) -> tuple[str, ...]:
 
 
 def brand_core(text: str) -> tuple[str, ...]:
-    """Token thương hiệu sau khi quy đồng hình và bỏ từ chung chung."""
-    return tuple(t for t in _skeleton_tokens(text) if t not in _GENERIC_TOKENS)
+    """Token thương hiệu sau khi quy đồng hình và bỏ từ chung chung (lành + đáng ngờ)."""
+    return tuple(t for t in _expand(_skeleton_tokens(text)) if t not in _GENERIC_TOKENS)
 
 
-def _raw_core(text: str) -> tuple[str, ...]:
-    """Lõi thương hiệu KHÔNG quy đồng hình (để "H0me Credit" không thành EXACT_CORE)."""
-    return tuple(t for t in normalize_text(text).split() if t not in _GENERIC_TOKENS)
+def _expand(tokens: Sequence[str]) -> tuple[str, ...]:
+    text = " " + " ".join(tokens) + " "
+    for src, dst in _PHRASES:
+        text = text.replace(f" {src} ", f" {dst} ")
+    return tuple(text.split())
 
 
-def _has_suspicious_suffix(text: str) -> bool:
-    return any(t in _SUSPICIOUS_GENERIC_TOKENS for t in normalize_text(text).split())
+def _tokens(text: str, *, skeleton: bool) -> tuple[str, ...]:
+    """Token chuẩn hóa; ``skeleton`` = quy ký tự đồng hình (Cyrillic, 0→o, 1→i)."""
+    base = normalize_text(text)
+    if skeleton:
+        base = base.translate(_HOMOGLYPHS)
+    return _expand(base.split())
+
+
+def _benign_core(tokens: Sequence[str]) -> tuple[str, ...]:
+    """Bỏ CHỈ các từ chung chung "lành" (giữ "tiên", "quốc tế"… vì có trong tên thật)."""
+    return tuple(t for t in tokens if t not in _BENIGN_GENERIC_TOKENS)
+
+
+def _aligned_in(needle: str, tokens: Sequence[str]) -> bool:
+    """``needle`` xuất hiện trong chuỗi token nối liền, bắt đầu tại ranh giới token."""
+    pos = 0
+    hay = "".join(tokens)
+    for t in tokens:
+        if hay.startswith(needle, pos):
+            return True
+        pos += len(t)
+    return False
+
+
+@dataclass(frozen=True, slots=True)
+class _CoreHit:
+    record: LenderRecord
+    exact: bool  # True: không có token lạ ngoài tên của pháp nhân → EXACT_CORE
+    core_len: int
+
+
+def _core_hit(record: LenderRecord, probe: Sequence[str], *, skeleton: bool) -> _CoreHit | None:
+    """Lõi của 1 tên chuẩn nằm trọn trong tên dò. ``exact`` nếu mọi token còn lại đều thuộc
+    chính bộ từ của pháp nhân (vd "Ngân hàng Quốc tế VIB") — ngược lại có hậu tố lạ
+    ("Home Credit Official", "Shinhan Vay Nhanh") → nhái."""
+    vocab: set[str] = set()
+    compact_cores: set[str] = set()
+    best = 0
+    for name in record.names:
+        if not name:
+            continue
+        toks = _tokens(name, skeleton=skeleton)
+        vocab.update(toks)
+        core = _benign_core(toks)
+        rc = "".join(core)
+        if len(rc) < _MIN_CORE_LEN:
+            continue
+        compact_cores.add(rc)
+        if set(core) <= set(probe) or _aligned_in(rc, probe):
+            best = max(best, len(rc))
+    if not best:
+        return None
+    extras = [t for t in probe if t not in vocab and t not in compact_cores]
+    return _CoreHit(record, exact=not extras, core_len=best)
 
 
 def _score(a: str, b: str) -> float:
@@ -205,20 +274,24 @@ def _best_fuzzy(
     return best
 
 
-def _exact_core(name: str, records: Sequence[LenderRecord]) -> BrandMatch | None:
-    """Lõi thương hiệu trùng hoàn toàn đúng 1 pháp nhân, phần khác chỉ là từ chung chung "lành"
-    → ``EXACT_CORE``. Có hậu tố đáng ngờ hoặc lõi trùng nhiều pháp nhân → ``None``."""
-    if _has_suspicious_suffix(name):
+def _core_match(name: str, records: Sequence[LenderRecord]) -> BrandMatch | None:
+    raw = _benign_core(_tokens(name, skeleton=False))
+    if not raw:
         return None
-    core = "".join(_raw_core(name))
-    if len(core) < _MIN_CORE_LEN:
-        return None
-    hits = {
-        r.entity_code: r for r in records for n in r.names if n and "".join(_raw_core(n)) == core
-    }
-    if len(hits) != 1:
-        return None
-    return BrandMatch(MatchStatus.EXACT, next(iter(hits.values())), 1.0, "EXACT_CORE")
+    hits = [h for r in records if (h := _core_hit(r, raw, skeleton=False)) is not None]
+    exact = {h.record.entity_code: h for h in hits if h.exact}
+    if len(exact) == 1:
+        record = next(iter(exact.values())).record
+        return BrandMatch(MatchStatus.EXACT, record, 1.0, "EXACT_CORE")
+    suffixed = [h for h in hits if not h.exact]
+    if not suffixed and not exact:
+        # Đồng hình: "H0me Credit", "Homе Credit" (е Cyrillic) chỉ khớp sau khi quy skeleton.
+        skel = _benign_core(_tokens(name, skeleton=True))
+        suffixed = [h for r in records if (h := _core_hit(r, skel, skeleton=True)) is not None]
+    if suffixed:
+        best = max(suffixed, key=lambda h: h.core_len)
+        return BrandMatch(MatchStatus.LOOKALIKE, best.record, 1.0, "CORE_WITH_FOREIGN_TOKENS")
+    return None  # lõi trùng nhiều pháp nhân (mơ hồ) → để bước khớp mờ quyết định
 
 
 def detect_lookalike_brand(
@@ -226,8 +299,10 @@ def detect_lookalike_brand(
 ) -> BrandMatch:
     """So 1 tên (tên thương hiệu hoặc tên pháp nhân) với registry (S2-EC16).
 
-    ``EXACT`` nếu trùng tên chuẩn/alias; ``LOOKALIKE`` nếu gần giống (> ``threshold``) mà không
-    trùng; ``NONE`` nếu không liên quan.
+    1. ``EXACT_NAME``: trùng tên chuẩn/alias (bỏ dấu, bỏ khoảng trắng).
+    2. Lõi tên chuẩn nằm trọn trong tên dò: không có token lạ (ngoài từ lành và từ của chính
+       pháp nhân) → ``EXACT_CORE``; có token lạ bất kỳ → ``LOOKALIKE``.
+    3. Khớp mờ JW + Levenshtein > ``threshold`` / chứa lõi → ``LOOKALIKE``; còn lại ``NONE``.
     """
     if not name or not name.strip():
         return NO_MATCH
@@ -236,7 +311,7 @@ def detect_lookalike_brand(
     for record in records:
         if any(compact == _compact(n) for n in record.names if n):
             return BrandMatch(MatchStatus.EXACT, record, 1.0, "EXACT_NAME")
-    core_hit = _exact_core(name, records)
+    core_hit = _core_match(name, records)
     if core_hit is not None:
         return core_hit
     pairs = [(r, n) for r in records for n in r.names if n]
