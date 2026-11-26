@@ -1,12 +1,10 @@
-"""STUB M0 — Ghép đôi người thân & thẻ giải cứu 2 chiều. Logic thật: T12."""
+"""Ghép đôi người thân & thẻ giải cứu 2 chiều (File 4 §4.1, §3.1). Logic: T12."""
 
 from __future__ import annotations
 
-from fastapi import APIRouter, status
+from fastapi import APIRouter, Request, status
 
-from app.core import mocks
-from app.core.auth_headers import DeviceOrSandboxCaller, GuardianCaller
-from app.core.errors import AppError, ErrorCode, ErrorDetail
+from app.core.errors import AppError, ErrorCode
 from app.core.openapi import error_responses
 from app.core.schemas.family import (
     PairConfirmRequest,
@@ -16,9 +14,14 @@ from app.core.schemas.family import (
     SendRescueCardRequest,
     SendRescueCardResponse,
 )
-from app.core.stubs import stub
+from app.security.rate_limit import CompositeRateLimiter, client_ip
+from app.services.realtime.container import BorrowerCaller, GuardianLinkCaller, Services
 
 router = APIRouter(prefix="/api/v1/family", tags=["family"])
+
+# Bucket IP riêng cho pair-confirm (endpoint không xác thực → chống dò mã): tách khỏi bucket chung.
+PAIR_CONFIRM_BUCKET = "pair-confirm:"
+PAIR_CONFIRM_RPM = 10
 
 
 @router.post(
@@ -29,9 +32,10 @@ router = APIRouter(prefix="/api/v1/family", tags=["family"])
     responses=error_responses(401),
     summary="Người vay tạo mã ghép đôi 6 ký tự (TTL 10 phút, tối đa 3 lần sai)",
 )
-@stub
-async def pair_init(body: PairInitRequest, _caller: DeviceOrSandboxCaller) -> PairInitResponse:
-    return mocks.PAIR_INIT
+async def pair_init(
+    body: PairInitRequest, who: BorrowerCaller, services: Services
+) -> PairInitResponse:
+    return await services.pairing.pair_init(who.device_id, body)
 
 
 @router.post(
@@ -41,15 +45,21 @@ async def pair_init(body: PairInitRequest, _caller: DeviceOrSandboxCaller) -> Pa
     responses=error_responses(404, 423),
     summary="Người thân xác nhận mã ghép đôi → nhận guardian session token",
 )
-@stub
-async def pair_confirm(body: PairConfirmRequest) -> PairConfirmResponse:
-    if not body.consent_accepted:
+async def pair_confirm(
+    body: PairConfirmRequest, request: Request, services: Services
+) -> PairConfirmResponse:
+    ip = client_ip((request.client.host, request.client.port) if request.client else None)
+    limiter = CompositeRateLimiter(
+        services.redis, device_rpm=PAIR_CONFIRM_RPM, ip_rpm=PAIR_CONFIRM_RPM
+    )
+    decision = await limiter.check(
+        device_id=None, ip=PAIR_CONFIRM_BUCKET + ip, clock=services.clock
+    )
+    if not decision.allowed:
         raise AppError(
-            ErrorCode.VALIDATION_ERROR,
-            422,
-            details=[ErrorDetail(field="body.consent_accepted", issue="consent_required")],
+            ErrorCode.RATE_LIMITED, 429, headers={"Retry-After": str(decision.retry_after_s)}
         )
-    return mocks.PAIR_CONFIRM
+    return await services.pairing.pair_confirm(ip, body)
 
 
 @router.post(
@@ -60,8 +70,7 @@ async def pair_confirm(body: PairConfirmRequest) -> PairConfirmResponse:
     responses=error_responses(401, 404),
     summary="Người thân bắn Thẻ Giải cứu lên máy người vay (WS reverse push < 150ms)",
 )
-@stub
 async def send_rescue_card(
-    body: SendRescueCardRequest, _caller: GuardianCaller
+    body: SendRescueCardRequest, link: GuardianLinkCaller, services: Services
 ) -> SendRescueCardResponse:
-    return mocks.RESCUE_CARD
+    return await services.rescue.send(link, body)
