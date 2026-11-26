@@ -13,8 +13,9 @@
 3. ``DELETE anonymous_devices`` → ``ON DELETE CASCADE`` xóa phiên, audit, intercept, liên kết
    người thân (cipher Web Push/SMS).
 4. Ghi ``tamper_evident_audit_chain`` với ``target_ref_id`` = id bia mộ (không ghi device_id thật).
-5. Xóa khóa Redis gắn thiết bị (``vs:shield:state:{id}``, ``vs:idem:notif:{id}:*``,
-   ``vs:rl:dev:{id}``).
+5. SAU KHI PG COMMIT: xóa khóa Redis gắn thiết bị (``vs:shield:state:{id}``,
+   ``vs:idem:notif:{id}:*``, ``vs:rl:dev:{id}``, ``vs:sig:dev:{id}:*``) bằng ``erase_device_redis``
+   — ``erase_device_and_commit`` làm đúng thứ tự này.
 
 Không log ``device_id`` (chỉ log số lượng).
 """
@@ -23,13 +24,13 @@ from __future__ import annotations
 
 import hashlib
 import os
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from typing import Final
 from uuid import UUID
 
 from redis.asyncio import Redis
 from sqlalchemy import text
-from sqlalchemy.ext.asyncio import AsyncConnection, AsyncSession
+from sqlalchemy.ext.asyncio import AsyncConnection, AsyncEngine, AsyncSession
 
 from app.core.logging import get_logger
 from app.security.rate_limit import device_bucket_key
@@ -127,25 +128,37 @@ async def erase_device_rows(
 
 async def erase_device_redis(redis: Redis, device_id: UUID) -> int:
     keys: list[str] = [f"vs:shield:state:{device_id}", device_bucket_key(device_id)]
-    async for key in redis.scan_iter(match=f"vs:idem:notif:{device_id}:*", count=500):
-        keys.append(key if isinstance(key, str) else key.decode())
+    for pattern in (f"vs:idem:notif:{device_id}:*", f"vs:sig:dev:{device_id}:*"):
+        async for key in redis.scan_iter(match=pattern, count=500):
+            keys.append(key if isinstance(key, str) else key.decode())
     return int(await redis.delete(*keys))
 
 
-async def erase_device(
-    conn: AsyncConnection | AsyncSession, redis: Redis | None, device_id: UUID
-) -> ErasureReceipt:
+async def erase_device(conn: AsyncConnection | AsyncSession, device_id: UUID) -> ErasureReceipt:
+    """CHỈ phần PostgreSQL, trong transaction của caller. KHÔNG đụng Redis.
+
+    Caller phải COMMIT rồi mới gọi ``erase_device_redis`` (nếu PG rollback mà Redis đã xóa thì
+    trạng thái Khiên nóng mất trong khi thiết bị vẫn còn). Dùng ``erase_device_and_commit`` cho
+    đúng thứ tự.
+    """
     erased, tombstone, n_edges = await erase_device_rows(conn, device_id)
-    deleted = await erase_device_redis(redis, device_id) if (redis is not None and erased) else 0
-    logger.info(
-        "erasure: erased=%s contributions_preserved=%d redis_keys_deleted=%d",
-        erased,
-        n_edges,
-        deleted,
-    )
+    logger.info("erasure: erased=%s contributions_preserved=%d", erased, n_edges)
     return ErasureReceipt(
         erased=erased,
         tombstone_id=tombstone,
         contributions_preserved=n_edges,
-        redis_keys_deleted=deleted,
+        redis_keys_deleted=0,
     )
+
+
+async def erase_device_and_commit(
+    engine: AsyncEngine, redis: Redis | None, device_id: UUID
+) -> ErasureReceipt:
+    """PG trong 1 transaction → COMMIT → sau đó mới xóa khóa Redis."""
+    async with engine.begin() as conn:
+        receipt = await erase_device(conn, device_id)
+    if redis is None or not receipt.erased:
+        return receipt
+    deleted = await erase_device_redis(redis, device_id)
+    logger.info("erasure: redis_keys_deleted=%d", deleted)
+    return replace(receipt, redis_keys_deleted=deleted)

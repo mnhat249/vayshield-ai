@@ -2,6 +2,7 @@
 
 - ``sign_policy_bundle``: ký JSON chuẩn hóa của ``payload`` đúng như contract
   (``json.dumps(payload, sort_keys=True, separators=(",", ":"))``, mặc định ``ensure_ascii``).
+  Chỉ ``payload`` được ký — metadata phiên bản/hạn KHÔNG được bảo vệ (giới hạn contract).
 - ``signed_epoch_offset``: thiết bị neo TTL vào ``elapsedRealtimeNanos`` + giờ máy chủ có ký, nên
   chỉnh đồng hồ máy (+2 ngày) không phá được Khiên 24h. Thông điệp ký::
 
@@ -154,7 +155,13 @@ def verify_policy_bundle(
     now: datetime | None = None,
     min_policy_version: int | None = None,
 ) -> None:
-    """Kiểm như thiết bị: thuật toán, key_id ghim, chữ ký, hạn, chống hạ cấp phiên bản."""
+    """Kiểm như thiết bị: thuật toán, key_id ghim, chữ ký Ed25519 trên ``payload``.
+
+    GIỚI HẠN (theo contract đã khóa): chữ ký CHỈ phủ ``payload``; ``policy_version``,
+    ``issued_at``, ``expires_at`` KHÔNG được ký. Kiểm ``now``/``min_policy_version`` dưới đây chỉ là
+    kiểm tra hợp lệ phụ trên metadata chưa ký — kẻ MITM có thể sửa các trường đó và phát lại một
+    ``payload`` cũ đã ký. Không được coi là bảo vệ chống hạ cấp/hết hạn bằng mật mã.
+    """
     if bundle.algorithm != ALGORITHM:
         raise SignatureVerificationError("thuật toán không được phép")
     if bundle.key_id != expected_key_id:

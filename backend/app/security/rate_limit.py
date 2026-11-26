@@ -8,6 +8,8 @@
 Cả 2 bucket kiểm và trừ trong 1 script Lua nguyên tử: chỉ trừ token khi cả 2 đều còn, nên request
 bị từ chối ở tầng IP không "đốt" token của thiết bị và ngược lại. IP được băm SHA-256 trước khi làm
 khóa Redis (không lưu IP thô). ``device_id`` truyền vào phải là thiết bị ĐÃ xác thực chữ ký.
+
+Giả định: Redis đơn (không cluster) — script đụng 2 khóa khác slot. Redis lỗi → 503 (fail-closed).
 """
 
 from __future__ import annotations
@@ -24,6 +26,9 @@ from redis.asyncio import Redis
 from app.core.clock import Clock
 from app.core.config import Settings, get_settings
 from app.core.errors import AppError, ErrorCode
+from app.core.logging import get_logger
+
+logger = get_logger("vayshield.security.rate_limit")
 
 DEVICE_KEY_PREFIX: Final = "vs:rl:dev:"
 IP_KEY_PREFIX: Final = "vs:rl:ip:"
@@ -45,7 +50,8 @@ local function load(key, cap)
   if now > ts then
     tokens = math.min(cap, tokens + (now - ts) * cap / window)
   end
-  return tokens, now
+  -- ts = max(ts, now): đồng hồ worker lệch/lùi không làm nạp token 2 lần
+  return tokens, math.max(ts, now)
 end
 local function wait_ms(tokens, cap)
   return math.ceil((1 - tokens) * window / cap)
@@ -54,21 +60,22 @@ local has_dev = KEYS[1] ~= ''
 local dev_cap = tonumber(ARGV[2])
 local ip_cap = tonumber(ARGV[3])
 local dev_tokens = 0
+local dev_ts = now
 if has_dev then
-  dev_tokens = load(KEYS[1], dev_cap)
+  dev_tokens, dev_ts = load(KEYS[1], dev_cap)
   if dev_tokens < 1 then
     return {0, 1, wait_ms(dev_tokens, dev_cap)}
   end
 end
-local ip_tokens = load(KEYS[2], ip_cap)
+local ip_tokens, ip_ts = load(KEYS[2], ip_cap)
 if ip_tokens < 1 then
   return {0, 2, wait_ms(ip_tokens, ip_cap)}
 end
 if has_dev then
-  redis.call('HSET', KEYS[1], 't', tostring(dev_tokens - 1), 'ts', tostring(now))
+  redis.call('HSET', KEYS[1], 't', tostring(dev_tokens - 1), 'ts', tostring(dev_ts))
   redis.call('PEXPIRE', KEYS[1], window * 2)
 end
-redis.call('HSET', KEYS[2], 't', tostring(ip_tokens - 1), 'ts', tostring(now))
+redis.call('HSET', KEYS[2], 't', tostring(ip_tokens - 1), 'ts', tostring(ip_ts))
 redis.call('PEXPIRE', KEYS[2], window * 2)
 return {1, 0, 0}
 """
@@ -114,17 +121,22 @@ class CompositeRateLimiter:
     async def check(self, *, device_id: UUID | None, ip: str, clock: Clock) -> RateDecision:
         now_ms = int(clock.now().timestamp() * 1000)
         dev_key = device_bucket_key(device_id) if device_id is not None else ""
-        result = await self._redis.eval(
-            _LUA,
-            2,
-            dev_key,
-            ip_bucket_key(ip),
-            now_ms,
-            self.device_rpm,
-            self.ip_rpm,
-            _WINDOW_MS,
-        )
-        allowed, scope, retry_ms = (int(x) for x in result)
+        try:
+            result = await self._redis.eval(
+                _LUA,
+                2,
+                dev_key,
+                ip_bucket_key(ip),
+                now_ms,
+                self.device_rpm,
+                self.ip_rpm,
+                _WINDOW_MS,
+            )
+            allowed, scope, retry_ms = (int(x) for x in result)
+        except Exception:
+            # Có chủ đích: không có bộ đếm thì không cho qua âm thầm (fail-closed 503).
+            logger.warning("rate_limit: Redis lỗi — từ chối (fail-closed)")
+            raise AppError(ErrorCode.SERVICE_DEGRADED, 503) from None
         return RateDecision(
             allowed=bool(allowed),
             blocked_scope=_SCOPES[scope],

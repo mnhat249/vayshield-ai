@@ -8,8 +8,9 @@ Header (đã khóa trong contract, xem ``app/core/auth_headers.py``)::
 
 - Chữ ký nhận DER (Android Keystore) hoặc raw ``r||s`` 64 byte (WebCrypto PWA).
 - Khóa công khai ở ``anonymous_devices.pubkey_ecdsa_p256``: điểm không nén 65 byte hoặc DER SPKI.
-- ``|now - ts| <= 300s`` (chịu lệch đồng hồ ~45s, cùng quy tắc EC-DB19) + chống phát lại: băm
-  chữ ký ghi vào Redis ``SET NX`` trong 2× cửa sổ.
+- ``|now - ts| <= 300s`` (chịu lệch đồng hồ ~45s, cùng quy tắc EC-DB19) + chống phát lại:
+  ``SET NX`` khóa (device_id, sha256(thông điệp)) trong 2× cửa sổ — không băm chữ ký (ECDSA dễ
+  uốn). Thiếu Redis ngoài LOCAL/TEST → 503 (fail-closed).
 - Mọi lỗi → 401 JSON; không tiết lộ thiết bị có tồn tại hay không. Không log header/chữ ký.
 
 Route dùng: ``device: Annotated[VerifiedDevice, Depends(verify_device_request)]`` (dependency này
@@ -30,7 +31,10 @@ from uuid import UUID
 from cryptography.exceptions import InvalidSignature
 from cryptography.hazmat.primitives import hashes
 from cryptography.hazmat.primitives.asymmetric import ec
-from cryptography.hazmat.primitives.asymmetric.utils import encode_dss_signature
+from cryptography.hazmat.primitives.asymmetric.utils import (
+    decode_dss_signature,
+    encode_dss_signature,
+)
 from cryptography.hazmat.primitives.serialization import load_der_public_key
 from fastapi import Depends, Request
 from redis.asyncio import Redis
@@ -39,6 +43,7 @@ from sqlalchemy import text
 from app.core import redis as core_redis
 from app.core.auth_headers import DeviceCaller
 from app.core.clock import Clock, get_clock
+from app.core.config import AppEnv, get_settings
 from app.core.errors import AppError, ErrorCode
 from app.core.logging import get_logger
 
@@ -82,14 +87,25 @@ def _b64url_decode(value: str) -> bytes:
         raise _fail() from None
 
 
+def _is_der(sig: bytes) -> bool:
+    if not sig or sig[0] != 0x30 or len(sig) > _MAX_SIG_BYTES:
+        return False
+    try:
+        decode_dss_signature(sig)
+    except ValueError:
+        return False
+    return True
+
+
 def _to_der(sig: bytes) -> bytes:
+    """DER (Android Keystore) được ưu tiên nhận diện trước; 64 byte không phải DER → P1363."""
+    if _is_der(sig):
+        return sig
     if len(sig) == 64:  # IEEE P1363 r||s (WebCrypto)
         r = int.from_bytes(sig[:32], "big")
         s = int.from_bytes(sig[32:], "big")
         return encode_dss_signature(r, s)
-    if not sig or len(sig) > _MAX_SIG_BYTES or sig[0] != 0x30:
-        raise _fail()
-    return sig
+    raise _fail()
 
 
 def parse_device_signature_header(value: str) -> ParsedDeviceSignature:
@@ -142,11 +158,22 @@ def check_timestamp_window(ts: int, now_s: int, window_s: int = SIGNATURE_WINDOW
         raise _fail(ErrorCode.TIMESTAMP_OUT_OF_WINDOW)
 
 
-async def mark_signature_used(redis: Redis, signature: bytes, ttl_s: int) -> None:
-    """Chống phát lại: cùng chữ ký chỉ được dùng 1 lần trong cửa sổ."""
-    key = REPLAY_KEY_PREFIX + hashlib.sha256(signature).hexdigest()
+def replay_key(device_id: UUID, message: bytes) -> str:
+    """Khóa chống phát lại theo (thiết bị, thông điệp chuẩn hóa) — KHÔNG theo byte chữ ký.
+
+    ECDSA có tính dễ uốn (``(r, s)`` và ``(r, n - s)`` cùng hợp lệ, DER/P1363 cùng nghĩa), nên băm
+    chữ ký sẽ để kẻ tấn công đổi ``s`` mà phát lại được. Thông điệp đã gồm method, path, ts và
+    sha256(body), nên 2 request giống hệt nhau trong cùng 1 giây bị coi là phát lại (client phải
+    chờ ts mới — giả định chấp nhận được).
+    """
+    digest = hashlib.sha256(message).hexdigest()
+    return f"{REPLAY_KEY_PREFIX}{device_id}:{digest}"
+
+
+async def mark_request_used(redis: Redis, device_id: UUID, message: bytes, ttl_s: int) -> None:
+    """Chống phát lại: cùng (thiết bị, thông điệp) chỉ được chấp nhận 1 lần trong cửa sổ."""
     try:
-        first = await redis.set(key, "1", nx=True, ex=ttl_s)
+        first = await redis.set(replay_key(device_id, message), "1", nx=True, ex=ttl_s)
     except Exception:
         logger.warning("device_auth: replay cache Redis lỗi — từ chối (fail-closed)")
         raise AppError(ErrorCode.SERVICE_DEGRADED, 503) from None
@@ -201,8 +228,12 @@ async def verify_device_request(
     )
     verify_device_signature(public_key, parsed, message)
     redis = core_redis.init_redis()
-    if redis is not None:
-        await mark_signature_used(redis, parsed.signature, 2 * SIGNATURE_WINDOW_S)
+    if redis is None:
+        if get_settings().app_env not in (AppEnv.LOCAL, AppEnv.TEST):
+            logger.warning("device_auth: thiếu Redis cho chống phát lại — từ chối (fail-closed)")
+            raise AppError(ErrorCode.SERVICE_DEGRADED, 503)
+    else:
+        await mark_request_used(redis, parsed.device_id, message, 2 * SIGNATURE_WINDOW_S)
     return VerifiedDevice(device_id=parsed.device_id, signed_at=parsed.ts)
 
 

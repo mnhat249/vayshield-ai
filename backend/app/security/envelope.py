@@ -51,7 +51,16 @@ def record_aad(table: str, column: str, record_id: UUID | str) -> bytes:
     for part in (table, column):
         if not part or "|" in part:
             raise ValueError("table/column không hợp lệ cho AAD")
-    return f"{table}|{column}|{record_id}".encode()
+    if isinstance(record_id, UUID):
+        rid = str(record_id)
+    else:
+        try:  # chuẩn hóa UUID dạng chữ hoa/không gạch → cùng AAD
+            rid = str(UUID(record_id))
+        except ValueError:
+            rid = record_id
+    if not rid or "|" in rid:
+        raise ValueError("record_id không hợp lệ cho AAD")
+    return f"{table}|{column}|{rid}".encode()
 
 
 class EnvelopeCipher:

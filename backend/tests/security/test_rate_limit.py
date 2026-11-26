@@ -108,3 +108,32 @@ async def test_ec_db25_anonymous_request_uses_ip_bucket_and_ip_is_hashed(
 def test_client_ip_from_connection_only() -> None:
     assert client_ip(("10.0.0.1", 1234)) == "10.0.0.1"
     assert client_ip(None) == "unknown"
+
+
+async def test_ec_db25_lagging_worker_clock_does_not_double_refill(
+    redis: fakeredis.FakeAsyncRedis,
+) -> None:
+    """ts = max(ts, now): worker có đồng hồ chậm 30s không làm bucket nạp lại 2 lần."""
+    from datetime import timedelta
+
+    limiter = CompositeRateLimiter(redis, device_rpm=60, ip_rpm=10_000)
+    dev = uuid.UUID(int=11)
+    behind = FakeClock()
+    ahead = FakeClock(behind.now() + timedelta(seconds=30))
+    await limiter.check(device_id=dev, ip="1.1.1.1", clock=ahead)  # 59, ts = T+30
+    await limiter.check(device_id=dev, ip="1.1.1.1", clock=behind)  # 58, ts giữ T+30
+    await limiter.check(device_id=dev, ip="1.1.1.1", clock=ahead)  # không nạp thêm → 57
+    tokens = float(await redis.hget(f"vs:rl:dev:{dev}", "t") or 0)
+    assert tokens == pytest.approx(57, abs=0.01)
+
+
+async def test_ec_db25_redis_down_fails_closed_503() -> None:
+    class BrokenRedis:
+        async def eval(self, *a: object, **k: object) -> object:
+            raise ConnectionError("down")
+
+    limiter = CompositeRateLimiter(BrokenRedis(), device_rpm=5, ip_rpm=5)  # type: ignore[arg-type]
+    with pytest.raises(AppError) as exc:
+        await limiter.check(device_id=uuid.UUID(int=1), ip="1.1.1.1", clock=FakeClock())
+    assert exc.value.status_code == 503
+    assert exc.value.code is ErrorCode.SERVICE_DEGRADED

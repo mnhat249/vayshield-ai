@@ -13,7 +13,10 @@ import httpx
 import pytest
 from cryptography.hazmat.primitives import hashes
 from cryptography.hazmat.primitives.asymmetric import ec
-from cryptography.hazmat.primitives.asymmetric.utils import decode_dss_signature
+from cryptography.hazmat.primitives.asymmetric.utils import (
+    decode_dss_signature,
+    encode_dss_signature,
+)
 from cryptography.hazmat.primitives.serialization import Encoding, PublicFormat
 from fastapi import FastAPI
 
@@ -22,9 +25,11 @@ from app.core.errors import install_error_handlers
 from app.security.device_auth import (
     VerifiedDevice,
     VerifiedDeviceCaller,
+    _to_der,
     canonical_device_message,
     get_device_key_resolver,
     parse_device_signature_header,
+    replay_key,
 )
 
 NOW = datetime(2026, 11, 25, 1, 0, tzinfo=UTC)
@@ -195,3 +200,92 @@ def test_parsed_repr_hides_signature() -> None:
 def test_canonical_message_format() -> None:
     msg = canonical_device_message("post", "/api/v1/x?y=1", 1795543200, b"")
     assert msg == (b"POST\n/api/v1/x?y=1\n1795543200\n" + hashlib.sha256(b"").hexdigest().encode())
+
+
+# ------------------------------------------------------- review T10 fixes ---
+
+P256_N = 0xFFFFFFFF00000000FFFFFFFFFFFFFFFFBCE6FAADA7179E84F3B9CAC2FC632551
+
+
+def _malleate(header: str) -> str:
+    """(r, s) → (r, n - s): vẫn là chữ ký ECDSA hợp lệ cho cùng thông điệp."""
+    prefix, sig_b64 = header.split("sig=")
+    der = base64.urlsafe_b64decode(sig_b64 + "=" * (-len(sig_b64) % 4))
+    r, s = decode_dss_signature(der)
+    return prefix + "sig=" + _b64url(encode_dss_signature(r, P256_N - s))
+
+
+async def test_replay_with_malleated_s_rejected(api: httpx.AsyncClient) -> None:
+    hdr = sign_header("POST", "/t/echo", BODY)
+    assert (await api.post("/t/echo", content=BODY, headers={H: hdr})).status_code == 200
+    malleated = _malleate(hdr)
+    assert malleated != hdr
+    # chữ ký biến đổi vẫn hợp lệ về toán học...
+    parsed = parse_device_signature_header(malleated)
+    PRIV.public_key().verify(
+        parsed.signature,
+        canonical_device_message("POST", "/t/echo", TS, BODY),
+        ec.ECDSA(hashes.SHA256()),
+    )
+    # ...nhưng khóa chống phát lại theo (device, thông điệp) nên vẫn bị chặn
+    r = await api.post("/t/echo", content=BODY, headers={H: malleated})
+    assert r.status_code == 401
+
+
+async def test_replay_as_p1363_encoding_rejected(api: httpx.AsyncClient) -> None:
+    """Cùng chữ ký nhưng đổi mã hóa DER → r||s cũng không phát lại được."""
+    hdr = sign_header("POST", "/t/echo", BODY)
+    assert (await api.post("/t/echo", content=BODY, headers={H: hdr})).status_code == 200
+    prefix, sig_b64 = hdr.split("sig=")
+    r_, s_ = decode_dss_signature(base64.urlsafe_b64decode(sig_b64 + "=" * (-len(sig_b64) % 4)))
+    p1363 = prefix + "sig=" + _b64url(r_.to_bytes(32, "big") + s_.to_bytes(32, "big"))
+    assert (await api.post("/t/echo", content=BODY, headers={H: p1363})).status_code == 401
+
+
+def test_replay_key_bound_to_device_and_message() -> None:
+    m1 = canonical_device_message("POST", "/a", TS, b"x")
+    m2 = canonical_device_message("POST", "/a", TS, b"y")
+    assert replay_key(DEVICE_ID, m1) != replay_key(DEVICE_ID, m2)
+    assert replay_key(DEVICE_ID, m1) != replay_key(uuid.UUID(int=5), m1)
+    assert replay_key(DEVICE_ID, m1).startswith(f"vs:sig:dev:{DEVICE_ID}:")
+
+
+def test_64_byte_der_signature_treated_as_der_first() -> None:
+    """DER hợp lệ dài đúng 64 byte không bị hiểu nhầm là P1363 r||s."""
+    der = encode_dss_signature(2**227 + 12345, 2**227 + 67890)  # r,s 29 byte → DER 64 byte
+    assert len(der) == 64 and der[0] == 0x30
+    assert _to_der(der) == der
+    raw = (1).to_bytes(32, "big") + (2).to_bytes(32, "big")  # không phải DER
+    assert decode_dss_signature(_to_der(raw)) == (1, 2)
+
+
+async def test_no_redis_outside_local_test_fails_closed_503(
+    clock: FakeClock, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from app.core import redis as core_redis
+    from app.core.config import AppEnv
+    from app.security import device_auth
+
+    from ._helpers import make_settings
+
+    core_redis.set_redis_client(None)
+    monkeypatch.setattr(core_redis, "init_redis", lambda settings=None: None)
+    app = FastAPI()
+    install_error_handlers(app)
+
+    @app.post("/t/echo")
+    async def echo(device: VerifiedDeviceCaller) -> dict[str, str]:
+        return {"device_id": str(device.device_id)}
+
+    async def resolver(device_id: uuid.UUID) -> bytes | None:
+        return PUB_POINT
+
+    app.dependency_overrides[get_clock] = lambda: clock
+    app.dependency_overrides[get_device_key_resolver] = lambda: resolver
+    transport = httpx.ASGITransport(app=app, raise_app_exceptions=False)
+    async with httpx.AsyncClient(transport=transport, base_url="http://testserver") as c:
+        for env, expected in ((AppEnv.STAGING, 503), (AppEnv.TEST, 200)):
+            monkeypatch.setattr(device_auth, "get_settings", lambda e=env: make_settings(app_env=e))
+            hdr = sign_header("POST", "/t/echo", BODY)
+            r = await c.post("/t/echo", content=BODY, headers={H: hdr})
+            assert r.status_code == expected, (env, r.text)

@@ -2,7 +2,9 @@
 
 from __future__ import annotations
 
+import contextlib
 import uuid
+from collections.abc import AsyncIterator
 from typing import Any
 
 import fakeredis
@@ -13,6 +15,7 @@ from sqlalchemy.ext.asyncio import AsyncEngine
 from app.security.erasure import (
     ERASURE_ACTION,
     erase_device,
+    erase_device_and_commit,
     erase_device_redis,
     tombstone_id_for,
 )
@@ -69,6 +72,26 @@ class FakeConn:
         return next(i for i, (s, _) in enumerate(self.calls) if s.startswith(prefix))
 
 
+class FakeEngine:
+    """``engine.begin()`` giả: ghi lại lúc COMMIT và số khóa Redis tại thời điểm đó."""
+
+    def __init__(self, conn: FakeConn, redis: fakeredis.FakeAsyncRedis | None = None) -> None:
+        self.conn = conn
+        self.redis = redis
+        self.committed = False
+        self.redis_keys_at_commit: int | None = None
+        self.fail = False
+
+    @contextlib.asynccontextmanager
+    async def begin(self) -> AsyncIterator[FakeConn]:
+        yield self.conn
+        if self.fail:
+            raise RuntimeError("commit failed")
+        if self.redis is not None:
+            self.redis_keys_at_commit = len([k async for k in self.redis.scan_iter()])
+        self.committed = True
+
+
 async def test_ec_db21_contributions_moved_to_tombstone_before_delete(
     redis: fakeredis.FakeAsyncRedis,
 ) -> None:
@@ -77,7 +100,8 @@ async def test_ec_db21_contributions_moved_to_tombstone_before_delete(
     await redis.set(f"vs:idem:notif:{DEV}:def", "1")
     await redis.set("vs:idem:notif:other-device:abc", "1")
     conn = FakeConn(exists=True, edges=3, partners=["p1", "p2"])
-    receipt = await erase_device(conn, redis, DEV)  # type: ignore[arg-type]
+    engine = FakeEngine(conn, redis)
+    receipt = await erase_device_and_commit(engine, redis, DEV)  # type: ignore[arg-type]
 
     assert receipt.erased
     assert receipt.contributions_preserved == 3
@@ -95,7 +119,9 @@ async def test_ec_db21_contributions_moved_to_tombstone_before_delete(
     # B2B RLS: đặt tenant cho từng partner rồi reset
     partner_sets = [p for s, p in conn.calls if "set_config" in s]
     assert [p["pid"] for p in partner_sets] == ["p1", "p2", ""]
-    # Redis
+    # Redis chỉ bị xóa SAU commit PG
+    assert engine.committed
+    assert engine.redis_keys_at_commit == 4
     assert receipt.redis_keys_deleted == 3
     assert await redis.exists("vs:idem:notif:other-device:abc") == 1
     assert await redis.exists(f"vs:shield:state:{DEV}") == 0
@@ -103,7 +129,7 @@ async def test_ec_db21_contributions_moved_to_tombstone_before_delete(
 
 async def test_ec_db21_device_without_contributions_no_tombstone_row() -> None:
     conn = FakeConn(exists=True, edges=0, partners=[])
-    receipt = await erase_device(conn, None, DEV)  # type: ignore[arg-type]
+    receipt = await erase_device(conn, DEV)  # type: ignore[arg-type]
     assert receipt.erased and receipt.tombstone_id is None
     assert not any(s.startswith("INSERT INTO anonymous_devices") for s, _ in conn.calls)
     assert any(s.startswith("DELETE FROM anonymous_devices") for s, _ in conn.calls)
@@ -111,9 +137,30 @@ async def test_ec_db21_device_without_contributions_no_tombstone_row() -> None:
 
 async def test_ec_db21_unknown_device_is_noop() -> None:
     conn = FakeConn(exists=False, edges=0, partners=[])
-    receipt = await erase_device(conn, None, DEV)  # type: ignore[arg-type]
+    receipt = await erase_device(conn, DEV)  # type: ignore[arg-type]
     assert not receipt.erased
     assert len(conn.calls) == 1
+
+
+async def test_ec_db21_redis_untouched_when_pg_commit_fails(
+    redis: fakeredis.FakeAsyncRedis,
+) -> None:
+    await redis.hset(f"vs:shield:state:{DEV}", mapping={"state": "S2"})
+    engine = FakeEngine(FakeConn(exists=True, edges=0, partners=[]))
+    engine.fail = True
+    with pytest.raises(RuntimeError):
+        await erase_device_and_commit(engine, redis, DEV)  # type: ignore[arg-type]
+    assert await redis.exists(f"vs:shield:state:{DEV}") == 1
+
+
+async def test_ec_db21_erase_device_alone_never_touches_redis(
+    redis: fakeredis.FakeAsyncRedis,
+) -> None:
+    await redis.hset(f"vs:shield:state:{DEV}", mapping={"state": "S2"})
+    conn = FakeConn(exists=True, edges=0, partners=[])
+    receipt = await erase_device(conn, DEV)  # type: ignore[arg-type]
+    assert receipt.redis_keys_deleted == 0
+    assert await redis.exists(f"vs:shield:state:{DEV}") == 1
 
 
 async def test_ec_db21_redis_cleanup_idempotent(redis: fakeredis.FakeAsyncRedis) -> None:
@@ -124,13 +171,38 @@ async def test_ec_db21_redis_cleanup_idempotent(redis: fakeredis.FakeAsyncRedis)
 async def test_ec_db21_pg_quorum_preserved_after_erasure(
     pg: AsyncEngine, pg_admin: AsyncEngine
 ) -> None:
-    """PostgreSQL thật: xóa 1 trong 2 thiết bị báo cáo → quorum vẫn 2 phiếu, thiết bị biến mất."""
-    dev_a, dev_b, mule = uuid.uuid4(), uuid.uuid4(), uuid.uuid4()
+    """PostgreSQL thật: xóa 1 trong 2 thiết bị báo cáo → quorum vẫn 2 phiếu, thiết bị biến mất;
+    shield B2B của 2 tenant vẫn còn, chỉ gỡ liên kết phiên (RLS FORCE)."""
+    dev_a, dev_b, mule, sess = uuid.uuid4(), uuid.uuid4(), uuid.uuid4(), uuid.uuid4()
+    partners = [uuid.uuid4(), uuid.uuid4()]
     async with pg_admin.begin() as c:
         for d in (dev_a, dev_b):
             await c.execute(
                 text("INSERT INTO anonymous_devices (id, platform_type) VALUES (:d, 'WEB_PWA')"),
                 {"d": d},
+            )
+        await c.execute(
+            text(
+                "INSERT INTO protection_sessions (id, device_id, current_hsm_state, trigger_origin)"
+                " VALUES (:s, :d, 'S0_IDLE', 'SANDBOX_SIM')"
+            ),
+            {"s": sess, "d": dev_a},
+        )
+        for pid in partners:
+            await c.execute(
+                text(
+                    "INSERT INTO fintech_partners (id, partner_code, organization_name,"
+                    " api_key_prefix, hmac_secret_cipher) VALUES (:i, :code, 'Org', :pre, '\\x00')"
+                ),
+                {"i": pid, "code": f"P_{pid.hex[:8]}", "pre": pid.hex[:12]},
+            )
+            await c.execute(
+                text(
+                    "INSERT INTO b2b_disbursement_shields (partner_id, idempotency_key,"
+                    " borrower_phone_hmac, matched_session_id, amount_bucket_tier, status)"
+                    " VALUES (:p, :k, 'h', :s, 'TIER_10M_30M', 'ARMED_ON_DEVICE')"
+                ),
+                {"p": pid, "k": f"k-{pid.hex[:8]}", "s": sess},
             )
         await c.execute(
             text(
@@ -148,25 +220,45 @@ async def test_ec_db21_pg_quorum_preserved_after_erasure(
                 ),
                 {"m": mule, "d": d},
             )
-    async with pg.begin() as conn:
-        receipt = await erase_device(conn, None, dev_a)
-    assert receipt.erased and receipt.contributions_preserved == 1
-    async with pg.connect() as conn:
-        gone = await conn.execute(
-            text("SELECT count(*) FROM anonymous_devices WHERE id = :d"), {"d": dev_a}
-        )
-        assert gone.scalar_one() == 0
-        votes = await conn.execute(
-            text(
-                "SELECT count(DISTINCT reporter_device_id) FROM mule_incident_edges"
-                " WHERE mule_node_id = :m"
-            ),
-            {"m": mule},
-        )
-        assert votes.scalar_one() == 2
-    async with pg_admin.begin() as c:
-        await c.execute(text("DELETE FROM mule_account_nodes WHERE id = :m"), {"m": mule})
-        await c.execute(
-            text("DELETE FROM anonymous_devices WHERE id IN (:b, :t)"),
-            {"b": dev_b, "t": receipt.tombstone_id},
-        )
+    receipt = await erase_device_and_commit(pg, None, dev_a)
+    try:
+        assert receipt.erased and receipt.contributions_preserved == 1
+        async with pg.connect() as conn:
+            gone = await conn.execute(
+                text("SELECT count(*) FROM anonymous_devices WHERE id = :d"), {"d": dev_a}
+            )
+            assert gone.scalar_one() == 0
+            votes = await conn.execute(
+                text(
+                    "SELECT count(DISTINCT reporter_device_id) FROM mule_incident_edges"
+                    " WHERE mule_node_id = :m"
+                ),
+                {"m": mule},
+            )
+            assert votes.scalar_one() == 2
+        # Shield B2B của CẢ 2 tenant còn nguyên, chỉ matched_session_id bị gỡ.
+        async with pg_admin.connect() as conn:
+            for pid in partners:
+                row = await conn.execute(
+                    text(
+                        "SELECT count(*), count(matched_session_id)"
+                        " FROM b2b_disbursement_shields WHERE partner_id = :p"
+                    ),
+                    {"p": pid},
+                )
+                assert tuple(row.one()) == (1, 0)
+    finally:
+        async with pg_admin.begin() as c:
+            await c.execute(
+                text("DELETE FROM b2b_disbursement_shields WHERE partner_id IN (:a, :b)"),
+                {"a": partners[0], "b": partners[1]},
+            )
+            await c.execute(
+                text("DELETE FROM fintech_partners WHERE id IN (:a, :b)"),
+                {"a": partners[0], "b": partners[1]},
+            )
+            await c.execute(text("DELETE FROM mule_account_nodes WHERE id = :m"), {"m": mule})
+            await c.execute(
+                text("DELETE FROM anonymous_devices WHERE id IN (:a, :b, :t)"),
+                {"a": dev_a, "b": dev_b, "t": receipt.tombstone_id},
+            )

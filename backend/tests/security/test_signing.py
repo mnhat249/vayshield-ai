@@ -169,3 +169,16 @@ def test_s2_ec29_trusted_time_ignores_wall_clock_changes() -> None:
     assert trusted_now_ms(server_ms, 5_000, 5_000 + 3_600_000) == server_ms + 3_600_000
     with pytest.raises(ValueError):
         trusted_now_ms(server_ms, 10_000, 1_000)  # reboot → phải đồng bộ lại
+
+
+def test_known_limitation_metadata_not_signed(signer: Ed25519Signer) -> None:
+    """GIỚI HẠN contract: chữ ký chỉ phủ payload — sửa policy_version/expires_at KHÔNG làm hỏng
+    chữ ký. Test này ghi lại giới hạn (không phải bảo đảm an ninh); kiểm hạn/phiên bản trong
+    ``verify_policy_bundle`` chỉ là kiểm tra phụ trên metadata chưa ký."""
+    bundle = sign_policy_bundle(
+        _payload(), policy_version=1, issued_at=NOW, ttl=timedelta(hours=1), signer=signer
+    )
+    relabeled = bundle.model_copy(
+        update={"policy_version": 99, "expires_at": NOW + timedelta(days=365)}
+    )
+    verify_policy_bundle(relabeled, public_key_raw=signer.public_key_raw, expected_key_id=KEY_ID)

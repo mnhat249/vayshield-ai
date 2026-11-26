@@ -136,3 +136,17 @@ def test_from_settings_with_prev() -> None:
     blob = EnvelopeCipher(KEK_B).encrypt(b"x", aad=AAD)
     cfg = make_settings(kms_master_kek_prev=SecretStr(b64(KEK_B)))
     assert EnvelopeCipher.from_settings(cfg).decrypt(blob, aad=AAD) == b"x"
+
+
+def test_record_aad_normalizes_uuid_forms() -> None:
+    rid = uuid.UUID("019361a0-0000-7000-8000-0000000000ab")
+    forms = [rid, str(rid), str(rid).upper(), rid.hex, "{" + str(rid) + "}"]
+    aads = {record_aad("t", "c", f) for f in forms}
+    assert aads == {f"t|c|{rid}".encode()}
+    cipher = EnvelopeCipher(KEK_A)
+    blob = cipher.encrypt(b"x", aad=record_aad("t", "c", str(rid).upper()))
+    assert cipher.decrypt(blob, aad=record_aad("t", "c", rid)) == b"x"
+    assert record_aad("t", "c", "partner-42") == b"t|c|partner-42"
+    for bad in ("", "a|b"):
+        with pytest.raises(ValueError):
+            record_aad("t", "c", bad)

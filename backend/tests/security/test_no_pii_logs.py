@@ -11,7 +11,7 @@ from pydantic import SecretStr
 
 from app.core.errors import AppError
 from app.security.blind_index import BlindIndexKind, blind_index
-from app.security.device_auth import mark_signature_used, parse_device_signature_header
+from app.security.device_auth import mark_request_used, parse_device_signature_header
 from app.security.envelope import EnvelopeCipher, record_aad
 from app.security.erasure import erase_device
 from app.security.phone import PhoneNormalizationError, normalize_phone_e164
@@ -40,14 +40,14 @@ async def test_security_logs_and_errors_contain_no_pii_or_keys(
         parse_device_signature_header(f"v1;device_id={dev};ts=1;sig=%%%")
     except AppError as exc:
         messages.append(str(exc))
-    await erase_device(FakeConn(exists=True, edges=1, partners=[]), redis, dev)  # type: ignore[arg-type]
+    await erase_device(FakeConn(exists=True, edges=1, partners=[]), dev)  # type: ignore[arg-type]
 
     class BrokenRedis:
         async def set(self, *a: object, **k: object) -> None:
             raise ConnectionError(f"redis down for {PHONE}")
 
     with pytest.raises(AppError):
-        await mark_signature_used(BrokenRedis(), b"sig-bytes", 10)  # type: ignore[arg-type]
+        await mark_request_used(BrokenRedis(), dev, b"msg", 10)  # type: ignore[arg-type]
 
     cipher = EnvelopeCipher(KEK_A)
     blob = cipher.encrypt(PHONE.encode(), aad=record_aad("t", "c", dev))
