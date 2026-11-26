@@ -85,6 +85,20 @@ def _build_lenders() -> list[Lender]:
 LENDERS: Final[list[Lender]] = _build_lenders()
 
 
+# Ngày hiệu lực không có trong đặc tả (NOT NULL) -> ngày sentinel trung tính; người xác minh
+# phải điền thật. Chỉ ND_94_2025 có ngày trong spec (File 1 §1.2: hiệu lực 01/07/2025).
+UNKNOWN_DATE: Final = "1970-01-01"
+
+# Nguồn từng trường (doc_number / effective_date):
+#   BLDS_2015_D468, BLHS_2015_D201/D174, TCTD_2024_D15/D100: số hiệu = tên trong spec ("2015",
+#   "2024"), KHÔNG có số hiệu đầy đủ trong spec; ngày = sentinel.
+#   NQ_01_2021_HDTP: số hiệu "01/2021/NQ-HĐTP" (spec); ngày = sentinel.
+#   TT_43_2016_NHNN: "43/2016" (spec: "TT 43/2016"), hậu tố /TT-NHNN theo mã clause; ngày=sentinel.
+#   TT_18_2019_NHNN: "18/2019/TT-NHNN" (spec); ngày = sentinel.
+#   ND_94_2025: "94/2025/NĐ-CP" và hiệu lực 2025-07-01 (spec File 1 §1.2).
+# title_vi / plain_summary_vi: do agent soạn, chỉ khẳng định điều spec có; còn lại chưa đối chiếu.
+
+
 @dataclass(frozen=True)
 class Provision:
     clause_code: str
@@ -102,8 +116,8 @@ PROVISIONS: Final[list[Provision]] = [
     Provision(
         "BLDS_2015_D468",
         "LAW",
-        "91/2015/QH13",
-        "2017-01-01",
+        "BLDS 2015",
+        UNKNOWN_DATE,
         "Điều 468 Bộ luật Dân sự 2015 - Lãi suất vay",
         # Trích từ File 3 §5.1 (đặc tả đã rút gọn): CẦN nguyên văn chính thức.
         "Lãi suất vay do các bên thỏa thuận. Trường hợp các bên có thỏa thuận về lãi suất thì "
@@ -115,8 +129,8 @@ PROVISIONS: Final[list[Provision]] = [
     Provision(
         "BLHS_2015_D201",
         "LAW",
-        "100/2015/QH13",
-        "2018-01-01",
+        "BLHS 2015",
+        UNKNOWN_DATE,
         "Điều 201 Bộ luật Hình sự 2015 - Tội cho vay lãi nặng trong giao dịch dân sự",
         "",
         "Cho vay với lãi suất gấp nhiều lần mức trần dân sự có thể cấu thành tội hình sự.",
@@ -125,8 +139,8 @@ PROVISIONS: Final[list[Provision]] = [
     Provision(
         "BLHS_2015_D174",
         "LAW",
-        "100/2015/QH13",
-        "2018-01-01",
+        "BLHS 2015",
+        UNKNOWN_DATE,
         "Điều 174 Bộ luật Hình sự 2015 - Tội lừa đảo chiếm đoạt tài sản",
         "",
         "Dùng thủ đoạn gian dối để chiếm đoạt tài sản (vd thu phí trước, mạo danh) là tội hình sự.",
@@ -136,7 +150,7 @@ PROVISIONS: Final[list[Provision]] = [
         "NQ_01_2021_HDTP",
         "RESOLUTION",
         "01/2021/NQ-HĐTP",
-        "2021-01-01",
+        UNKNOWN_DATE,
         "Nghị quyết 01/2021/NQ-HĐTP - Hướng dẫn áp dụng Điều 201 BLHS",
         "",
         "Hướng dẫn xác định lãi suất, mức lãi nặng khi áp dụng Điều 201 Bộ luật Hình sự.",
@@ -145,8 +159,8 @@ PROVISIONS: Final[list[Provision]] = [
     Provision(
         "TCTD_2024_D15",
         "LAW",
-        "32/2024/QH15",
-        "2024-07-01",
+        "Luật Các TCTD 2024",
+        UNKNOWN_DATE,
         "Điều 15 Luật Các tổ chức tín dụng 2024 - Hoạt động bị cấm (bảo hiểm gắn với tín dụng)",
         "",
         "Cấm gắn việc cấp tín dụng với việc mua bảo hiểm không bắt buộc (File 1 §1.2).",
@@ -155,18 +169,19 @@ PROVISIONS: Final[list[Provision]] = [
     Provision(
         "TCTD_2024_D100",
         "LAW",
-        "32/2024/QH15",
-        "2024-07-01",
-        "Điều 100 Luật Các tổ chức tín dụng 2024 - Lãi suất, phí trong hoạt động cấp tín dụng",
+        "Luật Các TCTD 2024",
+        UNKNOWN_DATE,
+        "Điều 100 Luật Các tổ chức tín dụng 2024",
         "",
-        "Tổ chức tín dụng thỏa thuận lãi suất theo quy định chuyên ngành, không bị trần 20% BLDS.",
+        "Nội dung điều khoản CHƯA đối chiếu nguồn chính thức. Theo File 3 §5.1: là ngoại lệ so với "
+        "trần 20%/năm của Điều 468 BLDS đối với tổ chức tín dụng.",
         ("V_YELLOW_HIGH_COST_LICENSED", "V_GREEN_TRANSPARENT"),
     ),
     Provision(
         "TT_43_2016_NHNN",
         "CIRCULAR",
         "43/2016/TT-NHNN",
-        "2017-03-01",
+        UNKNOWN_DATE,
         "Thông tư 43/2016/TT-NHNN - Cho vay tiêu dùng của công ty tài chính",
         "",
         "Quy định minh bạch cho vay tiêu dùng của công ty tài chính.",
@@ -176,7 +191,7 @@ PROVISIONS: Final[list[Provision]] = [
         "TT_18_2019_NHNN",
         "CIRCULAR",
         "18/2019/TT-NHNN",
-        "2019-12-01",
+        UNKNOWN_DATE,
         "Thông tư 18/2019/TT-NHNN - Sửa đổi Thông tư 43/2016/TT-NHNN",
         "",
         "Sửa đổi, bổ sung quy định cho vay tiêu dùng của công ty tài chính.",
@@ -186,22 +201,22 @@ PROVISIONS: Final[list[Provision]] = [
         "ND_94_2025",
         "DECREE",
         "94/2025/NĐ-CP",
-        "2025-01-01",
+        "2025-07-01",
         "Nghị định 94/2025/NĐ-CP - Cơ chế thử nghiệm có kiểm soát (P2P lending sandbox)",
         "",
-        "Khung thử nghiệm P2P; trần giao dịch 100 triệu đồng theo File 1 §1.2.",
+        "Khung thử nghiệm P2P (hiệu lực 01/07/2025): trần dư nợ 100 triệu đồng/khách/nền tảng "
+        "và 400 triệu đồng toàn hệ thống kết nối CIC (File 1 §1.2).",
         ("V_GREEN_TRANSPARENT", "V_YELLOW_HIGH_COST_LICENSED"),
     ),
 ]
 
 # (source, target, relation_type) - relation_type theo CHECK của migration 0001.
-# Hướng cạnh và quan hệ là giả định (verified=False ở cấp node).
+# Chỉ cạnh đầu có trong spec (File 3 §5.1). 3 cạnh còn lại là SUY LUẬN của agent (chưa kiểm).
 EDGES: Final[list[tuple[str, str, str]]] = [
     ("TCTD_2024_D100", "BLDS_2015_D468", "EXEMPTS_FOR_CREDIT_INST"),  # File 3 §5.1
-    ("BLHS_2015_D201", "BLDS_2015_D468", "CRIMINALIZES_EXCESS_OF"),
-    ("NQ_01_2021_HDTP", "BLHS_2015_D201", "GUIDES_IMPLEMENTATION"),
-    ("TT_18_2019_NHNN", "TT_43_2016_NHNN", "AMENDS"),
-    ("TT_43_2016_NHNN", "TCTD_2024_D100", "GUIDES_IMPLEMENTATION"),
+    ("BLHS_2015_D201", "BLDS_2015_D468", "CRIMINALIZES_EXCESS_OF"),  # suy luận
+    ("NQ_01_2021_HDTP", "BLHS_2015_D201", "GUIDES_IMPLEMENTATION"),  # suy luận
+    ("TT_18_2019_NHNN", "TT_43_2016_NHNN", "AMENDS"),  # suy luận
 ]
 
 
@@ -260,6 +275,19 @@ CLUSTERS: Final[list[Cluster]] = [
         "WATCH",
         2,
         None,
-        (_acct("loan_recall", 1, 0.40, 2),),
+        (_acct("loan_recall", 1, 0.40, 1),),
     ),
 ]
+
+
+def dossier_status(quorum: int) -> str:
+    """File 4: >= 2 thiết bị độc lập -> QUORUM_REACHED, ngược lại OBSERVING."""
+    return "QUORUM_REACHED" if quorum >= 2 else "OBSERVING"
+
+
+def device_id(n: int) -> uuid.UUID:
+    """Thiết bị mẫu thứ n (1-based) trong namespace sandbox_seed."""
+    return uuid.uuid5(_NS, f"device:{n}")
+
+
+MAX_QUORUM: Final = max(a.quorum for c in CLUSTERS for a in c.accounts)

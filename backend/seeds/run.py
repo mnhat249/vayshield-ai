@@ -21,9 +21,12 @@ from seeds.data import (
     CLUSTERS,
     EDGES,
     LENDERS,
+    MAX_QUORUM,
     P2P_SANDBOX_CAP_VND,
     PROVISIONS,
     SANDBOX_NAMESPACE,
+    device_id,
+    dossier_status,
 )
 
 DIM = 768
@@ -95,6 +98,12 @@ async def seed(conn: asyncpg.Connection) -> None:
                 VALUES ($1,$2,$3) ON CONFLICT DO NOTHING""",
                 src, dst, rel,
             )  # fmt: skip
+        for n in range(1, MAX_QUORUM + 1):
+            await conn.execute(
+                """INSERT INTO anonymous_devices (id, platform_type)
+                VALUES ($1, 'JUDGE_SANDBOX') ON CONFLICT (id) DO NOTHING""",
+                device_id(n),
+            )
         for cl in CLUSTERS:
             await conn.execute(
                 """INSERT INTO fraud_campaign_clusters
@@ -118,15 +127,34 @@ async def seed(conn: asyncpg.Connection) -> None:
                     (id, bank_bin, account_hmac_sha256, masked_account_display,
                      account_cipher_envelope, distinct_device_quorum, threat_confidence,
                      simo_dossier_status, cluster_id, sandbox_namespace)
-                    VALUES ($1,'SANDBOX',$2,$3,$4,$5,$6,'OBSERVING',$7,$8)
+                    VALUES ($1,'SANDBOX',$2,$3,$4,$5,$6,$9,$7,$8)
                     ON CONFLICT (account_hmac_sha256) DO UPDATE SET
                       distinct_device_quorum=EXCLUDED.distinct_device_quorum,
                       threat_confidence=EXCLUDED.threat_confidence,
+                      simo_dossier_status=EXCLUDED.simo_dossier_status,
                       cluster_id=EXCLUDED.cluster_id,
                       sandbox_namespace=EXCLUDED.sandbox_namespace""",
                     a.node_id, a.hmac, a.masked_display, b"sandbox_seed:no-real-account",
                     a.quorum, a.confidence, cl.cluster_id, SANDBOX_NAMESPACE,
+                    dossier_status(a.quorum),
                 )  # fmt: skip
+        # EC-DB07: cạnh trước, rồi quorum = COUNT(cạnh) trong cùng transaction.
+        for cl in CLUSTERS:
+            for a in cl.accounts:
+                for n in range(1, a.quorum + 1):
+                    await conn.execute(
+                        """INSERT INTO mule_incident_edges
+                        (mule_node_id, reporter_device_id, evidence_channel)
+                        VALUES ($1,$2,'VIETQR_CRYPTO_DECODED')
+                        ON CONFLICT (mule_node_id, reporter_device_id) DO NOTHING""",
+                        a.node_id, device_id(n),
+                    )  # fmt: skip
+                await conn.execute(
+                    """UPDATE mule_account_nodes SET distinct_device_quorum =
+                    (SELECT COUNT(*) FROM mule_incident_edges WHERE mule_node_id = $1)
+                    WHERE id = $1""",
+                    a.node_id,
+                )
 
 
 async def main_async(url: str) -> None:

@@ -1,3 +1,4 @@
+# ruff: noqa: E501
 """Test seed T08: số lượng, ràng buộc, không bịa dữ liệu, idempotent (pg, chạy trên CI)."""
 
 from __future__ import annotations
@@ -115,9 +116,50 @@ def test_migration_0002_is_additive_and_idempotent() -> None:
         assert "IF NOT EXISTS" in line
 
 
+def test_nd94_date_and_cap_from_spec_unknown_dates_are_sentinel() -> None:
+    """File 1 §1.2: NĐ 94/2025 hiệu lực 2025-07-01; ngày không có trong spec -> sentinel."""
+    by = {p.clause_code: p for p in data.PROVISIONS}
+    assert by["ND_94_2025"].effective_date == "2025-07-01"
+    assert "400 triệu" in by["ND_94_2025"].plain_summary_vi
+    for code, p in by.items():
+        if code != "ND_94_2025":
+            assert p.effective_date == data.UNKNOWN_DATE, code
+    assert "chưa đối chiếu" in by["TCTD_2024_D100"].plain_summary_vi.lower()
+
+
+def test_inferred_tt43_to_tctd_edge_removed() -> None:
+    assert ("TT_43_2016_NHNN", "TCTD_2024_D100", "GUIDES_IMPLEMENTATION") not in data.EDGES
+
+
+def test_ec_db07_quorum_status_and_edges_plan() -> None:
+    """EC-DB07: quorum >= 2 -> QUORUM_REACHED; mỗi tài khoản có đủ thiết bị cho số cạnh."""
+    assert data.dossier_status(1) == "OBSERVING"
+    assert data.dossier_status(2) == "QUORUM_REACHED"
+    for c in data.CLUSTERS:
+        for a in c.accounts:
+            assert 1 <= a.quorum <= data.MAX_QUORUM
+    assert len({data.device_id(n) for n in range(1, data.MAX_QUORUM + 1)}) == data.MAX_QUORUM
+
+
+async def _counts(c: object) -> tuple[int, ...]:
+    tables = [
+        "SELECT count(*) FROM licensed_lender_registry",
+        "SELECT count(*) FROM legal_provision_nodes",
+        "SELECT count(*) FROM legal_provision_edges",
+        "SELECT count(*) FROM mule_account_nodes WHERE sandbox_namespace='sandbox_seed'",
+        "SELECT count(*) FROM fraud_campaign_clusters WHERE sandbox_namespace='sandbox_seed'",
+        "SELECT count(*) FROM mule_incident_edges e JOIN mule_account_nodes m"
+        " ON m.id=e.mule_node_id WHERE m.sandbox_namespace='sandbox_seed'",
+    ]
+    out: list[int] = []
+    for q in tables:
+        out.append((await c.execute(text(q))).scalar_one())  # type: ignore[attr-defined]
+    return tuple(out)
+
+
 @pytest.mark.pg
 async def test_seed_idempotent_counts_pg(pg_admin: AsyncEngine, pg: AsyncEngine) -> None:
-    """EC-OPS16 trên PG thật: seed 2 lần -> số dòng không đổi; đồ thị không trống."""
+    """EC-OPS16 + EC-DB07 trên PG thật: đếm lần 1 == lần 2; quorum == COUNT(cạnh); verified=false."""
     from tests.conftest import TEST_ADMIN_DATABASE_URL
 
     assert TEST_ADMIN_DATABASE_URL
@@ -127,28 +169,37 @@ async def test_seed_idempotent_counts_pg(pg_admin: AsyncEngine, pg: AsyncEngine)
     conn = await asyncpg.connect(TEST_ADMIN_DATABASE_URL.replace("+asyncpg", "", 1))
     try:
         await seed(conn)
+        async with pg_admin.connect() as c:
+            first = await _counts(c)
         await seed(conn)
+        async with pg_admin.connect() as c:
+            second = await _counts(c)
     finally:
         await conn.close()
-    async with pg_admin.connect() as c:
-        n_l = (await c.execute(text("SELECT count(*) FROM licensed_lender_registry"))).scalar_one()
-        n_p = (await c.execute(text("SELECT count(*) FROM legal_provision_nodes"))).scalar_one()
-        n_e = (await c.execute(text("SELECT count(*) FROM legal_provision_edges"))).scalar_one()
-        n_m = (
-            await c.execute(
-                text(
-                    "SELECT count(*) FROM mule_account_nodes WHERE sandbox_namespace='sandbox_seed'"
-                )
-            )
-        ).scalar_one()
-        n_c = (
-            await c.execute(
-                text(
-                    "SELECT count(*) FROM fraud_campaign_clusters"
-                    " WHERE sandbox_namespace='sandbox_seed'"
-                )
-            )
-        ).scalar_one()
+    assert first == second
+    n_l, n_p, n_e, n_m, n_c, n_edges = second
     assert n_l >= len(data.LENDERS) and n_p >= len(data.PROVISIONS) and n_e >= len(data.EDGES)
     assert n_c == 3
     assert n_m == sum(len(c.accounts) for c in data.CLUSTERS)
+    assert n_edges == sum(a.quorum for c in data.CLUSTERS for a in c.accounts)
+    async with pg_admin.connect() as c:
+        flags = (
+            await c.execute(
+                text(
+                    "SELECT (SELECT bool_or(verified) FROM licensed_lender_registry"
+                    " WHERE entity_code ~ '^(BANK|FINCO)_'),"
+                    " (SELECT bool_or(verified) FROM legal_provision_nodes)"
+                )
+            )
+        ).one()
+        bad = (
+            await c.execute(
+                text(
+                    "SELECT count(*) FROM mule_account_nodes m WHERE sandbox_namespace='sandbox_seed'"
+                    " AND distinct_device_quorum <> (SELECT count(*) FROM mule_incident_edges"
+                    " WHERE mule_node_id = m.id)"
+                )
+            )
+        ).scalar_one()
+    assert flags[0] is False and flags[1] is False
+    assert bad == 0
