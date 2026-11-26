@@ -82,3 +82,4 @@ Plan: [`../backend-vayshield.md`](../backend-vayshield.md) · Cập nhật %: `n
 | 2026-11-26 | T05 merged (CI Redis thật 774✓, 0 skip). T09 dispatched (VerdictInput độc lập vì T04 chưa merge). Đang chạy: T04 re-review, T10, T09. Đã ghi chú T05→T12 vào prompt T12 |
 | 2026-11-26 | T10 review: 2 major (replay ECDSA n-s, policy bundle chỉ ký payload) → sửa (6a6cb22), PR#3 cho CI pg, re-review đang chạy. T09 implemented + verified (891✓), review đang chạy. T04: gửi 2 blocker + 2 major + 1 minor, đổi chiến lược không đoán khi mơ hồ |
 | 2026-11-26 | T10 merged (approve sau sửa (2 major); CI pg xanh; rủi ro mở: chữ ký policy chỉ phủ payload cần task contract) |
+| 2026-11-26 | Giới hạn 5h dừng T09 (đang sửa review), T04 (review vòng 3), T08 (mới bắt đầu); reset 21:30. Quyết định của người dùng: ngân hàng/FinCo chỉ có ảnh chụp, chưa xác thực APK → tối đa VÀNG (AMBER, LENDER_NOT_VERIFIED); gửi cho T09 khi agent chạy lại. P2P 20–35% chờ quyết |
