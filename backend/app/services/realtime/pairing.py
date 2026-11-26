@@ -45,13 +45,28 @@ redis.call('HSET', KEYS[1], 'link_id', ARGV[1], 'device_id', ARGV[2], 'fail_atte
 redis.call('EXPIRE', KEYS[1], tonumber(ARGV[3]))
 return 1
 """
-# Lấy rồi xóa nguyên tử: trả {link_id, device_id} hoặc rỗng.
-_CONSUME_CODE_LUA: Final = """
-local v = redis.call('HMGET', KEYS[1], 'link_id', 'device_id')
-if not v[1] then return {} end
+# Một lần thử trên 1 mã, nguyên tử. ARGV: max_fail, valid(1/0).
+# Trả {0}: mã không tồn tại | {-1}: mã đã khóa | {-2, n}: đầu vào sai, đã tính n lần |
+# {1, link_id, device_id}: hợp lệ, mã bị tiêu thụ.
+_ATTEMPT_CODE_LUA: Final = """
+local v = redis.call('HMGET', KEYS[1], 'link_id', 'device_id', 'fail_attempts')
+if not v[1] then return {0} end
+local fails = tonumber(v[3]) or 0
+if fails >= tonumber(ARGV[1]) then return {-1} end
+if ARGV[2] == '0' then
+  fails = redis.call('HINCRBY', KEYS[1], 'fail_attempts', 1)
+  return {-2, fails}
+end
 redis.call('DEL', KEYS[1])
-return v
+return {1, v[1], v[2]}
 """
+# Bộ đếm phụ theo IP (INCR + EXPIRE nguyên tử). ARGV: ttl_s. Trả số lần hiện tại.
+_IP_FAIL_LUA: Final = """
+local n = redis.call('INCR', KEYS[1])
+if n == 1 then redis.call('EXPIRE', KEYS[1], tonumber(ARGV[1])) end
+return n
+"""
+IP_MAX_FAILS: Final = 10  # phụ: chặn dò mã hàng loạt, đủ rộng để không khóa nhầm cả CGNAT
 
 
 def pair_code_key(code: str) -> str:
@@ -93,7 +108,8 @@ class PairingService:
         self.max_fail_attempts = max_fail_attempts
         self.session_ttl_s = session_ttl_s
         self._create_script = redis.register_script(_CREATE_CODE_LUA)
-        self._consume_script = redis.register_script(_CONSUME_CODE_LUA)
+        self._attempt_script = redis.register_script(_ATTEMPT_CODE_LUA)
+        self._ip_fail_script = redis.register_script(_IP_FAIL_LUA)
 
     # --- người vay tạo mã --------------------------------------------------------------------
     async def pair_init(self, device_id: UUID, body: PairInitRequest) -> PairInitResponse:
@@ -130,35 +146,39 @@ class PairingService:
 
     # --- người thân xác nhận -----------------------------------------------------------------
     async def pair_confirm(self, client_ip: str, body: PairConfirmRequest) -> PairConfirmResponse:
-        if not body.consent_accepted:
-            raise AppError(
-                ErrorCode.VALIDATION_ERROR,
-                422,
-                details=[ErrorDetail(field="body.consent_accepted", issue="consent_required")],
-            )
         sub = body.webpush_subscription
-        if sub is not None and not is_allowed_push_endpoint(sub.endpoint):
-            raise AppError(
-                ErrorCode.VALIDATION_ERROR,
-                422,
-                details=[
-                    ErrorDetail(field="body.webpush_subscription.endpoint", issue="not_allowed")
-                ],
-            )
+        problem: ErrorDetail | None = None
+        if not body.consent_accepted:
+            problem = ErrorDetail(field="body.consent_accepted", issue="consent_required")
+        elif sub is not None and not is_allowed_push_endpoint(sub.endpoint):
+            problem = ErrorDetail(field="body.webpush_subscription.endpoint", issue="not_allowed")
+
         fail_key = pair_fail_key(client_ip)
-        failures = int(await self._redis.get(fail_key) or 0)
-        if failures >= self.max_fail_attempts:
+        if int(await self._redis.get(fail_key) or 0) >= IP_MAX_FAILS:
             raise AppError(ErrorCode.PAIRING_LOCKED, 423)
 
-        res = await self._consume_script(keys=[pair_code_key(body.pairing_code)], args=[])
-        if not res:
-            count = int(await self._redis.incr(fail_key))
-            if count == 1:
-                await self._redis.expire(fail_key, self.code_ttl_s)
-            if count >= self.max_fail_attempts:
+        # Đếm sai THEO MÃ (fail_attempts trong HASH, tối đa 3): người lạ không đoán đúng mã thì
+        # không khóa được người thân thật dùng mã đúng (không thuộc bộ đếm của mã đó).
+        res = await self._attempt_script(
+            keys=[pair_code_key(body.pairing_code)],
+            args=[self.max_fail_attempts, 0 if problem else 1],
+        )
+        outcome = int(res[0])
+        if outcome == 0:
+            count = int(await self._ip_fail_script(keys=[fail_key], args=[self.code_ttl_s]))
+            raise AppError(
+                ErrorCode.PAIRING_LOCKED
+                if count >= IP_MAX_FAILS
+                else ErrorCode.PAIRING_CODE_INVALID,
+                423 if count >= IP_MAX_FAILS else 404,
+            )
+        if outcome == -1:
+            raise AppError(ErrorCode.PAIRING_LOCKED, 423)
+        if outcome == -2:
+            if int(res[1]) >= self.max_fail_attempts:
                 raise AppError(ErrorCode.PAIRING_LOCKED, 423)
-            raise AppError(ErrorCode.PAIRING_CODE_INVALID, 404)
-        link_id = UUID(_s(res[0]))
+            raise AppError(ErrorCode.VALIDATION_ERROR, 422, details=[problem] if problem else None)
+        link_id = UUID(_s(res[1]))
         link = await self._repo.activate(
             link_id,
             push_subscription=sub,
@@ -167,7 +187,6 @@ class PairingService:
         )
         if link is None:  # link đã bị hủy trong lúc chờ
             raise AppError(ErrorCode.PAIRING_CODE_INVALID, 404)
-        await self._redis.delete(fail_key)
         token = "gst_" + secrets.token_urlsafe(32)
         await self._redis.set(guardian_session_key(token), str(link.link_id), ex=self.session_ttl_s)
         return PairConfirmResponse(

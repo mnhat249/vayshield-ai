@@ -104,36 +104,47 @@ class ShieldService:
             self._redis, idem_key, body.client_event_id, ARM_IDEM_TTL_MS
         )
         notif_first = True
+        owns_notif = False
         if body.notif_dedupe_hash is not None:
             # S2-EC07: SMS Banking + Push app ngân hàng cùng 1 khoản → chỉ 1 phiên.
             claim = await claim_notification(
                 self._redis, device, body.notif_dedupe_hash, body.client_event_id
             )
             notif_first = claim.first or claim.owner == body.client_event_id
+            owns_notif = claim.first
         if not first.first or not notif_first:
             return await self._deduplicated(who, body, now_ms)
 
-        snap, fiber = await self._store.arm_shield(
-            device,
-            body.fiber_key,
-            EVENT_BY_ORIGIN[body.trigger_origin],
-            now_ms=now_ms,
-            event_id=body.client_event_id,
-            source=SOURCE_FROM_ORIGIN[body.trigger_origin],
-            shield_ms=body.shield_duration_hours * HOUR_MS,
-        )
-        if fiber is None:
-            # Cho phép thiết bị thử lại sau khi đã có hành trình vay (không khóa idempotency).
-            await self._redis.delete(idem_key)
-            if body.notif_dedupe_hash is not None:
+        async def release() -> None:
+            # Chỉ nhả khóa do CHÍNH request này giữ; retry cùng client_event_id phải arm được.
+            if first.first:
+                await self._redis.delete(idem_key)
+            if owns_notif and body.notif_dedupe_hash is not None:
                 await self._redis.delete(notif_idem_key(device, body.notif_dedupe_hash))
-            raise AppError(
-                ErrorCode.CONFLICT,
-                409,
-                "Chưa có khoản vay nào để theo dõi. Hãy kiểm tra hợp đồng vay trước khi bật Khiên.",
-                details=[ErrorDetail(field="trigger_origin", issue="NO_LOAN_JOURNEY")],
+
+        try:
+            snap, fiber = await self._store.arm_shield(
+                device,
+                body.fiber_key,
+                EVENT_BY_ORIGIN[body.trigger_origin],
+                now_ms=now_ms,
+                event_id=body.client_event_id,
+                source=SOURCE_FROM_ORIGIN[body.trigger_origin],
+                shield_ms=body.shield_duration_hours * HOUR_MS,
             )
-        await self._persist(who, snap, now_ms, body)
+            if fiber is None:
+                await release()
+                raise AppError(
+                    ErrorCode.CONFLICT,
+                    409,
+                    "Chưa có khoản vay nào để theo dõi. Hãy kiểm tra hợp đồng vay trước.",
+                    details=[ErrorDetail(field="trigger_origin", issue="NO_LOAN_JOURNEY")],
+                )
+            await self._persist(who, snap, now_ms, body)
+        except BaseException:
+            # 503 degraded / 409 CAS / hủy request: không để khóa idempotency chặn lần thử lại.
+            await release()
+            raise
         return self._arm_response(
             fiber.session_id, fiber.fiber_key, fiber.state, snap, now_ms, False
         )

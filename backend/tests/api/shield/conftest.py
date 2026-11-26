@@ -57,6 +57,7 @@ async def services(
         push=push,
         sms=sms,
         sleeper=sleeper.sleep,
+        sweep_interval_s=None,
     )
     app.state.realtime_services = svc
     app.dependency_overrides[get_device_key_resolver] = lambda: key_resolver

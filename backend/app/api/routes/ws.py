@@ -40,6 +40,7 @@ logger = get_logger("vayshield.realtime.ws")
 
 WS_CLOSE_TICKET_INVALID: Final = 4401
 WS_CLOSE_ROLE_FORBIDDEN: Final = 4403
+WS_CLOSE_GOING_AWAY: Final = 1001
 WS_CLOSE_HEARTBEAT_TIMEOUT: Final = 4408
 WS_CLOSE_RATE_LIMITED: Final = 4429
 MAX_MISSED_PINGS: Final = 2
@@ -102,6 +103,7 @@ async def _reject(websocket: WebSocket, services: RealtimeServices, code: int, e
 _ERRORS_VI: Final = {
     "TICKET_INVALID_OR_CONSUMED": "Vé kết nối không hợp lệ hoặc đã được dùng. Hãy lấy vé mới.",
     "RATE_LIMITED": "Bạn kết nối quá nhanh. Vui lòng thử lại sau.",
+    "LINK_REVOKED": "Liên kết người thân đã bị hủy.",
     "ROLE_FORBIDDEN": "Vai trò của bạn không được gửi frame này.",
     "HEARTBEAT_TIMEOUT": "Mất tín hiệu kết nối.",
     "INVALID_FRAME": "Khung tin không hợp lệ.",
@@ -152,6 +154,7 @@ async def guardian_ws(
         device_id=device_id,
         link_id=None if link is None else link.link_id,
         send=send,
+        close=lambda: websocket.close(code=WS_CLOSE_GOING_AWAY),
     )
     hub = services.hub
     await hub.start()
@@ -207,7 +210,19 @@ async def _receive_loop(
     missed = 0
     window_start = services.clock.monotonic()
     count = 0
+    loop = asyncio.get_running_loop()
+    last_link_check = loop.time()
     while True:
+        if link is not None and loop.time() - last_link_check >= interval:
+            # Liên kết bị hủy khi socket đang mở: không để tiếp tục nhận cảnh báo.
+            last_link_check = loop.time()
+            current = await services.repo.get_link(link.link_id)
+            if current is None or current.status not in (
+                LinkStatus.ACTIVE,
+                LinkStatus.PUSH_EXPIRED_410,
+            ):
+                await _reject(websocket, services, WS_CLOSE_TICKET_INVALID, "LINK_REVOKED")
+                return
         try:
             raw = await asyncio.wait_for(websocket.receive_text(), timeout=interval)
         except TimeoutError:
@@ -267,7 +282,8 @@ async def _handle_frame(
             await services.escalation.acknowledge(link, ack.escalation_id)
             return True
         if frame_type == "CLIENT_RESCUE_CARD_ACK":
-            ClientRescueCardAck.model_validate(payload)  # chỉ xác nhận; thẻ đã được phát
+            rc_ack = ClientRescueCardAck.model_validate(payload)
+            await services.rescue.ack(conn.device_id, rc_ack.rescue_card_id)
             return True
     except ValidationError:
         await _send_error(services, send, "INVALID_FRAME")

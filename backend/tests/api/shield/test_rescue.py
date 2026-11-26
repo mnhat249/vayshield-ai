@@ -18,9 +18,13 @@ from ._flows import (
     open_socket,
     pair_guardian,
 )
-from ._helpers import DEVICE_A, DEVICE_B, signed_post
+from ._helpers import DEVICE_A, DEVICE_B, signed_post, until
 
 CARD = "/api/v1/family/send-rescue-card"
+
+
+async def _queue_empty(services: RealtimeServices) -> bool:
+    return await services.redis.zcard(f"vs:rescue:queue:{DEVICE_A}") == 0
 
 
 def _auth(token: str) -> dict[str, str]:
@@ -61,12 +65,17 @@ async def test_rescue_card_queued_when_borrower_offline_then_flushed_on_connect(
     b_ws, b_task = await open_socket(services, await borrower_ticket(client, fake_clock, DEVICE_A))
     frame = await b_ws.wait_for("EVENT_RESCUE_CARD")
     assert frame["payload"]["message_vi"] == "Mẹ nghe máy nhé"
-    await close_socket(b_ws, b_task)
-    # đã xả hàng đợi: lần kết nối sau không còn thẻ
+    await close_socket(b_ws, b_task)  # chưa ACK → thẻ chưa bị xóa
     fake_clock.advance(1)
     b2, t2 = await open_socket(services, await borrower_ticket(client, fake_clock, DEVICE_A))
-    assert "EVENT_RESCUE_CARD" not in b2.types()
+    assert "EVENT_RESCUE_CARD" in b2.types()  # phát lại vì chưa CLIENT_RESCUE_CARD_ACK
+    b2.client_send("CLIENT_RESCUE_CARD_ACK", {"rescue_card_id": frame["payload"]["rescue_card_id"]})
+    await until(lambda: _queue_empty(services))
     await close_socket(b2, t2)
+    fake_clock.advance(1)
+    b3, t3 = await open_socket(services, await borrower_ticket(client, fake_clock, DEVICE_A))
+    assert "EVENT_RESCUE_CARD" not in b3.types()  # đã ACK → không còn
+    await close_socket(b3, t3)
 
 
 async def test_rescue_card_requires_valid_guardian_session(

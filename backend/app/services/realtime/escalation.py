@@ -65,6 +65,8 @@ OWNER_TTL_S: Final = 72 * 3600
 IDEM_TTL_S: Final = 600
 STALE_AFTER_S: Final = 45 * 60  # S2-EC45
 
+ACK_DUE_KEY: Final = "vs:ack:due"
+SWEEP_BATCH: Final = 50
 STATUS_PENDING: Final = "PENDING"
 STATUS_ACK: Final = "ACKNOWLEDGED"
 STATUS_FALLBACK: Final = "FALLBACK"
@@ -82,6 +84,17 @@ for i = 1, n - 1 do
   end
 end
 return 0
+"""
+
+
+# KEYS[1]=ZSET hạn; ARGV: now_ms, batch. Nhận quyền xử lý bằng ZREM (đúng 1 instance thắng mỗi mã).
+_CLAIM_DUE_LUA: Final = """
+local ids = redis.call('ZRANGEBYSCORE', KEYS[1], '-inf', ARGV[1], 'LIMIT', 0, tonumber(ARGV[2]))
+local out = {}
+for _, id in ipairs(ids) do
+  if redis.call('ZREM', KEYS[1], id) == 1 then out[#out + 1] = id end
+end
+return out
 """
 
 
@@ -119,6 +132,7 @@ class EscalationService:
         sleeper: Sleeper = asyncio.sleep,
         ack_timeout_s: int = 10,
         stale_after_s: int = STALE_AFTER_S,
+        sweep_interval_s: float | None = 2.0,
     ) -> None:
         self._redis = redis
         self._clock = clock
@@ -130,9 +144,38 @@ class EscalationService:
         self.ack_timeout_s = ack_timeout_s
         self._stale_after = timedelta(seconds=stale_after_s)
         self._transition_script = redis.register_script(_TRANSITION_LUA)
+        self._claim_due = redis.register_script(_CLAIM_DUE_LUA)
         self._watchers: dict[UUID, asyncio.Task[None]] = {}
+        self._sweep_interval_s = sweep_interval_s
+        self._sweeper: asyncio.Task[None] | None = None
+
+    def ensure_sweeper(self) -> None:
+        """Vòng quét hạn ACK chạy trên MỌI instance (lưới an toàn khi pod chứa hẹn giờ cục bộ sập).
+        Gọi lười khi có traffic; lifespan nên gọi ``start`` (xem báo cáo)."""
+        if self._sweep_interval_s is None:
+            return
+        if self._sweeper is None or self._sweeper.done():
+            self._sweeper = asyncio.create_task(self._sweep_loop(), name="ack-sweeper")
+
+    async def start(self) -> None:
+        self.ensure_sweeper()
+
+    async def _sweep_loop(self) -> None:
+        while True:
+            try:
+                await self.sweep_due()
+            except asyncio.CancelledError:
+                raise
+            except Exception:
+                logger.exception("ack_sweep_failed")
+            await self._sleep(self._sweep_interval_s or 2.0)
 
     async def aclose(self) -> None:
+        if self._sweeper is not None:
+            self._sweeper.cancel()
+            with contextlib.suppress(asyncio.CancelledError, Exception):
+                await self._sweeper
+            self._sweeper = None
         tasks = list(self._watchers.values())
         for t in tasks:
             t.cancel()
@@ -207,6 +250,11 @@ class EscalationService:
                     make_frame("EVENT_ALERT_DIGEST", digest, now),
                     link_id=lk.link_id,
                 )
+                if await self._hub.is_live(device_id, RealtimeRole.GUARDIAN, link_id=lk.link_id):
+                    # Đã tóm tắt cho người đang online: gỡ khỏi hàng chờ để không gửi trùng khi nối lại.
+                    await self._redis.hdel(
+                        pending_alerts_key(device_id), f"{escalation_id}:{lk.link_id}"
+                    )
             return EscalateResponse(
                 escalation_id=escalation_id,
                 status="PENDING_ACK",
@@ -223,10 +271,14 @@ class EscalationService:
                     "device_id": str(device_id),
                     "raised_at_ms": str(int(now.timestamp() * 1000)),
                     "guardians": str(len(links)),
+                    "links": json.dumps([str(lk.link_id) for lk in links]),
                 },
             )
             pipe.expire(ack_timer_key(escalation_id), ACK_TIMER_TTL_S)
+            # Hạn ACK bền vững trên Redis: instance nào còn sống cũng gửi được SMS (S2-EC44).
+            pipe.zadd(ACK_DUE_KEY, {str(escalation_id): int(deadline.timestamp() * 1000)})
             await pipe.execute()
+        self.ensure_sweeper()
 
         outcomes = await asyncio.gather(
             *(self._deliver(device_id, escalation_id, lk, alerts[lk.link_id], now) for lk in links)
@@ -237,11 +289,14 @@ class EscalationService:
         for o in outcomes:
             if o.fallback_channel is not None and o.fallback_channel not in channels:
                 channels.append(o.fallback_channel)
-        remaining = [(o.link, alerts[o.link.link_id]) for o in outcomes if not o.handled]
-        if remaining:
-            self._spawn_watcher(device_id, escalation_id, remaining)
+        done = {f"done:{o.link.link_id}": "1" for o in outcomes if o.handled}
+        if done:
+            await self._redis.hset(ack_timer_key(escalation_id), mapping=done)  # type: ignore[arg-type]
+        if len(done) < len(outcomes):
+            self._spawn_watcher(escalation_id)
         else:
             await self._transition(escalation_id, (STATUS_PENDING,), STATUS_FALLBACK)
+            await self._redis.zrem(ACK_DUE_KEY, str(escalation_id))
         return EscalateResponse(
             escalation_id=escalation_id,
             status="PENDING_ACK",
@@ -319,20 +374,14 @@ class EscalationService:
         return channel
 
     # --- hẹn giờ ACK -----------------------------------------------------------------------
-    def _spawn_watcher(
-        self,
-        device_id: UUID,
-        escalation_id: UUID,
-        remaining: list[tuple[GuardianLink, EmergencyAlert]],
-    ) -> None:
+    def _spawn_watcher(self, escalation_id: UUID) -> None:
+        """Gia tốc cục bộ: ngủ ``ack_timeout_s`` rồi quét. Mất hẹn giờ này (pod sập) vẫn có
+        ``sweep_due`` của các instance khác nhặt lại từ ZSET."""
+
         async def run() -> None:
             try:
                 await self._sleep(self.ack_timeout_s)
-                moved = await self._transition(escalation_id, (STATUS_PENDING,), STATUS_FALLBACK)
-                if moved != 1:  # đã ACK (hoặc hết hạn hash) — không gửi SMS
-                    return
-                for link, alert in remaining:
-                    await self._send_fallback(device_id, escalation_id, link, alert, "ACK_TIMEOUT")
+                await self.sweep_due()
             except asyncio.CancelledError:
                 raise
             except Exception:
@@ -343,6 +392,43 @@ class EscalationService:
         self._watchers[escalation_id] = asyncio.create_task(
             run(), name=f"ack-timer-{escalation_id}"
         )
+
+    async def sweep_due(self) -> int:
+        """Xử lý các leo thang quá hạn ACK: PENDING→FALLBACK nguyên tử rồi gửi SMS/Email.
+        An toàn khi nhiều instance cùng gọi (ZREM + Lua chuyển trạng thái chọn đúng 1 bên thắng)."""
+        now_ms = int(self._clock.now().timestamp() * 1000)
+        ids = await self._claim_due(keys=[ACK_DUE_KEY], args=[now_ms, SWEEP_BATCH])
+        handled = 0
+        for raw in ids:
+            esc = UUID(raw.decode() if isinstance(raw, bytes) else str(raw))
+            if await self._transition(esc, (STATUS_PENDING,), STATUS_FALLBACK) != 1:
+                continue  # đã ACK hoặc hash hết hạn
+            await self._fallback_for(esc)
+            handled += 1
+        return handled
+
+    async def _fallback_for(self, escalation_id: UUID) -> None:
+        data = await self._redis.hgetall(ack_timer_key(escalation_id))
+        flat = {
+            (k.decode() if isinstance(k, bytes) else k): (v.decode() if isinstance(v, bytes) else v)
+            for k, v in data.items()
+        }
+        try:
+            device_id = UUID(flat["device_id"])
+            link_ids = [UUID(x) for x in json.loads(flat["links"])]
+        except (KeyError, ValueError, TypeError):
+            return
+        for link_id in link_ids:
+            if f"done:{link_id}" in flat:
+                continue  # đã chuyển SMS ngay (Push 410 / không có socket)
+            link = await self._repo.get_link(link_id)
+            raw_alert = await self._redis.hget(
+                pending_alerts_key(device_id), f"{escalation_id}:{link_id}"
+            )
+            if link is None or not raw_alert:
+                continue
+            alert = EmergencyAlert.model_validate_json(raw_alert)
+            await self._send_fallback(device_id, escalation_id, link, alert, "ACK_TIMEOUT")
 
     async def _transition(self, escalation_id: UUID, sources: tuple[str, ...], target: str) -> int:
         res = await self._transition_script(
@@ -366,6 +452,7 @@ class EscalationService:
         if owner_device != link.device_id:
             return False  # chống ACK chéo thiết bị
         moved = await self._transition(escalation_id, (STATUS_PENDING, STATUS_FALLBACK), STATUS_ACK)
+        await self._redis.zrem(ACK_DUE_KEY, str(escalation_id))
         await self._clear_pending(link.device_id, escalation_id)
         watcher = self._watchers.get(escalation_id)
         if watcher is not None:

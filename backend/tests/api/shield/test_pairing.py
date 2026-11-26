@@ -58,20 +58,45 @@ async def test_s2_ec24_code_expires_after_10_minutes(
     assert r.json()["error"]["code"] == "PAIRING_CODE_INVALID"
 
 
-async def test_s2_ec24_three_wrong_codes_lock_even_correct_code(
+async def test_s2_ec24_three_failed_attempts_on_a_code_lock_that_code(
     client: httpx.AsyncClient, services: RealtimeServices, fake_clock: FakeClock
 ) -> None:
-    """3 lần sai → 423 PAIRING_LOCKED; sau đó mã đúng cũng bị khóa (chống dò)."""
+    """3 lần thử sai trên CHÍNH mã đó (đồng thuận sai) → 423; sau đó mã đó bị khóa."""
     code = str((await _init(client, fake_clock))["pairing_code"])
-    wrong = "ZZZZZZ" if code != "ZZZZZZ" else "YYYYYY"
     statuses = []
     for _ in range(3):
-        r = await client.post(CONFIRM, json={"pairing_code": wrong, "consent_accepted": True})
+        r = await client.post(CONFIRM, json={"pairing_code": code, "consent_accepted": False})
         statuses.append(r.status_code)
-    assert statuses == [404, 404, 423]
+    assert statuses == [422, 422, 423]
     locked = await client.post(CONFIRM, json={"pairing_code": code, "consent_accepted": True})
     assert locked.status_code == 423
     assert locked.json()["error"]["code"] == "PAIRING_LOCKED"
+
+
+async def test_s2_ec24_stranger_wrong_guesses_do_not_lock_real_guardian(
+    client: httpx.AsyncClient, services: RealtimeServices, fake_clock: FakeClock
+) -> None:
+    """Kẻ lạ đoán sai mã (không phải mã thật) không khóa được người thân thật nhập đúng."""
+    code = str((await _init(client, fake_clock))["pairing_code"])
+    wrong = "ZZZZZZ" if code != "ZZZZZZ" else "YYYYYY"
+    for _ in range(4):
+        r = await client.post(CONFIRM, json={"pairing_code": wrong, "consent_accepted": True})
+        assert r.status_code == 404
+    ok = await client.post(CONFIRM, json={"pairing_code": code, "consent_accepted": True})
+    assert ok.status_code == 200, ok.text
+
+
+async def test_s2_ec24_mass_guessing_from_one_ip_locks_that_ip(
+    client: httpx.AsyncClient, services: RealtimeServices
+) -> None:
+    """Bộ đếm phụ theo IP: 10 lần đoán sai liên tiếp → 423 cho IP đó."""
+    codes = []
+    for i in range(10):
+        r = await client.post(
+            CONFIRM, json={"pairing_code": f"BBBBB{PAIRING_ALPHABET[i]}", "consent_accepted": True}
+        )
+        codes.append(r.status_code)
+    assert codes[:9] == [404] * 9 and codes[9] == 423
 
 
 async def test_s2_ec23_code_single_use_and_consent_required(

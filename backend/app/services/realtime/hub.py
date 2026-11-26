@@ -30,6 +30,7 @@ logger = get_logger("vayshield.realtime.hub")
 CHANNEL_PREFIX: Final = "vs:chan:family:"
 CHANNEL_PATTERN: Final = CHANNEL_PREFIX + "*"
 PRESENCE_PREFIX: Final = "vs:ws:presence:"
+QUEUE_MAX: Final = 64  # frame chờ gửi tối đa mỗi socket; đầy = socket chậm → gỡ
 PRESENCE_TTL_FACTOR: Final = 3  # hạn hiện diện = 3 chu kỳ ping
 
 
@@ -47,17 +48,31 @@ class LocalConnection:
     device_id: UUID
     link_id: UUID | None
     send: SendFn
+    close: Callable[[], Awaitable[None]] | None = None
     presence_member: str = field(init=False)
+    queue: asyncio.Queue[dict[str, Any]] = field(
+        default_factory=lambda: asyncio.Queue(maxsize=QUEUE_MAX), repr=False
+    )
+    writer: asyncio.Task[None] | None = field(default=None, repr=False)
 
     def __post_init__(self) -> None:
         self.presence_member = f"{self.role.value}|{self.link_id or '-'}|{self.conn_id}"
 
 
 class RealtimeHub:
-    def __init__(self, redis: Redis, clock: Clock, *, ping_interval_s: float = 20) -> None:
+    def __init__(
+        self,
+        redis: Redis,
+        clock: Clock,
+        *,
+        ping_interval_s: float = 20,
+        send_timeout_s: float = 2.0,
+    ) -> None:
         self._redis = redis
         self._clock = clock
         self._ping_interval_s = ping_interval_s
+        self._send_timeout_s = send_timeout_s
+        self._bg: set[asyncio.Task[None]] = set()
         self._conns: dict[UUID, set[LocalConnection]] = {}
         self._pubsub: Any = None
         self._task: asyncio.Task[None] | None = None
@@ -133,17 +148,49 @@ class RealtimeHub:
                 continue
             if target_link is not None and conn.link_id != target_link:
                 continue
+            # Không await gửi trong vòng listener: socket chậm không được kẹt gia đình khác.
             try:
-                await conn.send(frame)
-            except Exception:
-                logger.info("hub: gửi tới socket lỗi, gỡ kết nối")
-                self.unregister(conn)
+                conn.queue.put_nowait(frame)
+            except asyncio.QueueFull:
+                logger.info("hub: hàng đợi socket đầy, gỡ kết nối chậm")
+                self._drop(conn)
 
     # --- đăng ký socket cục bộ ---------------------------------------------------------------
     def register(self, conn: LocalConnection) -> None:
         self._conns.setdefault(conn.device_id, set()).add(conn)
+        conn.writer = asyncio.create_task(self._writer(conn), name=f"ws-writer-{conn.conn_id}")
+
+    async def _writer(self, conn: LocalConnection) -> None:
+        """Mỗi socket 1 task gửi riêng, có timeout: socket treo chỉ làm chính nó bị gỡ."""
+        while True:
+            frame = await conn.queue.get()
+            try:
+                async with asyncio.timeout(self._send_timeout_s):
+                    await conn.send(frame)
+            except asyncio.CancelledError:
+                raise
+            except Exception:
+                logger.info("hub: gửi tới socket lỗi/quá chậm, gỡ kết nối")
+                self._drop(conn)
+                return
+
+    def _drop(self, conn: LocalConnection) -> None:
+        self.unregister(conn)
+        if conn.close is not None:
+            task = asyncio.create_task(self._close_quietly(conn))
+            self._bg.add(task)
+            task.add_done_callback(self._bg.discard)
+
+    @staticmethod
+    async def _close_quietly(conn: LocalConnection) -> None:
+        if conn.close is not None:
+            with contextlib.suppress(Exception):
+                await conn.close()
 
     def unregister(self, conn: LocalConnection) -> None:
+        writer, conn.writer = conn.writer, None
+        if writer is not None and writer is not asyncio.current_task():
+            writer.cancel()
         bucket = self._conns.get(conn.device_id)
         if bucket is not None:
             bucket.discard(conn)

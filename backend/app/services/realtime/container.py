@@ -86,6 +86,16 @@ class RealtimeServices:
     ws_ping_interval_s: float = 20
     ack_timeout_s: int = 10
 
+    async def startup(self) -> None:
+        """Gọi trong lifespan: bật hub pub/sub và vòng quét hạn ACK."""
+        await self.hub.start()
+        await self.escalation.start()
+
+    async def shutdown(self) -> None:
+        """Gọi trong lifespan khi tắt: hủy hẹn giờ/sweeper và đóng pub/sub."""
+        await self.escalation.aclose()
+        await self.hub.stop()
+
 
 def build_services(
     *,
@@ -96,6 +106,7 @@ def build_services(
     push: PushSender | None = None,
     sms: SmsSender | None = None,
     sleeper: Sleeper | None = None,
+    sweep_interval_s: float | None = 2.0,
     persistence: ShieldPersistence | None = None,
     fallback: FallbackReader | None = None,
 ) -> RealtimeServices:
@@ -115,6 +126,7 @@ def build_services(
         push=push or build_push_sender(settings),
         sms=sms or build_sms_sender(settings),
         ack_timeout_s=settings.escalation_ack_timeout_s,
+        sweep_interval_s=sweep_interval_s,
         **escalation_kwargs,
     )
     # FallbackReader thật khi có PostgreSQL (EC-DB11); không có DB → None (store coi là degraded).

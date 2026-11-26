@@ -61,6 +61,14 @@ class RescueService:
             tts_script_vi=RESCUE_TTS_VI[body.card_type],
         )
         frame = make_frame("EVENT_RESCUE_CARD", payload, now)
+        # Luôn lưu trước (ZSET theo thời gian); chỉ xóa khi người vay gửi CLIENT_RESCUE_CARD_ACK.
+        # Socket "sống" nhưng nửa chết vẫn không làm mất thẻ.
+        key = rescue_queue_key(device_id)
+        async with self._redis.pipeline(transaction=True) as pipe:
+            pipe.zadd(key, {json.dumps(frame, separators=(",", ":")): int(now.timestamp() * 1000)})
+            pipe.zremrangebyrank(key, 0, -(QUEUE_MAX + 1))
+            pipe.expire(key, QUEUE_TTL_S)
+            await pipe.execute()
         live = await self._hub.is_live(device_id, RealtimeRole.BORROWER)
         if live:
             await self._hub.publish(device_id, RealtimeRole.BORROWER, frame)
@@ -70,22 +78,13 @@ class RescueService:
                 queued=False,
                 sent_at=now,
             )
-        key = rescue_queue_key(device_id)
-        async with self._redis.pipeline(transaction=True) as pipe:
-            pipe.rpush(key, json.dumps(frame, separators=(",", ":")))
-            pipe.ltrim(key, -QUEUE_MAX, -1)
-            pipe.expire(key, QUEUE_TTL_S)
-            await pipe.execute()
         return SendRescueCardResponse(
             rescue_card_id=card_id, delivered_via=[], queued=True, sent_at=now
         )
 
     async def drain_queue(self, device_id: UUID) -> list[dict[str, Any]]:
-        key = rescue_queue_key(device_id)
-        async with self._redis.pipeline(transaction=True) as pipe:
-            pipe.lrange(key, 0, -1)
-            pipe.delete(key)
-            items, _ = await pipe.execute()
+        """Thẻ chưa được ACK (phát lại khi người vay kết nối; KHÔNG xóa ở đây)."""
+        items: list[Any] = await self._redis.zrange(rescue_queue_key(device_id), 0, -1)
         out: list[dict[str, Any]] = []
         for raw in items:
             try:
@@ -93,3 +92,13 @@ class RescueService:
             except ValueError:
                 continue
         return out
+
+    async def ack(self, device_id: UUID, rescue_card_id: UUID) -> None:
+        key = rescue_queue_key(device_id)
+        members: list[Any] = await self._redis.zrange(key, 0, -1)
+        for raw in members:
+            try:
+                if json.loads(raw)["payload"]["rescue_card_id"] == str(rescue_card_id):
+                    await self._redis.zrem(key, raw)
+            except (ValueError, KeyError, TypeError):
+                continue
