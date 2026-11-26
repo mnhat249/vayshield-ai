@@ -61,8 +61,9 @@ class RepaymentRegime:
 class CommodityResale:
     """Tín dụng đen ngụy trang mua hàng – bán lại tại quầy (File 2 §4.2 mở rộng mục 2).
 
-    Người vay thực nhận ``buyback_cash_vnd - broker_fee_vnd``; nghĩa vụ trả nợ vẫn tính trên
-    giá hóa đơn (do ``regimes`` mô tả).
+    Người vay thực nhận ``buyback - broker_fee - deducted - bundled - upfront`` (khoản khấu trừ /
+    bảo hiểm bắt buộc trong ``LoanTerms`` vẫn bị trừ); nghĩa vụ trả nợ vẫn tính trên giá hóa đơn
+    (do ``regimes`` mô tả). Bất biến: ``buyback <= invoice`` (nếu không → ``INVALID_INPUT``).
     """
 
     invoice_price_vnd: int
@@ -106,8 +107,9 @@ def _merge(points: Iterable[CashFlowPoint]) -> tuple[CashFlowPoint, ...]:
 def build_cashflows(terms: LoanTerms) -> tuple[CashFlowPoint, ...]:
     """Sinh vector CF đã sắp xếp, ngày tăng dần, gộp các điểm cùng ngày.
 
-    ``CF_0 = P_nominal - F_deducted - I_bundled - F_upfront`` (hoặc ``buyback - broker - upfront``
-    với hàng hóa bán lại). Raise ``AdvanceFeeScamError`` khi đòi phí trước giải ngân.
+    ``CF_0 = P_nominal - F_deducted - I_bundled - F_upfront`` (với hàng hóa bán lại thay
+    ``P_nominal`` bằng ``buyback - broker``). Điểm 0đ ở ``t > 0`` bị bỏ (khớp ``_validate``).
+    Raise ``AdvanceFeeScamError`` khi đòi phí trước giải ngân.
     """
     _require_non_negative("nominal_principal_vnd", terms.nominal_principal_vnd)
     _require_non_negative("deducted_at_source_vnd", terms.deducted_at_source_vnd)
@@ -118,7 +120,15 @@ def build_cashflows(terms: LoanTerms) -> tuple[CashFlowPoint, ...]:
         cr = terms.commodity_resale
         _require_non_negative("buyback_cash_vnd", cr.buyback_cash_vnd)
         _require_non_negative("broker_fee_vnd", cr.broker_fee_vnd)
-        disbursed = cr.buyback_cash_vnd - cr.broker_fee_vnd
+        _require_non_negative("invoice_price_vnd", cr.invoice_price_vnd)
+        if cr.buyback_cash_vnd > cr.invoice_price_vnd:
+            raise FinanceError(INVALID_INPUT, "buyback must be <= invoice price")
+        disbursed = (
+            cr.buyback_cash_vnd
+            - cr.broker_fee_vnd
+            - terms.deducted_at_source_vnd
+            - terms.bundled_mandatory_vnd
+        )
     else:
         disbursed = (
             terms.nominal_principal_vnd - terms.deducted_at_source_vnd - terms.bundled_mandatory_vnd

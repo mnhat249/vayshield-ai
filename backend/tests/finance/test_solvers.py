@@ -39,6 +39,7 @@ from app.finance import (
     stated_rate_contradiction,
 )
 from app.finance.solvers import (
+    brent_root,
     npv_legal_365,
     npv_xirr,
     solve_ear_xirr_with_iterations,
@@ -290,6 +291,97 @@ def test_long_tenure_installments_36_months() -> None:
     xirr = solve_ear_xirr(flows)
     assert npv_xirr(flows, xirr) == pytest.approx(0.0, abs=1e-3)
     assert xirr == pytest.approx(1.02 ** (365 / 30) - 1, abs=1e-5)
+
+
+def test_s2_ec39_zero_grace_points_same_apr_via_builder_and_raw_vector() -> None:
+    """S2-EC39 (review MAJOR): 10tr, ân hạn 3 kỳ trả 0đ, ngày 120 trả 13tr.
+
+    ``build_cashflows`` gộp bỏ điểm 0đ; truyền thẳng vector có điểm 0đ vào solver phải ra
+    cùng APR (trước đây 91,25% vs 82,48%).
+    """
+    terms = LoanTerms(
+        nominal_principal_vnd=10_000_000,
+        regimes=[RepaymentRegime(3, 30, 0), RepaymentRegime(1, 30, 13_000_000)],
+    )
+    built = build_cashflows(terms)
+    raw = (
+        CashFlowPoint(0, 10_000_000),
+        CashFlowPoint(30, 0),
+        CashFlowPoint(60, 0),
+        CashFlowPoint(90, 0),
+        CashFlowPoint(120, -13_000_000),
+    )
+    expected = 0.3 * 365 / 120  # 91,25%
+    assert solve_vn_legal_apr_365(built) == pytest.approx(expected, abs=1e-9)
+    assert solve_vn_legal_apr_365(raw) == pytest.approx(expected, abs=1e-9)
+    assert solve_ear_xirr(raw) == pytest.approx(solve_ear_xirr(built), rel=1e-12)
+    assert solve_mirr(raw) == pytest.approx(solve_mirr(built), rel=1e-12)
+    r_raw, r_built = analyze_cashflows(raw), analyze_cashflows(built)
+    assert r_raw == r_built
+    assert r_raw.apr_primary == pytest.approx(expected, abs=1e-9)
+
+
+def test_s2_ec39_zero_points_invariant_over_many_positions() -> None:
+    """Bất biến: chèn điểm 0đ ở bất kỳ ngày > 0 nào không đổi APR / XIRR."""
+    base = _schedule(10_000_000, [30 * k for k in range(1, 13)], 1_000_000)
+    apr, xirr = solve_vn_legal_apr_365(base), solve_ear_xirr(base)
+    for zero_day in (1, 15, 29, 31, 200, 359, 400):
+        padded = (*base, CashFlowPoint(zero_day, 0))
+        if any(p.day == zero_day for p in base):
+            continue
+        assert solve_vn_legal_apr_365(padded) == pytest.approx(apr, abs=1e-12)
+        assert solve_ear_xirr(padded) == pytest.approx(xirr, abs=1e-12)
+
+
+def test_ec40_report_exposes_roots_primary_and_reason() -> None:
+    """S2-EC40: đa nghiệm 10%/20% → apr_roots đủ 2 nghiệm, apr_primary = nghiệm nhỏ nhất >= 0."""
+    flows = (
+        CashFlowPoint(0, 1_000_000),
+        CashFlowPoint(365, -2_300_000),
+        CashFlowPoint(730, 1_320_000),
+    )
+    report = analyze_cashflows(flows)
+    assert report.apr_vn_365 is None
+    assert report.apr_roots == pytest.approx((0.10, 0.20), abs=1e-9)
+    assert report.apr_primary == pytest.approx(0.10, abs=1e-9)
+    assert report.apr_unavailable_reason == "MULTIPLE_IRR_ROOTS"
+    assert report.mirr is not None
+
+
+def test_report_unique_root_primary_equals_apr() -> None:
+    report = analyze_cashflows(bullet_cashflows(8_500_000, 12_000_000, 30))
+    assert report.apr_roots == (report.apr_vn_365,)
+    assert report.apr_primary == report.apr_vn_365
+    assert report.apr_unavailable_reason is None
+
+
+def test_report_negative_unique_root_kept_as_primary() -> None:
+    """Giả định: nghiệm duy nhất âm (trả ít hơn nhận) vẫn là apr_primary (không ép MIRR)."""
+    report = analyze_cashflows(bullet_cashflows(10_000_000, 9_000_000, 365))
+    assert report.apr_primary == pytest.approx(-0.1, abs=1e-9)
+    assert report.apr_unavailable_reason is None
+
+
+def test_report_reason_above_and_below_bracket() -> None:
+    """Lãi vượt kẹp → RATE_ABOVE_BRACKET; dòng tiền suy biến → RATE_BELOW_BRACKET."""
+    # Trả 1đ sau 1 năm cho 1tr: nghiệm legal = -0.999999 < cận dưới -0.99.
+    below = analyze_cashflows(bullet_cashflows(1_000_000, 1, 365))
+    assert below.apr_vn_365 is None and below.apr_primary is None
+    assert below.apr_unavailable_reason == "RATE_BELOW_BRACKET"
+    assert not below.apr_above_bracket
+    # 1tr → 1 tỷ sau 1 ngày: APR legal = 999·365 = 364.635 > 500.
+    above = analyze_cashflows(bullet_cashflows(1_000_000, 1_000_000_000, 1))
+    assert above.apr_above_bracket and above.apr_primary is None
+    assert above.apr_unavailable_reason == "RATE_ABOVE_BRACKET"
+
+
+def test_brent_raises_when_not_converged() -> None:
+    """Review: hết max_iter → FinanceError(NON_MONOTONIC_OR_EXTREME_CASHFLOW), không trả bừa."""
+    with pytest.raises(FinanceError) as exc:
+        brent_root(lambda x: x - 0.3, 0.0, 1.0, max_iter=1)
+    assert exc.value.code == "NON_MONOTONIC_OR_EXTREME_CASHFLOW"
+    root, _ = brent_root(lambda x: x - 0.3, 0.0, 1.0)
+    assert root == pytest.approx(0.3, abs=1e-12)
 
 
 def test_legal_solver_handles_gaps_longer_than_one_year() -> None:

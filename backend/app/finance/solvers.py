@@ -23,6 +23,8 @@ from app.finance.errors import (
     INVALID_INPUT,
     INVALID_OR_ADVANCE_FEE_CASHFLOW,
     MISSING_REPAYMENT_OUTFLOWS,
+    MULTIPLE_IRR_ROOTS,
+    NON_MONOTONIC_OR_EXTREME_CASHFLOW,
     FinanceError,
     MultipleRootsError,
     RateOutOfBracketError,
@@ -57,7 +59,11 @@ _MAX_ITER: Final = 100
 
 
 def _validate(flows: Sequence[CashFlowPoint]) -> tuple[CashFlowPoint, ...]:
-    ordered = tuple(sorted(flows, key=lambda p: p.day))
+    # Bỏ điểm 0đ ở t > 0 (kỳ ân hạn không trả): mỗi điểm thừa sẽ nối thêm 1 hệ số lãi đơn
+    # và làm APR lệch so với vector đã gộp của ``build_cashflows``.
+    ordered = tuple(
+        sorted((p for p in flows if p.day == 0 or p.amount_vnd != 0), key=lambda p: p.day)
+    )
     if not ordered or ordered[0].day != 0 or ordered[0].amount_vnd <= 0:
         raise FinanceError(INVALID_OR_ADVANCE_FEE_CASHFLOW)
     for a, b in pairwise(ordered):
@@ -147,7 +153,7 @@ def brent_root(
         a, fa = b, fb
         b += d if abs(d) > tol else math.copysign(tol, m)
         fb = f(b)
-    return b, max_iter
+    raise FinanceError(NON_MONOTONIC_OR_EXTREME_CASHFLOW, "brent did not converge")
 
 
 def _scan_grid(lo: float, hi: float) -> list[float]:
@@ -202,7 +208,8 @@ def _legal_lower_bound(flows: Sequence[CashFlowPoint]) -> float:
 
 def solve_vn_legal_apr_365_with_iterations(flows: Sequence[CashFlowPoint]) -> tuple[float, int]:
     """Như ``solve_vn_legal_apr_365`` nhưng trả thêm số vòng Brent (để kiểm < 45 vòng)."""
-    return _solve(flows, npv_legal_365, _legal_lower_bound(flows))
+    ordered = _validate(flows)  # khoảng kẹp tính trên vector đã bỏ điểm 0đ
+    return _solve(ordered, npv_legal_365, _legal_lower_bound(ordered))
 
 
 def solve_vn_legal_apr_365(flows: Sequence[CashFlowPoint]) -> float:
@@ -293,9 +300,28 @@ def stated_rate_contradiction(
     return abs(actual_apr - stated_annual_rate) > tolerance
 
 
+APR_REASON_MULTIPLE_ROOTS: Final = MULTIPLE_IRR_ROOTS
+APR_REASON_ABOVE_BRACKET: Final = "RATE_ABOVE_BRACKET"
+APR_REASON_BELOW_BRACKET: Final = "RATE_BELOW_BRACKET"
+APR_REASON_NOT_CONVERGED: Final = "SOLVER_NOT_CONVERGED"
+
+
 @dataclass(frozen=True, slots=True)
 class RateReport:
-    """Tổng hợp cho tầng phán quyết. ``None`` = không xác định duy nhất / ngoài khoảng kẹp."""
+    """Tổng hợp cho tầng phán quyết. ``None`` = không xác định duy nhất / ngoài khoảng kẹp.
+
+    Quy ước cho T09 (phán quyết):
+
+    - Dùng ``apr_primary`` làm APR_VN-365 để so trần. ``apr_primary`` là nghiệm duy nhất nếu
+      dòng tiền có đúng 1 nghiệm; khi đa nghiệm (S2-EC40) là nghiệm nhỏ nhất ``>= 0`` trong
+      ``apr_roots`` (cận dưới — kết luận vượt trần vẫn an toàn).
+    - Nếu ``apr_primary is None`` → dùng ``mirr`` (luôn được tính khi đổi dấu > 1 lần), hoặc
+      ``apr_above_bracket`` (lãi > cận trên kẹp). Lý do nằm ở ``apr_unavailable_reason``.
+
+    ``apr_unavailable_reason`` giải thích vì sao ``apr_vn_365`` (nghiệm duy nhất) là ``None``:
+    ``MULTIPLE_IRR_ROOTS`` | ``RATE_ABOVE_BRACKET`` | ``RATE_BELOW_BRACKET`` (dòng tiền suy
+    biến) | ``SOLVER_NOT_CONVERGED``; ``None`` khi ``apr_vn_365`` xác định.
+    """
 
     apr_vn_365: float | None
     ear_xirr: float | None
@@ -303,6 +329,16 @@ class RateReport:
     sign_changes: int
     multiple_roots: bool
     apr_above_bracket: bool
+    apr_roots: tuple[float, ...] = ()
+    apr_primary: float | None = None
+    apr_unavailable_reason: str | None = None
+
+
+def _primary_root(roots: tuple[float, ...]) -> float | None:
+    if len(roots) == 1:
+        return roots[0]
+    non_negative = [r for r in roots if r >= 0.0]
+    return min(non_negative) if non_negative else None
 
 
 def analyze_cashflows(
@@ -312,19 +348,30 @@ def analyze_cashflows(
     sign_changes = count_sign_changes(ordered)
     multiple = False
     above = False
-    apr: float | None
+    apr: float | None = None
     xirr: float | None
+    roots: tuple[float, ...] = ()
+    reason: str | None = None
     try:
         apr = solve_vn_legal_apr_365(ordered)
-    except MultipleRootsError:
-        apr, multiple = None, True
+        roots = (apr,)
+    except MultipleRootsError as exc:
+        multiple, roots = True, tuple(sorted(exc.roots))
+        reason = APR_REASON_MULTIPLE_ROOTS
     except RateOutOfBracketError as exc:
-        apr, above = None, exc.direction == "above"
+        above = exc.direction == "above"
+        reason = APR_REASON_ABOVE_BRACKET if above else APR_REASON_BELOW_BRACKET
+    except FinanceError as exc:
+        if exc.code != NON_MONOTONIC_OR_EXTREME_CASHFLOW:
+            raise
+        reason = APR_REASON_NOT_CONVERGED
     try:
         xirr = solve_ear_xirr(ordered)
     except MultipleRootsError:
         xirr, multiple = None, True
-    except RateOutOfBracketError:
+    except FinanceError as exc:
+        if exc.code != NON_MONOTONIC_OR_EXTREME_CASHFLOW:
+            raise
         xirr = None
     mirr = solve_mirr(ordered, reinvest_rate) if sign_changes > 1 else None
     return RateReport(
@@ -334,4 +381,7 @@ def analyze_cashflows(
         sign_changes=sign_changes,
         multiple_roots=multiple,
         apr_above_bracket=above,
+        apr_roots=roots,
+        apr_primary=_primary_root(roots),
+        apr_unavailable_reason=reason,
     )

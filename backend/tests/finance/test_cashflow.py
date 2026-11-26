@@ -149,6 +149,42 @@ def test_commodity_resale_cf0_uses_buyback_minus_broker() -> None:
     assert solve_vn_legal_apr_365(flows) > 1.0
 
 
+def test_s2_ec41_commodity_resale_with_600k_insurance_deducted() -> None:
+    """S2-EC41 + hàng bán lại: bảo hiểm 600k khấu trừ / 400k bán kèm vẫn bị trừ khỏi CF0."""
+    regimes = [RepaymentRegime(12, 30, 2_900_000)]
+    plain = build_cashflows(
+        LoanTerms(
+            nominal_principal_vnd=30_000_000,
+            regimes=regimes,
+            commodity_resale=CommodityResale(30_000_000, 20_000_000, 1_000_000),
+        )
+    )
+    with_fees = build_cashflows(
+        LoanTerms(
+            nominal_principal_vnd=30_000_000,
+            regimes=regimes,
+            commodity_resale=CommodityResale(30_000_000, 20_000_000, 1_000_000),
+            deducted_at_source_vnd=600_000,
+            bundled_mandatory_vnd=400_000,
+        )
+    )
+    assert with_fees[0].amount_vnd == 20_000_000 - 1_000_000 - 600_000 - 400_000
+    assert with_fees[1:] == plain[1:]
+    assert solve_vn_legal_apr_365(with_fees) > solve_vn_legal_apr_365(plain)
+
+
+def test_commodity_resale_buyback_above_invoice_rejected() -> None:
+    """Bất biến: tiền mua lại không thể vượt giá hóa đơn → INVALID_INPUT."""
+    terms = LoanTerms(
+        nominal_principal_vnd=30_000_000,
+        commodity_resale=CommodityResale(30_000_000, 30_000_001, 0),
+        regimes=[RepaymentRegime(12, 30, 2_900_000)],
+    )
+    with pytest.raises(FinanceError) as exc:
+        build_cashflows(terms)
+    assert exc.value.code == "INVALID_INPUT"
+
+
 def test_extra_flows_merge_same_day_and_sorted() -> None:
     terms = LoanTerms(
         nominal_principal_vnd=10_000_000,
