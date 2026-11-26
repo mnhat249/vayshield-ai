@@ -270,3 +270,45 @@ def test_s2_ec21_rereview_label_variants_on_one_page_counted_once() -> None:
     assert removed == 1
     # Khác số tiền hoặc nhãn khác hẳn → vẫn là 2 khoản.
     assert fee_key("Phí dịch vụ") != fee_key("Phí dịch vụ VIP")
+
+
+@pytest.mark.parametrize(
+    ("a", "b"),
+    [
+        ("Phí dịch vụ (tháng 1)", "Phí dịch vụ (tháng 2)"),
+        ("Phí bảo hiểm [kỳ 1]", "Phí bảo hiểm [kỳ 2]"),
+        ("Phí dịch vụ (gói VIP)", "Phí dịch vụ"),
+    ],
+)
+def test_s2_ec21_round3_paren_with_content_keeps_fees_apart(a: str, b: str) -> None:
+    """S2-EC21 (vòng 3 major 6): ngoặc có chữ số/tên riêng là một phần nhãn — 2 khoản phí
+    cùng số tiền KHÔNG bị gộp (trước: mất 1 khoản phí)."""
+    assert fee_key(a) != fee_key(b)
+    fees = [
+        DeductedFeeItem(fee_label=a, amount_vnd=500_000),
+        DeductedFeeItem(fee_label=b, amount_vnd=500_000),
+    ]
+    out, removed = dedupe_fees([fees])
+    assert sum(f.amount_vnd for f in out) == 1_000_000
+    assert removed == 0
+
+
+def test_s2_ec21_round3_filler_paren_and_stacked_prefixes() -> None:
+    assert fee_key("Phí hồ sơ (bắt buộc)") == fee_key("Phí hồ sơ")
+    assert fee_key("Phí bảo hiểm (đã tích)") == fee_key("bảo hiểm")
+    assert fee_key("Tiền phí dịch vụ") == fee_key("Phí dịch vụ")
+    assert fee_key("Khoản tiền phí hồ sơ") == fee_key("hồ sơ")
+
+
+@pytest.mark.parametrize(
+    ("a", "b"),
+    [("VN Pay", "Pay"), ("Vay Co", "Vay"), ("App Vay Nhanh A", "App Vay Nhanh B")],
+)
+def test_ec_ai07_round3_brand_noise_only_at_edges(a: str, b: str) -> None:
+    """EC-AI07 (vòng 3 minor): chỉ bỏ hậu tố pháp nhân ở cuối và "công ty ..." ở đầu."""
+    assert brand_key(a) != brand_key(b)
+
+
+def test_ec_ai07_round3_legal_prefix_suffix_stripped() -> None:
+    assert brand_key("Công ty TNHH MTV Tài chính FE Credit") == brand_key("FE Credit")
+    assert brand_key("FE CREDIT Finance JSC") == brand_key("fe credit")

@@ -180,8 +180,8 @@ def test_ec_ai11_rereview_fraction_then_one_period(text: str, value: int, per: i
         ("vay 3 triệu hai hôm trả 4 triệu", [3_000_000, 4_000_000], [2]),
         ("vay 3 triệu mười hôm", [3_000_000], [10]),
         ("góp 2 triệu ba kỳ", [2_000_000], []),
-        ("vay 5 củ ba đợt", [5_000_000], []),
-        ("đóng 500 nghìn hai lần", [500_000], []),
+        ("vay 5 củ ba đợt", [None], []),
+        ("đóng 500 nghìn hai lần", [None], []),
         ("vay 10 triệu ngày 15 tháng 3", [10_000_000], []),
         ("vay 8 triệu 810 ngày 15 tháng 3", [8_810_000], []),
     ],
@@ -250,3 +250,115 @@ def test_ec_ai11_unaccented_common_words_not_numbers() -> None:
 def test_ec_ai11_moi_bua_is_per_day() -> None:
     m = normalize_vn_currency_slang("mỗi bữa đóng hai trăm nghìn").money
     assert [(x.value_vnd, x.per_period_days) for x in m] == [(200_000, 1)]
+
+
+@pytest.mark.parametrize(
+    ("text", "values", "durations"),
+    [
+        ("nhận 4 triệu rưỡi, trả 6 triệu sau 14 ngày", [4_500_000, 6_000_000], [14]),
+        ("vay 10 triệu, trả 2 triệu sau 7 ngày", [10_000_000, 2_000_000], [7]),
+        ("vay 1 triệu sau 2 tháng trả", [1_000_000], [60]),
+        ("vay 1 trieu tam thoi", [None], []),
+        ("vay 1 trieu bay gio tra", [None], []),
+        ("vay 1 triệu tạm thời", [1_000_000], []),
+        ("6 trieu sau 14 ngay", [None], [14]),  # không dấu: "sau" có thể là 6 → hỏi lại
+        ("6 triệu sau 14 ngày", [6_000_000], [14]),
+        ("5 triệu năm sau 14 ngày", [None], [14]),  # "năm sau" hay 5,5tr?
+        ("vay một triệu năm sau", [None], []),
+        ("vay 50k một", [None], []),
+    ],
+)
+def test_ec_ai11_round3_weak_words_not_digits(
+    text: str, values: list[int | None], durations: list[int]
+) -> None:
+    """EC-AI11 (vòng 3 blocker 1): "sau" (sau đó), "tạm/tam", "bây/bay" không thành chữ số
+    6/8/7 cộng vào tiền. Không dấu mơ hồ → None, không đoán."""
+    r = normalize_vn_currency_slang(text)
+    assert [m.value_vnd for m in r.money] == values
+    assert [d.days for d in r.durations] == durations
+
+
+@pytest.mark.parametrize(
+    ("text", "durations"),
+    [
+        ("vay 5 triệu lãi 3%/tháng trong 6 tháng", [180]),
+        ("vay 10 triệu lãi 20%/năm", []),
+        ("vay 10 triệu lãi 20 % một năm", []),
+        ("vay 10 triệu lãi 20 phần trăm một năm", []),
+        ("lãi 3% một tháng trong 6 tháng", [180]),
+    ],
+)
+def test_ec_ai11_round3_percent_period_not_tenure(text: str, durations: list[int]) -> None:
+    """EC-AI11 (vòng 3 blocker 2): kỳ của lãi suất ("3%/tháng", "20 phần trăm một năm")
+    không phải thời hạn vay."""
+    assert [d.days for d in normalize_vn_currency_slang(text).durations] == durations
+
+
+@pytest.mark.parametrize(
+    "text",
+    [
+        "vay 2 triệu 3 app",
+        "vay 2 triệu 3 giờ chiều",
+        "vay 2 triệu 3 phút",
+        "vay 2 triệu 3 số",
+        "2 triệu 3 tuổi",
+        "2 triệu 3 ngân hàng",
+        "2 trieu 3 ngan hang",
+        "2 triệu 2 lãi",
+        "2 triệu 3 người",
+        "1 triệu 2 tháng sau",
+    ],
+)
+def test_ec_ai11_round3_unknown_word_after_tail_is_ambiguous(text: str) -> None:
+    """EC-AI11 (vòng 3 major 3): whitelist ranh giới — từ lạ sau phần lẻ → None, hỏi lại."""
+    m = normalize_vn_currency_slang(text).money
+    assert m[0].value_vnd is None
+    assert m[0].ambiguous
+
+
+def test_ec_ai11_round3_ki_spelling() -> None:
+    """EC-AI11 (vòng 3 major 4): "kì"/"ki" như "kỳ"."""
+    for text in ("trả 500 nghìn ba kì", "tra 500 nghin ba ki", "trả 500 nghìn ba kỳ"):
+        m = normalize_vn_currency_slang(text).money
+        assert [x.value_vnd for x in m] == [500_000], text
+        assert m[0].follow_quantity is not None
+
+
+@pytest.mark.parametrize(
+    "text",
+    [
+        "đóng 3 triệu ngày 15",
+        "trả 6 triệu tháng sau",
+        "đóng 2 triệu ngày mốt",
+        "góp 1 triệu tuần tới",
+    ],
+)
+def test_ec_ai11_round3_bare_period_reference_not_per_period(text: str) -> None:
+    """EC-AI11 (vòng 3 major 5): kỳ trần theo sau là số/mốt/sau/tới là THỜI ĐIỂM, không phải
+    "mỗi kỳ" → per=None + cần xác nhận."""
+    r = normalize_vn_currency_slang(text)
+    assert r.money[0].per_period_days is None
+    assert r.money[0].uncertain
+    assert r.needs_confirmation
+
+
+def test_ec_ai11_round3_explicit_periods_still_work() -> None:
+    cases = {
+        "đóng 500k/ngày trong 25 ngày": (500_000, 1),
+        "đóng 500k ngày": (500_000, 1),
+        "góp 2 triệu mỗi tuần": (2_000_000, 7),
+        "góp 2 triệu hàng tháng": (2_000_000, 30),
+        "góp 1tr2/tháng": (1_200_000, 30),
+    }
+    for text, expected in cases.items():
+        m = normalize_vn_currency_slang(text).money[0]
+        assert (m.value_vnd, m.per_period_days) == expected, text
+        assert not m.uncertain, text
+
+
+@pytest.mark.parametrize("text", ["mua 2 chai nuoc het 20k", "đổ 2 lít xăng hết 50k"])
+def test_ec_ai11_round3_slang_unit_with_goods_noun_needs_confirmation(text: str) -> None:
+    """Minor vòng 3: "2 chai nước", "2 lít xăng" có thể là hàng hóa thật → cần xác nhận."""
+    r = normalize_vn_currency_slang(text)
+    assert r.money[0].uncertain
+    assert r.needs_confirmation

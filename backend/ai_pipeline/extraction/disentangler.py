@@ -77,52 +77,68 @@ def normalize_label(text: str) -> str:
 
 
 # Tiền/hậu tố pháp nhân / quốc gia / loại hình không phân biệt thương hiệu (đã bỏ dấu).
-_BRAND_NOISE = (
-    "cong ty tnhh mot thanh vien",
-    "cong ty co phan",
-    "cong ty tnhh",
-    "cong ty tai chinh",
-    "cong ty",
-    "tai chinh",
-    "viet nam",
-    "vietnam",
-    "vn",
-    "app",
-    "ung dung",
-    "finance",
-    "financial",
-    "jsc",
-    "ltd",
-    "co",
-    "tnhh",
-    "mtv",
+# Chỉ bỏ tiền tố pháp nhân Ở ĐẦU và hậu tố pháp nhân/quốc gia/loại hình Ở CUỐI (đã bỏ dấu).
+# Không bỏ ở giữa / ở vị trí khác: "VN Pay" ≠ "Pay", "Vay Co" ≠ "Vay" ("co" đơn lẻ giữ nguyên).
+_BRAND_PREFIX_RE = re.compile(
+    r"^(?:cong ty (?:tnhh mot thanh vien|tnhh mtv|tnhh|co phan|tai chinh|cp)?\s*"
+    r"(?:tai chinh\s+)?)"
 )
-_BRAND_NOISE_RE = re.compile(r"\b(?:" + "|".join(re.escape(w) for w in _BRAND_NOISE) + r")\b")
+_BRAND_SUFFIX_RE = re.compile(
+    r"(?:\s+(?:viet nam|vietnam|vn|app|ung dung|finance|financial|jsc|co ltd|ltd|tnhh|mtv"
+    r"|joint stock company|company limited))+$"
+)
 
 
 def brand_key(name: str) -> str:
-    """Khóa thương hiệu: bỏ dấu, chữ thường, bỏ tiền/hậu tố chung, bỏ khoảng trắng, qua alias.
+    """Khóa thương hiệu: bỏ dấu, chữ thường, bỏ tiền tố "công ty ..." ở đầu và hậu tố pháp nhân
+    (VN, Việt Nam, App, Finance, JSC, Ltd ...) ở cuối, bỏ khoảng trắng, qua alias.
 
-    "FE Credit Việt Nam" ≡ "fe-credit" ≡ "FECREDIT"; "Tia Chop App" ≡ "Tia Chớp"; nhưng vẫn so
-    khớp CHÍNH XÁC phần còn lại nên "App Vay Nhanh A" ≠ "App Vay Nhanh B" (EC-AI07).
+    "FE Credit Việt Nam" ≡ "fe-credit"; "Tia Chop App" ≡ "Tia Chớp"; nhưng so khớp CHÍNH XÁC
+    phần còn lại nên "App Vay Nhanh A" ≠ "App Vay Nhanh B", "VN Pay" ≠ "Pay" (EC-AI07).
     """
     label = normalize_label(name)
-    core = " ".join(_BRAND_NOISE_RE.sub(" ", label).split())
+    core = _BRAND_SUFFIX_RE.sub("", _BRAND_PREFIX_RE.sub("", label)).strip()
     key = (core or label).replace(" ", "")
     return BRAND_ALIASES.get(key, key)
 
 
-_PAREN_RE = re.compile(r"[(\[{][^)\]}]*[)\]}]")
-_FEE_PREFIX_RE = re.compile(r"^(?:phi|tien|khoan)\s+")
+_PAREN_RE = re.compile(r"[(\[{]([^)\]}]*)[)\]}]")
+# Nội dung ngoặc chỉ là từ hư (bỏ được); ngoặc có chữ số / tên riêng ("tháng 1", "kỳ 2",
+# "gói VIP") là một phần nhãn → GIỮ, để 2 khoản phí khác nhau cùng số tiền không bị gộp.
+_FILLER_PAREN = frozenset(
+    {
+        "bat buoc",
+        "tu dong",
+        "da tich",
+        "da chon",
+        "mac dinh",
+        "khong hoan lai",
+        "neu co",
+        "tam tinh",
+        "vnd",
+        "d",
+        "dong",
+        "bao gom vat",
+        "da gom vat",
+        "co vat",
+    }
+)
+_FEE_PREFIX_RE = re.compile(r"^(?:(?:phi|tien|khoan)\s+)+")
 
 
 def fee_key(label: str) -> str:
-    """Khóa nhãn phí để khử trùng: bỏ phần trong ngoặc, dấu câu, tiền tố "phí/tiền/khoản".
+    """Khóa nhãn phí để khử trùng: bỏ ngoặc chỉ chứa từ hư, dấu câu, các tiền tố "phí/tiền/khoản".
 
     "Phí hồ sơ (bắt buộc)" ≡ "Phí hồ sơ:" ≡ "hồ sơ"; "Phí bảo hiểm khoản vay" ≡ "Bảo hiểm khoản
-    vay". Không so khớp mờ — "Phí dịch vụ" ≠ "Phí dịch vụ VIP".
+    vay"; "Tiền phí dịch vụ" ≡ "Phí dịch vụ". Nhưng "Phí dịch vụ (tháng 1)" ≠ "(tháng 2)" và
+    "Phí dịch vụ" ≠ "Phí dịch vụ VIP" (không so khớp mờ).
     """
-    base = normalize_label(_PAREN_RE.sub(" ", label))
+
+    def keep_or_drop(m: re.Match[str]) -> str:
+        inner = normalize_label(m.group(1))
+        return " " if inner in _FILLER_PAREN or not inner else f" {inner} "
+
+    base = normalize_label(_PAREN_RE.sub(keep_or_drop, label))
     stripped = _FEE_PREFIX_RE.sub("", base)
     return stripped or base
 

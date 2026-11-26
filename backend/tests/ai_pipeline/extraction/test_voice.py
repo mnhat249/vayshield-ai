@@ -180,3 +180,54 @@ def test_ec_ai11_voice_ambiguous_amount_asks_again() -> None:
     assert e.total_repayment_stated_vnd is None
     assert sum("Chưa nghe rõ số tiền" in n for n in e.extraction_notes_vi) == 2
     assert draft.needs_confirmation
+
+
+def test_ec_ai11_round3_voice_percent_not_tenure() -> None:
+    """EC-AI11 (vòng 3 blocker 2): "lãi 3%/tháng trong 6 tháng" → thời hạn 180 ngày."""
+    e = transcribe_terms_to_extraction("vay 5 triệu lãi 3%/tháng trong 6 tháng").extraction
+    assert e.nominal_principal_vnd == 5_000_000
+    assert e.tenure_days_total == 180
+
+
+@pytest.mark.parametrize(
+    "text",
+    [
+        "vay 10 triệu lãi 20%/năm",
+        "vay 10 triệu trong 20 năm",
+        "mỗi ngày đóng 100k trong 20 năm",
+        "vay 0đ",
+        "vay 10 triệu trong 3 tháng, sau 2 tháng trả",
+        "vay 10 triệu, mỗi ngày đóng 1 triệu trong 9 năm",
+    ],
+)
+def test_ec_ai11_round3_voice_never_crashes(text: str) -> None:
+    """Không bao giờ ValidationError (endpoint 500): số lạ → bỏ + ghi chú hỏi lại."""
+    draft = transcribe_terms_to_extraction(text)
+    e = draft.extraction
+    assert e.tenure_days_total is None or 1 <= e.tenure_days_total <= 3650
+    assert all(1 <= r.period_count <= 360 for r in e.repayment_regimes)
+    assert draft.needs_confirmation
+
+
+def test_ec_ai11_round3_voice_conflicting_tenures_ask() -> None:
+    e = transcribe_terms_to_extraction("vay 10 triệu trong 3 tháng, sau 2 tháng trả").extraction
+    assert e.tenure_days_total is None
+    assert any("nhiều thời hạn" in n for n in e.extraction_notes_vi)
+
+
+def test_ec_ai11_round3_voice_date_reference_not_installment() -> None:
+    """EC-AI11 (vòng 3 major 5): "đóng 3 triệu ngày 15" KHÔNG ra 90 kỳ × 3tr."""
+    e = transcribe_terms_to_extraction(
+        "vay 10 triệu trong 3 tháng, đóng 3 triệu ngày 15"
+    ).extraction
+    assert e.repayment_regimes == []
+    assert any("xác nhận" in n for n in e.extraction_notes_vi)
+    e2 = transcribe_terms_to_extraction("trả 6 triệu tháng sau").extraction
+    assert e2.repayment_regimes == []
+
+
+def test_ec_ai11_round3_voice_too_many_periods_not_clamped() -> None:
+    """Số kỳ > 360 → không kẹp (kẹp sẽ ra lịch trả sai), hỏi lại."""
+    e = transcribe_terms_to_extraction("vay 10 triệu, mỗi ngày đóng 100k trong 2 năm").extraction
+    assert e.repayment_regimes == []
+    assert any("quá lớn" in n for n in e.extraction_notes_vi)

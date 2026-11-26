@@ -12,6 +12,8 @@ import math
 import re
 from dataclasses import dataclass
 
+from pydantic import ValidationError
+
 from .currency_slang import MoneyMention, normalize_text, normalize_vn_currency_slang
 from .schemas import (
     DeductedFeeItem,
@@ -137,6 +139,66 @@ def _clause_bounds(src: str, start: int, end: int) -> tuple[int, int]:
     return lo, min(ends) if ends else len(src)
 
 
+MAX_TENURE_DAYS = 3650  # schema: tenure_days_total ≤ 3650
+MAX_PERIODS = 360  # schema: period_count ≤ 360
+MAX_INTERVAL_DAYS = 365
+
+
+def _pick_tenure(days: list[int], notes: list[str]) -> int | None:
+    """Thời hạn duy nhất; nhiều thời hạn khác nhau hoặc vượt giới hạn → None + hỏi lại."""
+    valid = {d for d in days if 1 <= d <= MAX_TENURE_DAYS}
+    if len(valid) < len(set(days)):
+        notes.append("Thời hạn nghe được không hợp lý — vui lòng nói lại vay trong bao lâu.")
+    if len(valid) > 1:
+        notes.append("Nghe được nhiều thời hạn khác nhau — vui lòng xác nhận vay trong bao lâu.")
+        return None
+    return next(iter(valid), None)
+
+
+def _safe_extraction(
+    *,
+    principal: int | None,
+    net: int | None,
+    total: int | None,
+    tenure: int | None,
+    fees: list[DeductedFeeItem],
+    regimes: list[RepaymentRegimeSegment],
+    upfront: UpfrontFeeDemand | None,
+    notes: list[str],
+) -> MultiImageLoanExtraction:
+    """Dựng extraction; dữ liệu lời nói lạ KHÔNG BAO GIỜ làm endpoint 500 (bỏ trường lỗi + hỏi)."""
+    data: dict[str, object] = {
+        "screen_categories": [ScreenCategory.VOICE_DICTATED_TERMS],
+        "nominal_principal_vnd": principal or None,
+        "net_disbursed_vnd": net,
+        "total_repayment_stated_vnd": total or None,
+        "tenure_days_total": tenure,
+        "deducted_fees_at_source": fees,
+        "repayment_regimes": regimes,
+        "upfront_fee_demand": upfront or UpfrontFeeDemand(demanded=False),
+        "missing_critical_page_suspected": tenure is None and not regimes,
+        "critical_fields_min_confidence": VOICE_CONFIDENCE,
+        "extraction_notes_vi": notes,
+    }
+    try:
+        return MultiImageLoanExtraction.model_validate(data)
+    except ValidationError as exc:
+        bad = {str(err["loc"][0]) for err in exc.errors() if err["loc"]}
+        defaults: dict[str, object] = {
+            "deducted_fees_at_source": [],
+            "repayment_regimes": [],
+            "upfront_fee_demand": UpfrontFeeDemand(demanded=False),
+        }
+        for name in bad:
+            data[name] = defaults.get(name)
+        data["missing_critical_page_suspected"] = True
+        data["extraction_notes_vi"] = [
+            *notes,
+            "Một số con số nghe được không hợp lệ — vui lòng nhập lại bằng tay.",
+        ]
+        return MultiImageLoanExtraction.model_validate(data)
+
+
 def transcribe_terms_to_extraction(transcript: str) -> VoiceTermsDraft:
     text, fixes = resolve_phonetic_confusions(transcript)
     slang = normalize_vn_currency_slang(text)
@@ -145,11 +207,11 @@ def transcribe_terms_to_extraction(transcript: str) -> VoiceTermsDraft:
     principal: int | None = None
     net: int | None = None
     total: int | None = None
-    tenure: int | None = slang.durations[0].days if slang.durations else None
     per_period: list[tuple[int, int]] = []  # (amount, interval_days)
     fees: list[DeductedFeeItem] = []
     upfront: UpfrontFeeDemand | None = None
     notes: list[str] = []
+    tenure = _pick_tenure([d.days for d in slang.durations], notes)
 
     prev_end = 0
     mentions = slang.money
@@ -173,6 +235,9 @@ def transcribe_terms_to_extraction(transcript: str) -> VoiceTermsDraft:
         if m.per_period_days is not None and (m.per_period_explicit or role is None):
             per_period.append((m.value_vnd, m.per_period_days))
             continue
+        if m.uncertain:
+            shown = f"{m.value_vnd:,}".replace(",", ".")
+            notes.append(f'Số tiền {shown} đồng ("{m.raw}") — vui lòng xác nhận lại ý nghĩa.')
         if m.per_period_days is not None and tenure is None:
             tenure = m.per_period_days  # "vay 10 củ một tháng" → thời hạn 1 tháng
         if role == "fee":
@@ -198,9 +263,13 @@ def transcribe_terms_to_extraction(transcript: str) -> VoiceTermsDraft:
             notes.append("Chưa nghe rõ góp trong bao lâu — vui lòng nói thêm thời hạn.")
             continue
         count = max(1, math.ceil(tenure / interval))
+        if count > MAX_PERIODS or interval > MAX_INTERVAL_DAYS:
+            # Không kẹp số kỳ (sẽ làm sai lịch trả) — hỏi lại.
+            notes.append("Số kỳ góp nghe được quá lớn — vui lòng nói lại thời hạn và kỳ góp.")
+            continue
         regimes.append(
             RepaymentRegimeSegment(
-                period_count=min(count, 360),
+                period_count=count,
                 period_interval_days=interval,
                 amount_per_period_vnd=amount,
             )
@@ -209,19 +278,21 @@ def transcribe_terms_to_extraction(transcript: str) -> VoiceTermsDraft:
         if not fix.certain:
             notes.append(f'Nghe được "{fix.heard}" — có phải ý bạn là "{fix.canonical}"?')
 
-    extraction = MultiImageLoanExtraction(
-        screen_categories=[ScreenCategory.VOICE_DICTATED_TERMS],
-        nominal_principal_vnd=principal or None,
-        net_disbursed_vnd=net,
-        total_repayment_stated_vnd=total or None,
-        tenure_days_total=tenure,
-        deducted_fees_at_source=fees,
-        repayment_regimes=regimes,
-        upfront_fee_demand=upfront or UpfrontFeeDemand(demanded=False),
-        missing_critical_page_suspected=tenure is None and not regimes,
-        critical_fields_min_confidence=VOICE_CONFIDENCE,
-        extraction_notes_vi=notes,
+    extraction = _safe_extraction(
+        principal=principal,
+        net=net,
+        total=total,
+        tenure=tenure,
+        fees=fees,
+        regimes=regimes,
+        upfront=upfront,
+        notes=notes,
     )
+    principal = extraction.nominal_principal_vnd
+    net = extraction.net_disbursed_vnd
+    total = extraction.total_repayment_stated_vnd
+    tenure = extraction.tenure_days_total
+    regimes = list(extraction.repayment_regimes)
     schedule_total = (
         sum(r.period_count * r.amount_per_period_vnd for r in regimes) if regimes else None
     )
