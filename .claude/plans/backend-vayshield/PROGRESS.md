@@ -3,13 +3,13 @@
 Plan: [`../backend-vayshield.md`](../backend-vayshield.md) · Cập nhật %: `node .claude/scripts/progress.js backend-vayshield --write`
 
 <!-- progress:start -->
-**Tổng tiến độ: 48.4%** `[██████████░░░░░░░░░░]` — merged 6/19 task · cập nhật 2026-11-26
+**Tổng tiến độ: 52.8%** `[███████████░░░░░░░░░]` — merged 7/19 task · cập nhật 2026-11-26
 
 | Wave | Tiến độ | | Mốc | Tiến độ |
 |---|---|---|---|---|
 | W0 | 100% | | M0 | 100% |
-| W1 | 86% | | M1 | 70% |
-| W2 | 0% | | M2 | 21% |
+| W1 | 93% | | M1 | 71% |
+| W2 | 3% | | M2 | 32% |
 | W3 | 0% | | M3 | 50% |
 | W4 | 0% | | M4 | 0% |
 | W5 | 0% | |  |  |
@@ -36,13 +36,13 @@ Plan: [`../backend-vayshield.md`](../backend-vayshield.md) · Cập nhật %: `n
 | T01 | WP1-01 | PostgreSQL schema + RLS + hash-chain | 1 | M1 | T00 | 10 | merged | task/backend-vayshield/T01 | pass local + CI pg (PR#1) | approve sau sửa (2 major); CI pg xanh | – | |
 | T02 | WP1-03 | Kernel tài chính APR/XIRR/khoảng/MIRR | 1 | M1 | T00 | 8 | merged | task/backend-vayshield/T02 | pass (177✓) | approve sau sửa (1 major); bản sửa chỉ verify, chưa review lại | – | ≥35 pytest |
 | T03 | WP1-04 | Thị giác đối kháng + VietQR | 1 | M1 | T00 | 10 | merged | task/backend-vayshield/T03 | pass (210✓) sau sửa | approve sau 2 vòng sửa (1 blocker + 7 major); vòng 2 chỉ verify, chưa review lại | – | |
-| T04 | WP1-05 | Trích xuất LLM + Conformal + Voice | 1 | M1 | T00 | 12 | verified | task/backend-vayshield/T04 | pass (244✓) | changes (2 blocker, 7 major) | – | |
-| T05 | WP1-07 | Redis HSM + Lua smurf + idempotency | 1 | M2 | T00 | 8 | implemented | task/backend-vayshield/T05 | pass (416✓), Lua redis thật chờ CI PR#2 | changes (2 blocker, 4 major) | – | |
+| T04 | WP1-05 | Trích xuất LLM + Conformal + Voice | 1 | M1 | T00 | 12 | verified | task/backend-vayshield/T04 | pass (311✓) sau sửa | re-review đang chạy | – | |
+| T05 | WP1-07 | Redis HSM + Lua smurf + idempotency | 1 | M2 | T00 | 8 | merged | task/backend-vayshield/T05 | pass (462✓) | approve sau 2 vòng sửa (2 blocker + 6 major); vòng 2 chỉ verify + CI Redis thật xanh, chưa review lại | – | |
 | T06 | WP1-11 | Dataset Bench-340 (data + nhãn) | 1 | M3 | T00 | 2 | merged | task/backend-vayshield/T06 | validate pass | approve; nhãn APR đối chiếu solver T02: 63 trên 63 khớp, 17 null (advance-fee) | – | |
 | T07 | WP1-08 | Ontology 10 trục C1–C10 | 1 | M2 | T00 | 4 | merged | task/backend-vayshield/T07 | pass (188✓) | approve (sau 1 vòng sửa) | – | |
 | T08 | WP1-02 | Seed registry + luật + mule mẫu | 2 | M2 | T01 | 6 | pending | task/backend-vayshield/T08 | – | – | – | Người xác minh dữ liệu thật |
 | T09 | WP1-03 | Ma trận 9 phán quyết + lookalike | 2 | M1 | T02,T01 | 4 | pending | task/backend-vayshield/T09 | – | – | – | |
-| T10 | WP1-06 | Mật mã & bảo mật nền | 2 | M1 | T01 | 2 | pending | task/backend-vayshield/T10 | – | – | – | |
+| T10 | WP1-06 | Mật mã & bảo mật nền | 2 | M1 | T01 | 2 | running | task/backend-vayshield/T10 | – | – | – | |
 | T11 | WP1-06 | API Trạm 1 & 2 (SSE) | 3 | M1 | T02,T03,T04,T09,T10 | 6 | pending | task/backend-vayshield/T11 | – | – | – | |
 | T12 | WP1-08 | API Trạm 3 + WS + leo thang + gia đình | 3 | M2 | T05,T07,T10 | 6 | pending | task/backend-vayshield/T12 | – | – | – | |
 | T13 | WP1-02 | Legal GraphRAG | 3 | M2 | T08 | 2 | pending | task/backend-vayshield/T13 | – | – | – | |
@@ -75,3 +75,7 @@ Plan: [`../backend-vayshield.md`](../backend-vayshield.md) · Cập nhật %: `n
 | 2026-11-26 | T03 merged (approve sau 2 vòng sửa (1 blocker + 7 major); vòng 2 chỉ verify, chưa review lại) |
 | 2026-11-26 | T03 merged (419✓). T04 review: 2 blocker (số tiền lóng: "10 triệu một tháng" → 10.100.000) + 7 major (gộp nhầm 2 thương hiệu, mất phí khi hợp nhất Pro, pool key dùng chung...) → agent đang sửa. T06 agent mới đang sửa nhãn |
 | 2026-11-26 | T06 merged (nhãn APR đối chiếu solver T02: 63 trên 63 khớp, 17 null do advance-fee). T05 sửa xong, CI Redis thật chạy, re-review đang chạy |
+| 2026-11-26 | T05 re-review: 6 lỗi cũ đã sửa, CI Redis thật xanh (760✓, 0 skip); còn 2 major mới (expire dọn S5-S9 quá sớm; E3 trên key default fail-open) → agent sửa vòng 2. T10 (mật mã nền) dispatch sớm vì chỉ phụ thuộc T01 |
+| 2026-11-26 | T04 sửa xong 13 mục (311✓) → re-review (trọng tâm: 40+ câu số tiền mới) đang chạy. Đang chạy: T05 vòng 2, T10, T04 re-review |
+| 2026-11-26 | Người dùng dừng rồi bảo tiếp tục. T05 vòng 2 verified (462✓) + đã push → CI Redis thật. T04 re-review (reviewer mới) và T10 (agent mới, worktree cũ) đang chạy |
+| 2026-11-26 | T05 merged (approve sau 2 vòng sửa (2 blocker + 6 major); vòng 2 chỉ verify + CI Redis thật xanh, chưa review lại) |
