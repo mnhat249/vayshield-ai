@@ -29,6 +29,7 @@ from redis.asyncio import Redis
 from redis.exceptions import RedisError
 
 from app.core.errors import AppError, ErrorCode
+from app.core.logging import get_logger
 from app.core.schemas.common import HsmState
 from app.shield_state.fibers import (
     EvidenceSource,
@@ -54,6 +55,8 @@ from app.shield_state.risk import (
 )
 
 T = TypeVar("T")
+
+_log = get_logger(__name__)
 
 FallbackReader = Callable[[str], Awaitable[Sequence[LoanJourneyFiber] | None]]
 
@@ -246,7 +249,11 @@ class ShieldStateStore:
             # Redis sống nhưng mất khóa + PG lỗi: KHÔNG được coi là "không có Khiên" (fail-open).
             return self._safe_default(device_id)
         if fb is None:
-            return self._snapshot(device_id, (), version, SnapshotSource.EMPTY)
+            # Không cấu hình fallback → không ai xác nhận "thiết bị thật sự không có Khiên"
+            # (Redis có thể vừa restart) → degraded=True (an toàn). PG trả None = xác nhận rỗng.
+            return self._snapshot(
+                device_id, (), version, SnapshotSource.EMPTY, degraded=self._fallback is None
+            )
         # Read-through: tái nạp cache (best-effort; xung đột/lỗi thì lần sau nạp lại).
         sup = FiberSupervisor(fb)
         try:
@@ -317,8 +324,10 @@ class ShieldStateStore:
         source: EvidenceSource,
         shield_ms: int | None = None,
     ) -> tuple[DeviceShieldSnapshot, LoanJourneyFiber | None]:
-        """``None`` ở vị trí 2 = tiền về bị từ chối rõ ràng (E3 khi chưa có hành trình vay)."""
-        return await self.mutate(
+        """``None`` ở vị trí 2 = tiền về bị từ chối rõ ràng (E3 khi thiết bị không có hành trình vay
+        S1/S2): KHÔNG có Khiên. Hàm ghi log cảnh báo (không PII); caller BẮT BUỘC xử lý (báo
+        động vận hành / trả trạng thái cho client), không được coi là thành công im lặng."""
+        snap, fiber = await self.mutate(
             device_id,
             now_ms,
             lambda s: s.arm_disbursement(
@@ -330,6 +339,12 @@ class ShieldStateStore:
                 shield_ms=shield_ms,
             ),
         )
+        if fiber is None:
+            _log.warning(
+                "shield_arm_rejected",
+                extra={"event": event.value, "source": source.value, "reason": "NO_LOAN_JOURNEY"},
+            )
+        return snap, fiber
 
     # --- Đánh giá mở app ngân hàng (Lua nguyên tử) -------------------------------------------
     async def evaluate_bank_open(
@@ -352,7 +367,9 @@ class ShieldStateStore:
         sup.expire(now_ms)
         evidence = [e for f in sup.active_fibers() for e in f.evidence]
         golden = in_golden_window(evidence, now_ms)
-        if snap.degraded:
+        # EMPTY + degraded (Redis sống, chưa cấu hình fallback): vẫn đếm smurf bằng Lua nhưng sàn
+        # Mức Cam. Redis/PG không đọc được → tính tại chỗ (``_degraded_eval``).
+        if snap.degraded and snap.source is not SnapshotSource.EMPTY:
             return self._degraded_eval(sup, now_ms, sensors, golden)
         synergy = call_synergy(
             disbursement_is_active=disbursement_active(evidence, now_ms),
@@ -384,9 +401,10 @@ class ShieldStateStore:
         return BankOpenEvaluation(
             probability=prob,
             log_odds=float(res[2]),
-            tier=risk_tier(prob, golden_hour_floor=golden),
+            tier=risk_tier(prob, golden_hour_floor=golden or snap.degraded),
             open_count_15m=int(res[1]),
             golden_window=golden,
+            degraded=snap.degraded,
         )
 
     @staticmethod

@@ -600,3 +600,168 @@ def test_v2_prearm_72h_not_shortened_by_credit_assumption() -> None:
         source=EvidenceSource.EDGE_NOTIF,
     )
     assert f is not None and f.shield_expires_at_ms == T0 + 72 * HOUR_MS
+
+
+# --- Review round 2: lưu tối thiểu sau đánh chặn, E3 tìm luồng S1/S2, giả định gộp EC43 -------
+
+DAY = 24 * HOUR_MS
+SEC = 1000
+
+
+def _armed_at_zero(sup: FiberSupervisor, key: str = "a") -> None:
+    sup.arm_disbursement(
+        key,
+        E.E4_HIGH_CONF_DISBURSEMENT_NOTIF,
+        now_ms=T0,
+        event_id="d",
+        source=EvidenceSource.EDGE_NOTIF,
+    )
+
+
+def test_s5_entered_just_before_shield_end_still_accepts_g1() -> None:
+    """E4 t=0, E6 tại 24h−5s → S5; G1 tại 24h+1s phải vào S6 (không bị dọn về S0)."""
+    sup = make_sup()
+    _armed_at_zero(sup)
+    sup.broadcast(E.E6_BANKING_OR_WALLET_OPENED, now_ms=T0 + DAY - 5 * SEC)
+    out = sup.apply_event(
+        "a", E.G1_CALL_OR_SCREENSHARE_OR_HIGH_RISK, now_ms=T0 + DAY + SEC, event_id="g1"
+    )
+    assert out.accepted and out.from_state is S.S5_CRITICAL_INTERCEPTION
+    assert out.to_state is S.S6_COOLING_OFF_LOCK
+
+
+def test_s6_entered_just_before_shield_end_still_escalates_on_smurf_bypass() -> None:
+    sup = make_sup()
+    _armed_at_zero(sup)
+    sup.broadcast(E.E6_BANKING_OR_WALLET_OPENED, now_ms=T0 + DAY - 20 * SEC)
+    sup.apply_event(
+        "a", E.G1_CALL_OR_SCREENSHARE_OR_HIGH_RISK, now_ms=T0 + DAY - 10 * SEC, event_id="g1"
+    )
+    out = sup.apply_event("a", E.E9_SMURF_BYPASS_ATTEMPT, now_ms=T0 + DAY + 2 * SEC, event_id="e9")
+    assert out.accepted and out.to_state is S.S7_ESCALATED_SCAM_CONFIRMED
+
+
+def _to_s6_near_end(sup: FiberSupervisor) -> None:
+    _armed_at_zero(sup)
+    sup.broadcast(E.E6_BANKING_OR_WALLET_OPENED, now_ms=T0 + DAY - 120 * SEC)
+    sup.apply_event(
+        "a", E.G1_CALL_OR_SCREENSHARE_OR_HIGH_RISK, now_ms=T0 + DAY - 90 * SEC, event_id="g1"
+    )
+
+
+def test_s7_entered_before_shield_end_kept_24h_until_rescue_logged() -> None:
+    sup = make_sup()
+    _to_s6_near_end(sup)
+    sup.apply_event("a", E.E7_COERCION_DETECTED, now_ms=T0 + DAY - 60 * SEC, event_id="e7")
+    sup.expire(T0 + DAY + SEC)
+    f = sup.get("a")
+    assert f is not None and f.state is S.S7_ESCALATED_SCAM_CONFIRMED
+    sup.expire(T0 + 2 * DAY - 60 * SEC - 1)
+    assert len(sup.fibers) == 1
+    sup.expire(T0 + 2 * DAY - 60 * SEC)
+    assert list(sup.fibers) == []
+
+
+def test_s9_golden_hour_triage_not_dropped_61s_after_entering() -> None:
+    sup = make_sup()
+    _to_s6_near_end(sup)
+    sup.apply_event("a", E.E11_USER_ALREADY_TRANSFERRED, now_ms=T0 + DAY - 60 * SEC, event_id="e11")
+    sup.expire(T0 + DAY + SEC)
+    assert sup.device_state() is S.S9_GOLDEN_HOUR_TRIAGE
+    out = sup.apply_event("a", E.A_TRIAGE_ACTIONS_DONE, now_ms=T0 + DAY + 2 * SEC, event_id="t")
+    assert out.accepted and out.to_state is S.S4_SHIELD_ARMED_24H
+
+
+def test_s5_s6_min_dwell_is_30_minutes_after_shield_end() -> None:
+    sup = make_sup()
+    _armed_at_zero(sup)
+    sup.broadcast(E.E6_BANKING_OR_WALLET_OPENED, now_ms=T0 + DAY - 5 * SEC)
+    sup.expire(T0 + DAY - 5 * SEC + 30 * MINUTE_MS - 1)
+    assert len(sup.fibers) == 1
+    sup.expire(T0 + DAY - 5 * SEC + 30 * MINUTE_MS)
+    assert list(sup.fibers) == []
+
+
+def test_s1_then_e3_on_default_key_arms_shield_on_s1_fiber() -> None:
+    """Cài APK ngoài store (S1 trên khóa app) rồi tiền về báo trên khóa default → Khiên bật trên
+    chính luồng S1 (không fail-open)."""
+    sup = make_sup()
+    sup.apply_event("app", E.E1_APK_INSTALLED, now_ms=T0, event_id="apk")
+    f = sup.arm_disbursement(
+        DEFAULT_FIBER_KEY,
+        E.E3_ANY_ORG_CREDIT_INFLOW,
+        now_ms=T0 + HOUR_MS,
+        event_id="inflow",
+        source=EvidenceSource.EDGE_NOTIF,
+    )
+    assert f is not None and f.fiber_key == "app"
+    assert f.state is S.S4_SHIELD_ARMED_24H
+    assert f.shield_expires_at_ms == T0 + HOUR_MS + DAY
+    assert [x.fiber_key for x in sup.fibers] == ["app"]
+
+
+def test_e3_on_default_picks_most_recent_s1_or_s2() -> None:
+    sup = make_sup()
+    sup.apply_event("old", E.E1_APK_INSTALLED, now_ms=T0, event_id="1")
+    sup.apply_event("new", E.E2_IMAGE_OR_VOICE_TERMS_SUBMITTED, now_ms=T0 + 10, event_id="2")
+    f = sup.arm_disbursement(
+        DEFAULT_FIBER_KEY,
+        E.E3_ANY_ORG_CREDIT_INFLOW,
+        now_ms=T0 + 20,
+        event_id="d",
+        source=EvidenceSource.EDGE_NOTIF,
+    )
+    assert f is not None and f.fiber_key == "new" and f.state is S.S4_SHIELD_ARMED_24H
+    old = sup.get("old")
+    assert old is not None and old.state is S.S1_LOAN_EXPLORATION
+
+
+def test_e3_on_default_ignores_s1_past_72h() -> None:
+    sup = make_sup()
+    sup.apply_event("app", E.E1_APK_INSTALLED, now_ms=T0, event_id="apk")
+    f = sup.arm_disbursement(
+        DEFAULT_FIBER_KEY,
+        E.E3_ANY_ORG_CREDIT_INFLOW,
+        now_ms=T0 + 73 * HOUR_MS,
+        event_id="d",
+        source=EvidenceSource.EDGE_NOTIF,
+    )
+    assert f is None
+
+
+def test_e5_specific_partner_key_not_redirected_to_s1() -> None:
+    sup = make_sup()
+    sup.apply_event("app", E.E1_APK_INSTALLED, now_ms=T0, event_id="apk")
+    f = sup.arm_disbursement(
+        "partner:loan1",
+        E.E5_B2B_WEBHOOK,
+        now_ms=T0 + 1,
+        event_id="b",
+        source=EvidenceSource.B2B_CONFIRMED,
+    )
+    assert f is not None and f.fiber_key == "partner:loan1"
+    assert {x.fiber_key for x in sup.fibers} == {"app", "partner:loan1"}
+
+
+def test_ec43_assumption_two_loans_two_sources_within_30m_are_merged() -> None:
+    """Giả định S2-EC43 (ghi nhận hành vi): 2 khoản KHÁC nhau từ 2 nguồn khác nhau trong 30 phút
+    bị gộp vào 1 luồng — chỉ 1 bằng chứng w_disb, Khiên lấy MAX. Payload chưa có số tiền/lender."""
+    sup = make_sup()
+    sup.arm_disbursement(
+        "loan-A",
+        E.E5_B2B_WEBHOOK,
+        now_ms=T0,
+        event_id="b2b-A",
+        source=EvidenceSource.B2B_CONFIRMED,
+    )
+    sup.arm_disbursement(
+        DEFAULT_FIBER_KEY,
+        E.E4_HIGH_CONF_DISBURSEMENT_NOTIF,
+        now_ms=T0 + 20 * MINUTE_MS,
+        event_id="notif-other-loan",
+        source=EvidenceSource.EDGE_NOTIF,
+    )
+    assert [x.fiber_key for x in sup.fibers] == ["loan-A"]
+    f = sup.fibers[0]
+    assert len(f.evidence) == 1
+    assert f.shield_expires_at_ms == T0 + 20 * MINUTE_MS + DAY

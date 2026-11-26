@@ -407,3 +407,62 @@ async def test_ec_db07_cas_on_real_redis(real_redis: Redis, uid: str) -> None:
         assert ev.open_count_15m == 1
     finally:
         await real_redis.delete(shield_state_key(dev), f"vs:smurf:win:s-{uid}")
+
+
+# --- Review round 2: không có fallback, tiền về bị từ chối ----------------------------------
+
+
+async def test_ec_db11_cache_miss_without_fallback_is_degraded_orange(redis: Redis) -> None:
+    """Không cấu hình fallback: cache miss KHÔNG được coi là "chắc chắn không có Khiên" →
+    EMPTY degraded=True; mở app ngân hàng vẫn đếm smurf (Lua) nhưng sàn Mức Cam."""
+    store = ShieldStateStore(redis)
+    snap = await store.load(DEV, NOW)
+    assert snap.source is SnapshotSource.EMPTY and snap.degraded
+    ev = await store.evaluate_bank_open(DEV, "s1", "o1", now_ms=NOW, sensors=SensorContext())
+    assert ev.degraded and ev.tier is RiskTier.ORANGE_SOFT_CHECK
+    assert ev.open_count_15m == 1
+    ev2 = await store.evaluate_bank_open(DEV, "s1", "o2", now_ms=NOW + 1, sensors=SensorContext())
+    assert ev2.open_count_15m == 2
+
+
+async def test_cache_miss_with_pg_confirmed_empty_is_pass_silent(redis: Redis) -> None:
+    async def pg_none(_d: str) -> Sequence[LoanJourneyFiber] | None:
+        return None
+
+    ev = await ShieldStateStore(redis, fallback=pg_none).evaluate_bank_open(
+        DEV, "s1", "o1", now_ms=NOW, sensors=SensorContext()
+    )
+    assert not ev.degraded and ev.tier is RiskTier.PASS_SILENT
+
+
+async def test_arm_shield_rejected_returns_none_and_logs_warning(
+    redis: Redis, caplog: pytest.LogCaptureFixture
+) -> None:
+    store = ShieldStateStore(redis)
+    with caplog.at_level("WARNING"):
+        _, fiber = await store.arm_shield(
+            DEV,
+            "default",
+            E.E3_ANY_ORG_CREDIT_INFLOW,
+            now_ms=NOW,
+            event_id="inflow",
+            source=EvidenceSource.EDGE_NOTIF,
+        )
+    assert fiber is None
+    assert any(r.getMessage() == "shield_arm_rejected" for r in caplog.records)
+    assert DEV not in caplog.text  # không log định danh thiết bị
+
+
+async def test_arm_shield_e3_default_after_apk_arms_s1_fiber(redis: Redis) -> None:
+    store = ShieldStateStore(redis)
+    await store.apply_event(DEV, "app", E.E1_APK_INSTALLED, now_ms=NOW, event_id="apk")
+    snap, fiber = await store.arm_shield(
+        DEV,
+        "default",
+        E.E3_ANY_ORG_CREDIT_INFLOW,
+        now_ms=NOW + HOUR_MS,
+        event_id="inflow",
+        source=EvidenceSource.EDGE_NOTIF,
+    )
+    assert fiber is not None and fiber.fiber_key == "app"
+    assert snap.state is S.S4_SHIELD_ARMED_24H

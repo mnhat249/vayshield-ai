@@ -13,7 +13,13 @@ Quy tắc cấp supervisor (ngoài bảng ``hsm.TRANSITIONS``, đều là giả 
   app ngân hàng) và Khiên còn hạn. S7/S9 về S4 qua sự kiện tường minh ``A_*`` của caller.
 - ``expire()`` dọn mọi trạng thái: S1 sau 72h (T1); S2 sau 4h không tiến triển; S3 sau cửa sổ 4h
   → S4 (giữ bằng chứng + Khiên tối thiểu 24h kể từ lúc vào S3, an toàn hơn xóa bỏ); S4 khi hết
-  hạn Khiên (T2); S5..S9 khi hết hạn Khiên (thiếu hạn → 24h kể từ lúc vào trạng thái).
+  hạn Khiên (T2); S5..S9 khi qua ``_retention_until_ms`` = MAX(hạn Khiên, lúc vào trạng thái +
+  thời gian lưu tối thiểu): S5/S6 ≥ 30 phút (màn chắn 15s + người dùng trả lời + biên), S7/S9
+  ≥ 24h hoặc tới khi caller phát ``A_*`` — không bao giờ về idle ngay sau khi vừa chặn/cấp cứu
+  chỉ vì Khiên gốc vừa hết hạn. S8 chỉ theo hạn Khiên (đã xác minh an toàn).
+- E3/tiền về trên một khóa chưa có luồng (thường là ``default`` từ thông báo trên máy) → chuyển
+  tới luồng S1/S2 cập nhật gần nhất còn trong cửa sổ (S1 72h, S2 4h) để Khiên được bật
+  (cài APK ngoài store rồi nhận tiền không được fail-open).
 """
 
 from __future__ import annotations
@@ -57,6 +63,15 @@ DEFAULT_FIBER_KEY: Final = "default"
 RACE_MERGE_WINDOW_MS: Final = 30 * MINUTE_MS  # S2-EC43: khóa phiên (device_id, time_window_30m)
 MAX_EVIDENCE_PER_FIBER: Final = 32
 AUDIT_IDLE_TTL_MS: Final = HARD_STOP_BANK_WINDOW_MS  # S2 không tiến triển sau 4h → dọn
+# Thời gian lưu tối thiểu sau khi VÀO trạng thái hậu-chặn (giả định an toàn, xem docstring module).
+INTERCEPT_MIN_DWELL_MS: Final = 30 * MINUTE_MS
+RESCUE_MIN_DWELL_MS: Final = SHIELD_DEFAULT_MS
+_MIN_DWELL_MS: Final[Mapping[HsmState, int]] = {
+    HsmState.S5_CRITICAL_INTERCEPTION: INTERCEPT_MIN_DWELL_MS,
+    HsmState.S6_COOLING_OFF_LOCK: INTERCEPT_MIN_DWELL_MS,
+    HsmState.S7_ESCALATED_SCAM_CONFIRMED: RESCUE_MIN_DWELL_MS,
+    HsmState.S9_GOLDEN_HOUR_TRIAGE: RESCUE_MIN_DWELL_MS,
+}
 # Trạng thái mà tiền về chỉ gia hạn Khiên (không đổi trạng thái).
 _EXTEND_ONLY_STATES: Final = frozenset(
     {
@@ -336,6 +351,13 @@ class FiberSupervisor:
         return f.entered_at_ms + SHIELD_DEFAULT_MS
 
     @staticmethod
+    def _retention_until_ms(f: LoanJourneyFiber) -> int:
+        """Thời điểm được dọn luồng hậu-chặn: MAX(hạn Khiên, lúc vào trạng thái + lưu tối thiểu)."""
+        horizon = FiberSupervisor._shield_horizon_ms(f)
+        dwell = _MIN_DWELL_MS.get(f.state)
+        return horizon if dwell is None else max(horizon, f.entered_at_ms + dwell)
+
+    @staticmethod
     def _expire_one(
         f: LoanJourneyFiber, now_ms: int
     ) -> tuple[LoanJourneyFiber, TransitionOutcome | None]:
@@ -387,7 +409,7 @@ class FiberSupervisor:
             if out.accepted:
                 return dataclasses.replace(f, state=out.to_state, updated_at_ms=now_ms), out
             return f, resumed
-        if state in _POST_INTERCEPT_STATES and now_ms >= FiberSupervisor._shield_horizon_ms(f):
+        if state in _POST_INTERCEPT_STATES and now_ms >= FiberSupervisor._retention_until_ms(f):
             out = TransitionOutcome(
                 state, HsmEvent.T2_SHIELD_24H_COMPLETED, HsmState.S0_IDLE, accepted=True
             )
@@ -524,6 +546,23 @@ class FiberSupervisor:
                 return f.fiber_key, True
         return fiber_key, False
 
+    def _journey_target(self, fiber_key: str, event: HsmEvent, now_ms: int) -> str:
+        """Tiền về trên khóa chưa có luồng: nếu là E3 hoặc khóa ``default`` (thông báo trên máy
+        không biết app vay nào) → luồng S1/S2 cập nhật gần nhất còn trong cửa sổ hiệu lực."""
+        if fiber_key in self._fibers:
+            return fiber_key
+        if event is not HsmEvent.E3_ANY_ORG_CREDIT_INFLOW and fiber_key != DEFAULT_FIBER_KEY:
+            return fiber_key
+        best: LoanJourneyFiber | None = None
+        for f in self._fibers.values():
+            live, _ = self._expire_one(f, now_ms)
+            if live.state not in (HsmState.S1_LOAN_EXPLORATION, HsmState.S2_CONTRACT_AUDITING):
+                continue
+            rank = (f.updated_at_ms, f.fiber_key)
+            if best is None or rank > (best.updated_at_ms, best.fiber_key):
+                best = f
+        return fiber_key if best is None else best.fiber_key
+
     def arm_disbursement(
         self,
         fiber_key: str,
@@ -539,12 +578,24 @@ class FiberSupervisor:
         S2-EC43: cùng một khoản báo từ 2 nguồn (B2B + thông báo trên máy) → chỉ gộp nguồn + MAX
         hạn Khiên, KHÔNG thêm bằng chứng DISBURSEMENT thứ hai (tránh cộng 2 lần w_disb).
 
-        Trả về ``None`` khi bị từ chối rõ ràng: E3 (tín dụng độ tin cậy thấp) lúc chưa có hành
-        trình vay (S0) — không tạo luồng/Khiên. Giả định: Khiên V2 pre-arm 72h KHÔNG bị rút ngắn
-        về 24h khi tiền về (lấy MAX, lệch spec "72h -> 24h on Credit" theo hướng an toàn)."""
+        Giả định S2-EC43 (chấp nhận theo spec, khóa phiên = (device_id, cửa sổ 30 phút)): hai
+        khoản vay KHÁC nhau báo từ hai nguồn khác nhau trong 30 phút cũng bị gộp — khoản thứ hai
+        không thêm bằng chứng w_disb (Khiên vẫn kéo dài theo MAX). Payload hiện không có số
+        tiền/lender để phân biệt.
+
+        E3/tiền về trên khóa chưa có luồng → chuyển tới luồng S1/S2 gần nhất (``_journey_target``).
+
+        Trả về ``None`` (KẾT QUẢ TƯỜNG MINH, caller BẮT BUỘC xử lý: ghi log cảnh báo + báo động
+        vận hành, không im lặng) khi bị từ chối: E3 (tín dụng độ tin cậy thấp) mà thiết bị không
+        có hành trình vay nào (S1/S2) — không tạo luồng/Khiên.
+
+        Giả định: Khiên V2 pre-arm 72h KHÔNG bị rút ngắn về 24h khi tiền về (lấy MAX, lệch spec
+        "72h -> 24h on Credit" theo hướng an toàn)."""
         if event not in DISBURSEMENT_EVENTS:
             raise ValueError("arm_disbursement chỉ nhận E3/E4/E5")
         target, same = self._race_target(fiber_key, source, now_ms)
+        if not same:
+            target = self._journey_target(target, event, now_ms)
         if same:
             f = self._fibers[target]
             duration = shield_ms if shield_ms is not None else SHIELD_ARM_MS[event]
