@@ -57,7 +57,7 @@ def test_brand_spoof_beats_bnpl(decide: Decide) -> None:
         claimed_lender_name="Shinhan Vay Nhanh",
         special_morphology=SpecialMorphology.BNPL_ILLEGAL_CASHOUT,
     )
-    v = decide(inp, apr(0.3))
+    v = decide(inp, apr(0.3), Provenance(beneficiary_is_personal_account=True))
     assert v.verdict_code is V.V_RED_BRAND_SPOOF
     assert V.V_RED_BNPL_OR_STRAW_SCAM in v.fired_rules
 

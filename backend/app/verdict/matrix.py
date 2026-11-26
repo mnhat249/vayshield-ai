@@ -42,7 +42,12 @@ from app.verdict.inputs import Provenance, SpecialMorphology, VerdictInput
 from app.verdict.interval import AprInterval
 from app.verdict.legal_basis import LEGAL_BASIS_BY_VERDICT, ND_94_2025
 from app.verdict.lookalike import MatchStatus
-from app.verdict.matching import LenderMatch
+from app.verdict.matching import (
+    SIGNAL_DOMAIN_LOOKALIKE,
+    SIGNAL_LEGAL_NAME_LOOKALIKE,
+    SIGNAL_NAME_LOOKALIKE,
+    LenderMatch,
+)
 from app.verdict.messages import Contradiction, fmt_pct, fmt_vnd, reason_text, tts_script
 
 __all__ = [
@@ -243,34 +248,54 @@ def _spoof_signals(
     match: LenderMatch,
     provenance: Provenance,
     interval: AprInterval,
-) -> list[Contradiction]:
-    if match.status is MatchStatus.NONE or match.record is None:
-        return []
-    found: list[Contradiction] = []
-    if match.status is MatchStatus.LOOKALIKE:
-        found.append(
-            Contradiction.BRAND_ENTITY_MISMATCH if match.conflict else Contradiction.LOOKALIKE_BRAND
-        )
+) -> tuple[list[Contradiction], list[Contradiction]]:
+    """Trả ``(tín hiệu nhái, tín hiệu độc lập)``.
+
+    V_RED_BRAND_SPOOF chỉ khi có thương hiệu (EXACT/LOOKALIKE) VÀ ít nhất 1 tín hiệu độc lập: STK
+    nhận tiền cá nhân, chữ ký APK sai, thông báo "tài khoản bị treo", domain nhái (khi thương hiệu
+    đến từ trường khác), xung đột pháp nhân, hoặc cận dưới APR >= 100%/năm. Nhái đơn lẻ → AMBER.
+    Nhái chỉ từ tên pháp nhân mà registry không có ``official_legal_name`` → không bao giờ ĐỎ.
+    """
+    record = match.record
+    if match.status is MatchStatus.NONE or record is None:
+        return [], []
+    lookalike: list[Contradiction] = []
+    if match.status is MatchStatus.LOOKALIKE and not match.conflict:
+        lookalike.append(Contradiction.LOOKALIKE_BRAND)
+    if match.signals & {
+        SIGNAL_DOMAIN_LOOKALIKE,
+        SIGNAL_LEGAL_NAME_LOOKALIKE,
+        SIGNAL_NAME_LOOKALIKE,
+    }:
+        lookalike.append(Contradiction.LOOKALIKE_BRAND)
+
+    independent: list[Contradiction] = []
+    if match.conflict:
+        independent.append(Contradiction.BRAND_ENTITY_MISMATCH)
     if provenance.apk_signature_ok is False:
-        found.append(Contradiction.APK_SIGNATURE_MISMATCH)
+        independent.append(Contradiction.APK_SIGNATURE_MISMATCH)
     if provenance.beneficiary_is_personal_account is True:
-        found.append(Contradiction.PERSONAL_BENEFICIARY_ACCOUNT)
+        independent.append(Contradiction.PERSONAL_BENEFICIARY_ACCOUNT)
     if (
         provenance.account_frozen_notice
         or extraction.upfront_fee_demand.fake_frozen_receipt_claimed
     ):
-        found.append(Contradiction.FAKE_FROZEN_ACCOUNT_NOTICE)
-    # Mâu thuẫn thương hiệu – lãi suất: tên ngân hàng/FinCo nhưng cận dưới >= 100%/năm mà kênh
-    # chưa được xác thực bằng chữ ký APK (chặng 4).
-    if (
-        match.status is MatchStatus.EXACT
-        and match.record.legal_category in _LICENSED_TCTD
-        and provenance.apk_signature_ok is not True
-        and interval.apr_min is not None
-        and interval.apr_min >= CRIMINAL_USURY_FLOOR
+        independent.append(Contradiction.FAKE_FROZEN_ACCOUNT_NOTICE)
+    if SIGNAL_DOMAIN_LOOKALIKE in match.signals and match.source != "DOMAIN":
+        independent.append(Contradiction.LOOKALIKE_DOMAIN)
+    usurious = interval.apr_min is not None and interval.apr_min >= CRIMINAL_USURY_FLOOR
+    # Mâu thuẫn thương hiệu – lãi suất (chặng 4): tên ngân hàng/FinCo (hoặc tên nhái) nhưng cận
+    # dưới >= 100%/năm mà kênh chưa xác thực bằng chữ ký APK.
+    if usurious and (
+        match.status is MatchStatus.LOOKALIKE
+        or (record.legal_category in _LICENSED_TCTD and provenance.apk_signature_ok is not True)
     ):
-        found.append(Contradiction.LICENSED_BRAND_USURIOUS_RATE)
-    return found
+        independent.append(Contradiction.LICENSED_BRAND_USURIOUS_RATE)
+
+    legal_only = match.status is MatchStatus.LOOKALIKE and match.source == "LEGAL"
+    if legal_only and not record.official_legal_name.strip():
+        return lookalike, []  # không có tên pháp nhân chuẩn để đối chiếu → chỉ là tín hiệu
+    return lookalike, independent
 
 
 def _rollover(extraction: VerdictInput) -> RolloverSpiral | None:
@@ -338,10 +363,13 @@ def decide_verdict(
         contradictions.append(Contradiction.COMMODITY_RESALE_USURY)
 
     # Trục 2: nguồn gốc thương hiệu.
-    spoof = _spoof_signals(extraction, lender_match, provenance, interval)
+    lookalike, spoof = _spoof_signals(extraction, lender_match, provenance, interval)
+    contradictions.extend(lookalike)
     if spoof:
         contradictions.extend(spoof)
         fired.add(VerdictCode.V_RED_BRAND_SPOOF)
+    elif lookalike:
+        fired.add(VerdictCode.V_AMBER_INCOMPLETE_DOC)  # nhái đơn lẻ: tín hiệu, tối đa AMBER
 
     # Trục 3 + 4: phân nhóm pháp nhân × khoảng APR.
     path = _lender_path(extraction, lender_match, contradictions)

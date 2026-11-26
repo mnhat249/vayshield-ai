@@ -59,7 +59,6 @@ def test_ec16_exact_official_names_are_not_lookalike(
     ("name", "target"),
     [
         ("Tài chính HomeCredit Quốc Tế", HOME_CREDIT),
-        ("Tín dụng FE Việt", FE_CREDIT),
         ("Shinhan Vay Nhanh", SHINHAN),
         ("H0me Credit", HOME_CREDIT),  # homoglyph số 0
         ("Homе Credit", HOME_CREDIT),  # 'е' Cyrillic
@@ -85,14 +84,20 @@ def test_ec16_unrelated_names_no_match(registry: InMemoryLenderRegistry, name: s
 
 def test_ec16_threshold_is_strict_greater_than_boundary(registry: InMemoryLenderRegistry) -> None:
     """S2-EC16 biên: score == ngưỡng → KHÔNG nhái; nhỉnh hơn → nhái (điều kiện là ``> 0.78``)."""
-    probe = "Homi Kredit"
+    probe = "Home Kredit"
     score = brand_similarity(probe, "Home Credit")
-    assert 0.5 < score < 1.0
-    at = detect_lookalike_brand(probe, registry, threshold=score)
-    assert at.status is not MatchStatus.LOOKALIKE or at.method == "TOKEN_CONTAINMENT"
+    assert 0.78 < score < 1.0
+    assert detect_lookalike_brand(probe, registry, threshold=score).status is MatchStatus.NONE
     just_below = detect_lookalike_brand(probe, registry, threshold=score - 1e-9)
     assert just_below.status is MatchStatus.LOOKALIKE
     assert just_below.record is HOME_CREDIT
+
+
+def test_ec16_short_brand_token_alone_is_not_lookalike(registry: InMemoryLenderRegistry) -> None:
+    """Review vòng 3 mục 5: "Tín dụng FE Việt" / "FE" chỉ trùng token 2 ký tự → không gán nhái
+    (đặc tả S2-EC16 nêu ví dụ này, nhưng lõi 2 ký tự quá dễ trùng — chỉ khớp nguyên vẹn)."""
+    for name in ("Tín dụng FE Việt", "FE", "FE Pay"):
+        assert detect_lookalike_brand(name, registry).status is MatchStatus.NONE
 
 
 def test_ec16_score_just_below_threshold_not_flagged(registry: InMemoryLenderRegistry) -> None:
@@ -205,7 +210,10 @@ def test_ec16_ambiguous_core_shared_by_two_entities_is_not_exact() -> None:
         official_legal_name="Ngân hàng TNHH MTV Shinhan Việt Nam",
     )
     reg = InMemoryLenderRegistry([SHINHAN, bank])
-    assert detect_lookalike_brand("Shinhan Việt Nam", reg).method != "EXACT_CORE"
+    hit = detect_lookalike_brand("Shinhan Việt Nam", reg)
+    # Không có "tài chính"/"finance" → không phải Shinhan Finance; lõi chỉ còn khớp ngân hàng.
+    assert hit.record is not SHINHAN
+    assert hit.status is not MatchStatus.LOOKALIKE
 
 
 _REAL_BANKS = (

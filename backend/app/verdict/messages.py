@@ -21,6 +21,7 @@ class Contradiction(StrEnum):
 
     ADVANCE_FEE_DEMANDED = "ADVANCE_FEE_DEMANDED"
     LOOKALIKE_BRAND = "LOOKALIKE_BRAND"
+    LOOKALIKE_DOMAIN = "LOOKALIKE_DOMAIN"
     BRAND_ENTITY_MISMATCH = "BRAND_ENTITY_MISMATCH"
     APK_SIGNATURE_MISMATCH = "APK_SIGNATURE_MISMATCH"
     PERSONAL_BENEFICIARY_ACCOUNT = "PERSONAL_BENEFICIARY_ACCOUNT"
@@ -63,6 +64,9 @@ _REASONS: Final = MappingProxyType(
         ),
         Contradiction.LOOKALIKE_BRAND: (
             "Tên hoặc địa chỉ web gần giống {brand} nhưng không trùng tên hay tên miền chính thức."
+        ),
+        Contradiction.LOOKALIKE_DOMAIN: (
+            "Địa chỉ web không phải tên miền chính thức của {brand} mà là một tên miền nhái."
         ),
         Contradiction.BRAND_ENTITY_MISMATCH: (
             "Tên thương hiệu và tên công ty trên giấy tờ thuộc hai tổ chức khác nhau."

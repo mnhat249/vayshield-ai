@@ -78,8 +78,12 @@ def test_advance_fee_boundary_fee_deducted_at_source_is_not_advance_fee(decide: 
 # --------------------------------------------------------------- V_RED_BRAND_SPOOF ---
 
 
-def test_brand_spoof_positive_lookalike_name(decide: Decide) -> None:
-    v = decide(VerdictInput(claimed_lender_name="Tài chính HomeCredit Quốc Tế"), apr(0.30))
+def test_brand_spoof_positive_lookalike_name_with_independent_signal(decide: Decide) -> None:
+    v = decide(
+        VerdictInput(claimed_lender_name="Tài chính HomeCredit Quốc Tế"),
+        apr(0.30),
+        Provenance(beneficiary_is_personal_account=True),
+    )
     assert v.verdict_code is V.V_RED_BRAND_SPOOF
     assert v.lookalike_of == "Home Credit"
     assert v.official_hotline_verify == "1900 0001"
@@ -429,3 +433,64 @@ def test_s2_ec16_brand_plus_foreign_suffix_with_personal_account_is_spoof(
     )
     assert v.verdict_code is V.V_RED_BRAND_SPOOF
     assert v.lookalike_of == "Home Credit"
+
+
+def test_brand_spoof_boundary_lookalike_alone_is_only_a_signal(decide: Decide) -> None:
+    """Review vòng 3 mục 3: tên nhái KHÔNG kèm tín hiệu độc lập → không ĐỎ mạo danh; chỉ AMBER
+    (nhánh lãi suất vẫn áp riêng: 30%/năm với bên không phép → CAM ĐẬM)."""
+    inp = VerdictInput(claimed_lender_name="Tài chính HomeCredit Quốc Tế")
+    v = decide(inp, apr(0.10))
+    assert v.verdict_code is V.V_AMBER_INCOMPLETE_DOC
+    assert Contradiction.LOOKALIKE_BRAND in v.contradictions
+    assert V.V_RED_BRAND_SPOOF not in v.fired_rules
+    assert decide(inp, apr(0.30)).verdict_code is V.V_ORANGE_CIVIL_CAP_EXCEEDED
+
+
+@pytest.mark.parametrize(
+    "provenance",
+    [
+        Provenance(beneficiary_is_personal_account=True),
+        Provenance(apk_signature_ok=False),
+        Provenance(account_frozen_notice=True),
+    ],
+)
+def test_brand_spoof_lookalike_plus_each_independent_signal(
+    decide: Decide, provenance: Provenance
+) -> None:
+    v = decide(VerdictInput(claimed_lender_name="Home Credit Official"), apr(0.5), provenance)
+    assert v.verdict_code is V.V_RED_BRAND_SPOOF
+
+
+def test_brand_spoof_lookalike_plus_usury_or_domain(decide: Decide) -> None:
+    assert (
+        decide(VerdictInput(claimed_lender_name="Home Credit Official"), apr(1.2)).verdict_code
+        is V.V_RED_BRAND_SPOOF
+    )
+    inp = VerdictInput(claimed_lender_name="Home Credit Pro", claimed_domain="homecredit-vn.com")
+    v = decide(inp, apr(0.1))
+    assert v.verdict_code is V.V_RED_BRAND_SPOOF
+    assert Contradiction.LOOKALIKE_DOMAIN in v.contradictions
+
+
+def test_legal_name_lookalike_without_registry_legal_name_never_red(decide: Decide) -> None:
+    """Review vòng 3 mục 3: registry thiếu ``official_legal_name`` → token lạ trong tên pháp nhân
+    không kéo lên ĐỎ, kể cả có STK cá nhân (vẫn ghi tín hiệu)."""
+    from app.core.schemas.common import LegalCategory
+    from app.verdict import InMemoryLenderRegistry, LenderRecord, decide_verdict, match_lender
+
+    reg = InMemoryLenderRegistry(
+        [
+            LenderRecord(
+                entity_code="FINCO_HC",
+                legal_category=LegalCategory.LICENSED_FINCO,
+                official_short_name="Home Credit",
+                official_legal_name="",
+            )
+        ]
+    )
+    inp = VerdictInput(claimed_company_legal_name="Home Credit Official Vay")
+    prov = Provenance(beneficiary_is_personal_account=True)
+    m = match_lender(inp, prov, reg)
+    v = decide_verdict(inp, apr(0.1), m, prov)
+    assert v.verdict_code is not V.V_RED_BRAND_SPOOF
+    assert Contradiction.LOOKALIKE_BRAND in v.contradictions

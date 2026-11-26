@@ -8,8 +8,8 @@ theo chu kỳ) TRƯỚC khi nhận request Trạm 2. Chưa nạp → ``active_re
 ``RegistryNotLoadedError``, vì registry rỗng sẽ âm thầm tắt mọi tín hiệu mạo danh (tên Home Credit
 + STK cá nhân sẽ không còn ra V_RED_BRAND_SPOOF). Health/readiness nên báo lỗi khi ``loaded`` sai.
 
-Chưa có cột ``aliases`` trong bảng → ``LenderRecord.aliases`` luôn rỗng. Muốn dùng alias cho
-lookalike cần migration MỚI (task riêng, người duyệt) — không sửa migration đã apply.
+Cột ``aliases`` (TEXT[]) do migration ``0002_seed_support.sql`` (T08) thêm → nạp vào
+``LenderRecord.aliases`` để so khớp tên/nhái (S2-EC16).
 """
 
 from __future__ import annotations
@@ -36,7 +36,7 @@ class RegistryNotLoadedError(RuntimeError):
 _SELECT_ACTIVE: Final = text(
     """
     SELECT id, entity_code, legal_category, official_short_name, official_legal_name,
-           official_domains, official_hotlines, android_packages, sandbox_cap_vnd
+           aliases, official_domains, official_hotlines, android_packages, sandbox_cap_vnd
     FROM licensed_lender_registry
     WHERE is_active
       AND effective_from <= :today
@@ -47,8 +47,8 @@ _SELECT_ACTIVE: Final = text(
 
 
 def _packages(raw: Any) -> tuple[str, ...]:
-    """``android_packages`` JSONB: mảng chuỗi hoặc mảng object ``{"pkg"|"package"|
-    "package_name": ..., "sha256": ...}`` (khớp ``AndroidPackageSig`` của contract)."""
+    """``android_packages`` JSONB: mảng chuỗi hoặc mảng object ``{"pkg"|"package"|"package_name"|
+    "packageName": ..., ...}`` (contract ``AndroidPackageSig`` / seed T08 ``packageName``)."""
     if raw is None:
         return ()
     if isinstance(raw, str | bytes):
@@ -58,7 +58,7 @@ def _packages(raw: Any) -> tuple[str, ...]:
         if isinstance(item, str):
             out.append(item)
         elif isinstance(item, dict):
-            for key in ("pkg", "package", "package_name"):
+            for key in ("pkg", "package", "package_name", "packageName"):
                 value = item.get(key)
                 if isinstance(value, str) and value:
                     out.append(value)
@@ -82,6 +82,7 @@ def record_from_row(row: Mapping[Any, Any]) -> LenderRecord:
         legal_category=LegalCategory(str(row["legal_category"])),
         official_short_name=str(row["official_short_name"]),
         official_legal_name=str(row["official_legal_name"]),
+        aliases=_texts(row.get("aliases")),
         official_domains=_texts(row.get("official_domains")),
         official_hotlines=_texts(row.get("official_hotlines")),
         android_packages=_packages(row.get("android_packages")),

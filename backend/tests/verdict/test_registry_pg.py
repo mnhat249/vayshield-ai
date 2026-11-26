@@ -37,7 +37,7 @@ def test_record_from_row_maps_jsonb_packages_and_arrays() -> None:
     assert rec.legal_category is LegalCategory.LICENSED_FINCO
     assert rec.android_packages == ("vn.x.app", "vn.x.lite")
     assert rec.official_hotlines == ("1900 0009",)
-    assert rec.aliases == ()  # chưa có cột aliases → cần migration mới
+    assert rec.aliases == ()  # dòng không có cột aliases
     assert rec.registry_id is None
 
 
@@ -51,8 +51,22 @@ def test_record_from_row_p2p_cap() -> None:
         "official_hotlines": None,
         "android_packages": [],
         "sandbox_cap_vnd": 100_000_000,
+        "aliases": ["P Lend", None],
     }
-    assert record_from_row(row).p2p_cap_vnd == 100_000_000
+    rec = record_from_row(row)
+    assert rec.p2p_cap_vnd == 100_000_000
+    assert rec.aliases == ("P Lend",)
+
+
+def test_record_from_row_seed_package_name_key() -> None:
+    row: dict[str, object] = {
+        "entity_code": "F",
+        "legal_category": "LICENSED_FINCO",
+        "official_short_name": "F",
+        "official_legal_name": "F",
+        "android_packages": [{"packageName": "vn.f.app", "signingCertSha256": None}],
+    }
+    assert record_from_row(row).android_packages == ("vn.f.app",)
 
 
 def test_record_from_row_maps_registry_id() -> None:
@@ -93,8 +107,10 @@ async def test_pg_registry_reads_active_rows(pg: AsyncEngine, pg_admin: AsyncEng
                 text(
                     "INSERT INTO licensed_lender_registry (entity_code, legal_category,"
                     " official_short_name, official_legal_name, normalized_name, official_domains,"
-                    " official_hotlines, android_packages, is_active) VALUES (:c, 'LICENSED_FINCO',"
-                    " :s, :l, :n, ARRAY['t09demo.vn'], ARRAY['1900 0000'], CAST(:p AS JSONB), :a)"
+                    " official_hotlines, android_packages, is_active, aliases)"
+                    " VALUES (:c, 'LICENSED_FINCO', :s, :l, :n, ARRAY['t09demo.vn'],"
+                    " ARRAY['1900 0000'], CAST(:p AS JSONB), :a,"
+                    " ARRAY['Zq Alias'])"
                 ),
                 {
                     "c": entity,
@@ -113,6 +129,7 @@ async def test_pg_registry_reads_active_rows(pg: AsyncEngine, pg_admin: AsyncEng
         assert rec is not None and rec.android_packages == ("vn.t09.demo",)
         assert rec.registry_id is not None
         assert rec.official_domains == ("t09demo.vn",)
+        assert rec.aliases == ("Zq Alias",)
         assert reg.get(gone) is None
         assert detect_lookalike_brand(rec.official_short_name, reg).status is MatchStatus.EXACT
     finally:

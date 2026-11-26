@@ -133,7 +133,10 @@ def test_s2_ec16_verified_apk_overrides_ocr_typo_in_legal_name(
         claimed_lender_name="Home Credit",
         claimed_company_legal_name="Công ty Tài chính TNHH MTV Home Credlt Việt Nam",
     )
-    assert match_lender(inp, Provenance(), registry).status is MatchStatus.LOOKALIKE
+    # Tên thương hiệu khớp đúng → EXACT; tên pháp nhân lệch chỉ là tín hiệu phụ, không ghi đè.
+    m = match_lender(inp, Provenance(), registry)
+    assert m.status is MatchStatus.EXACT and m.record is HOME_CREDIT
+    assert m.signals  # có tín hiệu nhái phụ
     ok = Provenance(apk_signature_ok=True)
     assert match_lender(inp, ok, registry).status is MatchStatus.EXACT
 
@@ -313,7 +316,11 @@ def _all_verdicts(decide: Decide) -> list[object]:
     ok = Provenance(apk_signature_ok=True)
     return [
         decide(VerdictInput(upfront_fee_demand=UpfrontFeeDemand(demanded=True)), apr(0.1)),
-        decide(VerdictInput(claimed_lender_name="Shinhan Vay Nhanh"), apr(0.3)),
+        decide(
+            VerdictInput(claimed_lender_name="Shinhan Vay Nhanh"),
+            apr(0.3),
+            Provenance(beneficiary_is_personal_account=True),
+        ),
         decide(VerdictInput(special_morphology=SpecialMorphology.BNPL_ILLEGAL_CASHOUT), apr(0.3)),
         decide(VerdictInput(), apr(1.5)),
         decide(VerdictInput(), apr(0.5)),
