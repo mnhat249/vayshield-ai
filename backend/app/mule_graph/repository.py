@@ -34,6 +34,11 @@ from app.mule_graph.models import (
 
 class MuleGraphRepository(Protocol):
     def transaction(self) -> AbstractAsyncContextManager[None]: ...
+    async def lock_scope(self, key: str) -> None:
+        """Khóa tư vấn mức giao dịch theo ``key`` (dải VA hoặc STK) để tuần tự hóa các báo cáo
+        cùng đỉnh/cùng dải — tránh mất cập nhật quorum và deadlock giữa các STK cùng dải."""
+        ...
+
     async def find_node_by_hmacs(self, candidates: Sequence[str]) -> MuleNodeRecord | None: ...
     async def get_node(self, node_id: UUID) -> MuleNodeRecord | None: ...
     async def create_node(self, node: MuleNodeRecord) -> MuleNodeRecord:
@@ -91,6 +96,9 @@ class InMemoryRepository:
             yield
 
     # --- MuleGraphRepository ---
+    async def lock_scope(self, key: str) -> None:
+        return None  # ``transaction()`` đã tuần tự hóa toàn cục
+
     async def find_node_by_hmacs(self, candidates: Sequence[str]) -> MuleNodeRecord | None:
         for node in self.nodes.values():
             if node.account_hmac in candidates:

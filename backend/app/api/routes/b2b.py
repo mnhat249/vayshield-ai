@@ -6,7 +6,8 @@ Idempotency-Key (lưu 48h trên Redis).
 
 Thứ tự: tra đối tác → chữ ký (hằng thời gian) → cửa sổ timestamp 300s → rate limit theo đối tác →
 idempotency + bật Khiên (``B2BShieldService``). Kho dữ liệu (``B2BRepository``) lấy qua dependency
-``get_b2b_repository``; chưa nối PostgreSQL thì trả 503 (không bao giờ chấp nhận không xác thực).
+``get_b2b_repository`` (``SqlB2BRepository``); chưa cấu hình DB/KEK thì trả 503
+(không bao giờ chấp nhận yêu cầu chưa xác thực).
 """
 
 from __future__ import annotations
@@ -18,12 +19,16 @@ from redis.asyncio import Redis
 
 from app.core.auth_headers import PARTNER_TIMESTAMP_HEADER, PartnerCaller
 from app.core.clock import Clock, get_clock
+from app.core.db import get_sessionmaker
 from app.core.errors import AppError, ErrorCode
 from app.core.openapi import error_responses
 from app.core.redis import get_redis
 from app.core.schemas.b2b import DisbursementShieldRequest, DisbursementShieldResponse
 from app.mule_graph.repository import B2BRepository
+from app.mule_graph.repository_pg import SqlB2BRepository
 from app.mule_graph.shield_service import B2BShieldService
+from app.security.envelope import get_envelope_cipher
+from app.security.keys import SecurityConfigError
 from app.security.partner_hmac import verify_partner_request
 from app.security.rate_limit import CompositeRateLimiter
 from app.shield_state.store import ShieldStateStore
@@ -32,8 +37,17 @@ router = APIRouter(prefix="/api/v1/b2b", tags=["b2b"])
 
 
 async def get_b2b_repository() -> B2BRepository:
-    """Chưa nối bản SQL (cần T04) → 503 an toàn. Test ghi đè bằng ``dependency_overrides``."""
-    raise AppError(ErrorCode.SERVICE_DEGRADED, 503, "Kho dữ liệu đối tác chưa được cấu hình.")
+    """Bản PostgreSQL khi có ``DATABASE_URL`` + ``KMS_MASTER_KEK``; thiếu → 503 (fail-closed).
+
+    Test ghi đè bằng ``dependency_overrides`` (bản in-memory)."""
+    sessionmaker = get_sessionmaker()  # 503 nếu chưa cấu hình DB
+    try:
+        cipher = get_envelope_cipher()
+    except SecurityConfigError:
+        raise AppError(
+            ErrorCode.SERVICE_DEGRADED, 503, "Kho dữ liệu đối tác chưa được cấu hình."
+        ) from None
+    return SqlB2BRepository(sessionmaker, cipher)
 
 
 def get_shield_store(redis: Annotated[Redis, Depends(get_redis)]) -> ShieldStateStore:

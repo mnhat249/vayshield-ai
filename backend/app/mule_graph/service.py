@@ -122,6 +122,7 @@ class MuleGraphService:
             else None
         )
         async with self._repo.transaction():
+            await self._repo.lock_scope(va_hmac or lookup.current)
             node = await self._repo.find_node_by_hmacs(lookup.candidates)
             if node is None:
                 node_id = new_uuid7()
