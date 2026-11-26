@@ -58,8 +58,21 @@ def digit_uncertainties(tokens: Sequence[TokenLogprob]) -> list[DigitUncertainty
     in_string = False
     escape = False
     for tok in tokens:
-        if not in_string and _DIGIT_RE.search(tok.token):
-            text_before = "".join(prefix)
+        numeric_at: int | None = None  # vị trí chữ số đầu tiên NẰM NGOÀI chuỗi JSON
+        for pos, ch in enumerate(tok.token):
+            if numeric_at is None and not in_string and _DIGIT_RE.match(ch):
+                numeric_at = pos
+            if in_string:
+                if escape:
+                    escape = False
+                elif ch == "\\":
+                    escape = True
+                elif ch == '"':
+                    in_string = False
+            elif ch == '"':
+                in_string = True
+        if numeric_at is not None:
+            text_before = "".join(prefix) + tok.token[:numeric_at]
             match = _KEY_BEFORE_NUMBER_RE.search(text_before)
             probs = _distribution(tok)
             entropy = -sum(p * math.log2(p) for p in probs if p > 0)
@@ -72,16 +85,6 @@ def digit_uncertainties(tokens: Sequence[TokenLogprob]) -> list[DigitUncertainty
                     entropy_bits=entropy,
                 )
             )
-        for ch in tok.token:
-            if in_string:
-                if escape:
-                    escape = False
-                elif ch == "\\":
-                    escape = True
-                elif ch == '"':
-                    in_string = False
-            elif ch == '"':
-                in_string = True
         prefix.append(tok.token)
     return out
 

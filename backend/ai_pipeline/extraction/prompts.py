@@ -70,7 +70,7 @@ _INJECTION_PATTERNS: tuple[re.Pattern[str], ...] = tuple(
     re.compile(p)
     for p in (
         r"bo qua\s+(?:moi|tat ca|toan bo|cac)?\s*(?:huong dan|chi dan|quy tac|lenh|yeu cau)",
-        r"ignore\s+(?:all|any|previous|prior|the above)?\s*(?:instructions|rules|prompts?)",
+        r"ignore\s+(?:(?:all|any|previous|prior|the|above|earlier)\s+){0,3}(?:instructions|rules|prompts?)",
         r"disregard\s+(?:all|previous|prior)",
         r"tra ve\s+lai suat",
         r"return\s+(?:safe|interest|apr)",
