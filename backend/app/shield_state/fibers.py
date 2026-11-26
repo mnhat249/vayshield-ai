@@ -1,7 +1,19 @@
 """Bộ giám sát đa luồng vay ``FiberSupervisor`` (K = 8) + toán tử join-semilattice (File 2 §2.1).
 
-Thuần (không I/O, không đọc đồng hồ). Lớp Redis (``store.py``) đọc bản ghi → dựng supervisor →
-áp thao tác → ghi lại bằng CAS (EC-DB07).
+Thuần (không I/O, không đọc đồng hồ — ngoại lệ duy nhất: ``_default_session_id`` sinh UUIDv7, xem
+docstring của nó). Lớp Redis (``store.py``) đọc bản ghi → dựng supervisor → áp thao tác → ghi lại
+bằng CAS (EC-DB07).
+
+Quy tắc cấp supervisor (ngoài bảng ``hsm.TRANSITIONS``, đều là giả định an toàn):
+
+- Tiền về (E3/E4/E5) ở S1 → ánh xạ thành E3 (guard 72h); ở S2 → S4 (Khiên 24h, "24h on Credit");
+  ở S0 chỉ E4/E5 được nhận, E3 (tín hiệu tín dụng độ tin cậy thấp, chưa có hành trình vay) bị từ
+  chối rõ ràng — không tạo luồng nửa vời. Ở S3..S9: giữ trạng thái, gia hạn Khiên theo MAX.
+- S8 tự quay về S4 ("Resume remaining watch") khi nhận sự kiện không có trong bảng (vd E6 mở lại
+  app ngân hàng) và Khiên còn hạn. S7/S9 về S4 qua sự kiện tường minh ``A_*`` của caller.
+- ``expire()`` dọn mọi trạng thái: S1 sau 72h (T1); S2 sau 4h không tiến triển; S3 sau cửa sổ 4h
+  → S4 (giữ bằng chứng + Khiên tối thiểu 24h kể từ lúc vào S3, an toàn hơn xóa bỏ); S4 khi hết
+  hạn Khiên (T2); S5..S9 khi hết hạn Khiên (thiếu hạn → 24h kể từ lúc vào trạng thái).
 """
 
 from __future__ import annotations
@@ -15,9 +27,12 @@ from typing import Any, Final
 from app.core.ids import new_uuid7
 from app.core.schemas.common import HsmState, TriggerOrigin
 from app.shield_state.hsm import (
+    GLOBAL_TRANSITIONS,
+    HARD_STOP_BANK_WINDOW_MS,
     SHIELD_ARM_MS,
     SHIELD_DEFAULT_MS,
     STATE_SEVERITY,
+    TRANSITIONS,
     HsmEvent,
     TransitionOutcome,
     join_state,
@@ -41,6 +56,29 @@ K_MAX_FIBERS: Final = 8
 DEFAULT_FIBER_KEY: Final = "default"
 RACE_MERGE_WINDOW_MS: Final = 30 * MINUTE_MS  # S2-EC43: khóa phiên (device_id, time_window_30m)
 MAX_EVIDENCE_PER_FIBER: Final = 32
+AUDIT_IDLE_TTL_MS: Final = HARD_STOP_BANK_WINDOW_MS  # S2 không tiến triển sau 4h → dọn
+# Trạng thái mà tiền về chỉ gia hạn Khiên (không đổi trạng thái).
+_EXTEND_ONLY_STATES: Final = frozenset(
+    {
+        HsmState.S3_ADVANCE_FEE_HARD_STOP,
+        HsmState.S4_SHIELD_ARMED_24H,
+        HsmState.S5_CRITICAL_INTERCEPTION,
+        HsmState.S6_COOLING_OFF_LOCK,
+        HsmState.S7_ESCALATED_SCAM_CONFIRMED,
+        HsmState.S8_SAFE_ROUTINE_TX,
+        HsmState.S9_GOLDEN_HOUR_TRIAGE,
+    }
+)
+# Trạng thái hậu-chặn: dọn khi hết hạn Khiên.
+_POST_INTERCEPT_STATES: Final = frozenset(
+    {
+        HsmState.S5_CRITICAL_INTERCEPTION,
+        HsmState.S6_COOLING_OFF_LOCK,
+        HsmState.S7_ESCALATED_SCAM_CONFIRMED,
+        HsmState.S8_SAFE_ROUTINE_TX,
+        HsmState.S9_GOLDEN_HOUR_TRIAGE,
+    }
+)
 
 
 class EvidenceSource(StrEnum):
@@ -182,6 +220,9 @@ class RiskEvaluation:
 
 
 def _default_session_id() -> str:
+    """Ngoại lệ có chủ đích với quy tắc "không đọc đồng hồ": UUIDv7 nhúng thời gian để sắp xếp
+    khóa phiên, KHÔNG tham gia tính rủi ro/hết hạn (mọi phép tính thời gian dùng ``now_ms``).
+    Code cần tất định (test, replay) truyền ``new_session_id`` vào ``FiberSupervisor``."""
     return str(new_uuid7())
 
 
@@ -287,6 +328,98 @@ class FiberSupervisor:
             victim, dataclasses.replace(fiber, fiber_key=victim.fiber_key)
         )
 
+    @staticmethod
+    def _shield_horizon_ms(f: LoanJourneyFiber) -> int:
+        """Hạn Khiên của luồng; thiếu → 24h kể từ lúc vào trạng thái hiện tại."""
+        if f.shield_expires_at_ms is not None:
+            return f.shield_expires_at_ms
+        return f.entered_at_ms + SHIELD_DEFAULT_MS
+
+    @staticmethod
+    def _expire_one(
+        f: LoanJourneyFiber, now_ms: int
+    ) -> tuple[LoanJourneyFiber, TransitionOutcome | None]:
+        """Áp hết hạn cho MỘT luồng. Trả về luồng mới (state S0 = cần dọn) + outcome nếu có đổi."""
+        state = f.state
+        if state is HsmState.S1_LOAN_EXPLORATION:
+            out = transition(
+                state,
+                HsmEvent.T1_MONOTONIC_TTL_EXPIRED,
+                now_ms=now_ms,
+                entered_at_ms=f.entered_at_ms,
+                shield_expires_at_ms=f.shield_expires_at_ms,
+            )
+            if out.accepted:
+                return dataclasses.replace(f, state=out.to_state, updated_at_ms=now_ms), out
+            return f, None
+        if state is HsmState.S2_CONTRACT_AUDITING:
+            if now_ms - f.entered_at_ms >= AUDIT_IDLE_TTL_MS:
+                out = TransitionOutcome(
+                    state, HsmEvent.T1_MONOTONIC_TTL_EXPIRED, HsmState.S0_IDLE, accepted=True
+                )
+                return dataclasses.replace(f, state=HsmState.S0_IDLE, updated_at_ms=now_ms), out
+            return f, None
+        resumed: TransitionOutcome | None = None
+        if state is HsmState.S3_ADVANCE_FEE_HARD_STOP:
+            if now_ms - f.entered_at_ms <= HARD_STOP_BANK_WINDOW_MS:
+                return f, None
+            # Hết cửa sổ 4h của S3 → S4 (vẫn theo dõi, giữ bằng chứng spoof), Khiên ≥ 24h từ S3.
+            shield = _max_opt(f.shield_expires_at_ms, f.entered_at_ms + SHIELD_DEFAULT_MS)
+            f = dataclasses.replace(
+                f,
+                state=HsmState.S4_SHIELD_ARMED_24H,
+                entered_at_ms=now_ms,
+                updated_at_ms=max(f.updated_at_ms, now_ms),
+                shield_expires_at_ms=shield,
+            )
+            resumed = TransitionOutcome(
+                state, HsmEvent.T1_MONOTONIC_TTL_EXPIRED, f.state, accepted=True
+            )
+            state = f.state
+        if state is HsmState.S4_SHIELD_ARMED_24H:
+            out = transition(
+                state,
+                HsmEvent.T2_SHIELD_24H_COMPLETED,
+                now_ms=now_ms,
+                entered_at_ms=f.entered_at_ms,
+                shield_expires_at_ms=f.shield_expires_at_ms,
+            )
+            if out.accepted:
+                return dataclasses.replace(f, state=out.to_state, updated_at_ms=now_ms), out
+            return f, resumed
+        if state in _POST_INTERCEPT_STATES and now_ms >= FiberSupervisor._shield_horizon_ms(f):
+            out = TransitionOutcome(
+                state, HsmEvent.T2_SHIELD_24H_COMPLETED, HsmState.S0_IDLE, accepted=True
+            )
+            return dataclasses.replace(f, state=HsmState.S0_IDLE, updated_at_ms=now_ms), out
+        return f, None
+
+    @staticmethod
+    def _resume_if_needed(f: LoanJourneyFiber, event: HsmEvent, now_ms: int) -> LoanJourneyFiber:
+        """S8 → S4 ("Resume remaining watch") khi S8 nhận sự kiện không có trong bảng (vd E6 mở
+        lại app ngân hàng, tiền về thêm) và Khiên còn hạn — không để luồng kẹt ở S8."""
+        if f.state is not HsmState.S8_SAFE_ROUTINE_TX:
+            return f
+        if (f.state, event) in TRANSITIONS or event in GLOBAL_TRANSITIONS:
+            return f
+        horizon = FiberSupervisor._shield_horizon_ms(f)
+        if now_ms >= horizon:
+            return f
+        out = transition(
+            f.state,
+            HsmEvent.A_RESUME_REMAINING_WATCH,
+            now_ms=now_ms,
+            entered_at_ms=f.entered_at_ms,
+            shield_expires_at_ms=f.shield_expires_at_ms,
+        )
+        return dataclasses.replace(
+            f,
+            state=out.to_state,
+            entered_at_ms=now_ms,
+            updated_at_ms=max(f.updated_at_ms, now_ms),
+            shield_expires_at_ms=horizon,
+        )
+
     def apply_event(
         self,
         fiber_key: str,
@@ -297,26 +430,33 @@ class FiberSupervisor:
         source: EvidenceSource | None = None,
         shield_ms: int | None = None,
     ) -> TransitionOutcome:
-        fiber = self._fibers.get(fiber_key) or LoanJourneyFiber(
+        fresh = LoanJourneyFiber(
             fiber_key=fiber_key,
-            session_id=self._new_session_id(),
+            session_id=self._new_session_id() if fiber_key not in self._fibers else "",
             state=HsmState.S0_IDLE,
             entered_at_ms=now_ms,
             updated_at_ms=now_ms,
         )
-        out = transition(
-            fiber.state,
-            event,
-            now_ms=now_ms,
-            entered_at_ms=fiber.entered_at_ms,
-            shield_expires_at_ms=fiber.shield_expires_at_ms,
-        )
+        fiber = self._fibers.get(fiber_key)
+        if fiber is not None:
+            fiber, _ = self._expire_one(fiber, now_ms)
+            if fiber.state is HsmState.S0_IDLE:  # hết hạn → bắt đầu hành trình mới, cùng phiên
+                fiber = dataclasses.replace(fresh, session_id=fiber.session_id)
+            fiber = self._resume_if_needed(fiber, event, now_ms)
+        else:
+            fiber = fresh
+
+        out = self._credit_outcome(fiber, event, now_ms)
         evidence = fiber.evidence
         kind = EVENT_EVIDENCE.get(event)
-        if kind is not None:
+        if kind is not None and out.to_state is not HsmState.S0_IDLE:
             evidence = _merge_evidence(evidence, [Evidence(kind, now_ms, event_id)])
         expires = fiber.shield_expires_at_ms
-        if event in DISBURSEMENT_EVENTS or (out.accepted and event in SHIELD_ARM_MS):
+        if event in DISBURSEMENT_EVENTS:
+            if out.to_state in _EXTEND_ONLY_STATES:
+                duration = shield_ms if shield_ms is not None else SHIELD_ARM_MS[event]
+                expires = _max_opt(expires, now_ms + duration)
+        elif out.accepted and event in SHIELD_ARM_MS:
             duration = shield_ms if shield_ms is not None else SHIELD_ARM_MS[event]
             expires = _max_opt(expires, now_ms + duration)
         if out.accepted and out.to_state is HsmState.S4_SHIELD_ARMED_24H and expires is None:
@@ -336,26 +476,53 @@ class FiberSupervisor:
         )
         return out
 
-    def _race_target(self, fiber_key: str, source: EvidenceSource, now_ms: int) -> str:
+    @staticmethod
+    def _credit_outcome(f: LoanJourneyFiber, event: HsmEvent, now_ms: int) -> TransitionOutcome:
+        """Ánh xạ tiền về theo trạng thái hiện tại (xem docstring module); còn lại tra bảng."""
+        if event in DISBURSEMENT_EVENTS:
+            if f.state is HsmState.S1_LOAN_EXPLORATION:
+                event = HsmEvent.E3_ANY_ORG_CREDIT_INFLOW
+            elif f.state is HsmState.S2_CONTRACT_AUDITING:
+                return TransitionOutcome(
+                    f.state, event, HsmState.S4_SHIELD_ARMED_24H, accepted=True
+                )
+        return transition(
+            f.state,
+            event,
+            now_ms=now_ms,
+            entered_at_ms=f.entered_at_ms,
+            shield_expires_at_ms=f.shield_expires_at_ms,
+        )
+
+    @staticmethod
+    def _same_disbursement(f: LoanJourneyFiber, source: EvidenceSource, now_ms: int) -> bool:
+        """S2-EC43: luồng đã có khoản giải ngân ≤ 30 phút từ NGUỒN KHÁC → cùng một khoản tiền."""
+        d = f.latest_disbursement_ms
+        return (
+            d is not None
+            and abs(now_ms - d) <= RACE_MERGE_WINDOW_MS
+            and source not in f.evidence_sources
+        )
+
+    def _race_target(self, fiber_key: str, source: EvidenceSource, now_ms: int) -> tuple[str, bool]:
         """S2-EC43: thông báo trên máy + webhook B2B cho cùng một khoản (≤ 30 phút, khác nguồn,
-        một bên dùng khóa mặc định) → cùng một luồng; khóa cụ thể (không phải default) thắng."""
-        if fiber_key in self._fibers:
-            return fiber_key
+        một bên dùng khóa mặc định) → cùng một luồng; khóa cụ thể (không phải default) thắng.
+        Trả về (khóa luồng đích, có phải cùng một khoản đã ghi nhận hay không)."""
+        cur = self._fibers.get(fiber_key)
+        if cur is not None:
+            return fiber_key, self._same_disbursement(cur, source, now_ms)
         candidates = sorted(self._fibers.values(), key=lambda f: -f.updated_at_ms)
         for f in candidates:
-            d = f.latest_disbursement_ms
-            if (
-                d is not None
-                and abs(now_ms - d) <= RACE_MERGE_WINDOW_MS
-                and source not in f.evidence_sources
-                and DEFAULT_FIBER_KEY in (fiber_key, f.fiber_key)
+            if self._same_disbursement(f, source, now_ms) and DEFAULT_FIBER_KEY in (
+                fiber_key,
+                f.fiber_key,
             ):
                 if f.fiber_key == DEFAULT_FIBER_KEY and fiber_key != DEFAULT_FIBER_KEY:
                     del self._fibers[f.fiber_key]
                     self._fibers[fiber_key] = dataclasses.replace(f, fiber_key=fiber_key)
-                    return fiber_key
-                return f.fiber_key
-        return fiber_key
+                    return fiber_key, True
+                return f.fiber_key, True
+        return fiber_key, False
 
     def arm_disbursement(
         self,
@@ -366,24 +533,41 @@ class FiberSupervisor:
         event_id: str,
         source: EvidenceSource,
         shield_ms: int | None = None,
-    ) -> LoanJourneyFiber:
-        """Tiền về (E3/E4/E5): kích hoạt/gia hạn Khiên theo MAX, gộp nguồn bằng chứng."""
+    ) -> LoanJourneyFiber | None:
+        """Tiền về (E3/E4/E5): kích hoạt/gia hạn Khiên theo MAX, gộp nguồn bằng chứng.
+
+        S2-EC43: cùng một khoản báo từ 2 nguồn (B2B + thông báo trên máy) → chỉ gộp nguồn + MAX
+        hạn Khiên, KHÔNG thêm bằng chứng DISBURSEMENT thứ hai (tránh cộng 2 lần w_disb).
+
+        Trả về ``None`` khi bị từ chối rõ ràng: E3 (tín dụng độ tin cậy thấp) lúc chưa có hành
+        trình vay (S0) — không tạo luồng/Khiên. Giả định: Khiên V2 pre-arm 72h KHÔNG bị rút ngắn
+        về 24h khi tiền về (lấy MAX, lệch spec "72h -> 24h on Credit" theo hướng an toàn)."""
         if event not in DISBURSEMENT_EVENTS:
             raise ValueError("arm_disbursement chỉ nhận E3/E4/E5")
-        target = self._race_target(fiber_key, source, now_ms)
+        target, same = self._race_target(fiber_key, source, now_ms)
+        if same:
+            f = self._fibers[target]
+            duration = shield_ms if shield_ms is not None else SHIELD_ARM_MS[event]
+            merged = dataclasses.replace(
+                f,
+                updated_at_ms=max(f.updated_at_ms, now_ms),
+                shield_expires_at_ms=_max_opt(f.shield_expires_at_ms, now_ms + duration),
+                evidence_sources=f.evidence_sources | {source},
+            )
+            self._fibers[target] = merged
+            return merged
         self.apply_event(
             target, event, now_ms=now_ms, event_id=event_id, source=source, shield_ms=shield_ms
         )
-        fiber = self._fibers.get(target)
-        if fiber is None:  # pragma: no cover - E4/E5 luôn dẫn tới trạng thái ≠ S0
-            raise RuntimeError("luồng giải ngân biến mất")
-        return fiber
+        return self._fibers.get(target)
 
     def broadcast(self, event: HsmEvent, *, now_ms: int) -> list[TransitionOutcome]:
-        """Sự kiện cấp thiết bị (vd E6 mở app ngân hàng): áp lên mọi luồng nhận được nó."""
+        """Sự kiện cấp thiết bị (vd E6 mở app ngân hàng): áp lên mọi luồng nhận được nó.
+        Trước đó dọn luồng hết hạn và đưa S8 còn Khiên về S4 (không bị UNDEFINED)."""
+        self.expire(now_ms)
         outs: list[TransitionOutcome] = []
         for key in sorted(self._fibers):
-            f = self._fibers[key]
+            f = self._resume_if_needed(self._fibers[key], event, now_ms)
             out = transition(
                 f.state,
                 event,
@@ -393,35 +577,21 @@ class FiberSupervisor:
             )
             outs.append(out)
             if out.accepted:
-                self._store(
-                    dataclasses.replace(
-                        f,
-                        state=out.to_state,
-                        entered_at_ms=now_ms if out.changed else f.entered_at_ms,
-                        updated_at_ms=max(f.updated_at_ms, now_ms),
-                    )
+                f = dataclasses.replace(
+                    f,
+                    state=out.to_state,
+                    entered_at_ms=now_ms if out.changed else f.entered_at_ms,
+                    updated_at_ms=max(f.updated_at_ms, now_ms),
                 )
+            self._store(f)
         return outs
 
     def expire(self, now_ms: int) -> list[TransitionOutcome]:
-        """T1 (S1 quá 72h) và T2 (S4 hết hạn Khiên) → S0 → loại khỏi tập."""
+        """Dọn/hết hạn mọi luồng (quy tắc ở docstring module); luồng về S0 bị loại khỏi tập."""
         outs: list[TransitionOutcome] = []
         for key in sorted(self._fibers):
-            f = self._fibers[key]
-            if f.state is HsmState.S1_LOAN_EXPLORATION:
-                ev = HsmEvent.T1_MONOTONIC_TTL_EXPIRED
-            elif f.state is HsmState.S4_SHIELD_ARMED_24H:
-                ev = HsmEvent.T2_SHIELD_24H_COMPLETED
-            else:
-                continue
-            out = transition(
-                f.state,
-                ev,
-                now_ms=now_ms,
-                entered_at_ms=f.entered_at_ms,
-                shield_expires_at_ms=f.shield_expires_at_ms,
-            )
-            if out.accepted:
+            f, out = self._expire_one(self._fibers[key], now_ms)
+            if out is not None:
                 outs.append(out)
-                self._store(dataclasses.replace(f, state=out.to_state, updated_at_ms=now_ms))
+                self._store(f)
         return outs

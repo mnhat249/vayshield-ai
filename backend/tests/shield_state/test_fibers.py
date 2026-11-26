@@ -6,6 +6,10 @@ import itertools
 import math
 
 import pytest
+from hypothesis import given
+from hypothesis import strategies as st
+
+from app.core.schemas.common import HsmState
 from app.shield_state.fibers import (
     DEFAULT_FIBER_KEY,
     K_MAX_FIBERS,
@@ -15,10 +19,6 @@ from app.shield_state.fibers import (
     LoanJourneyFiber,
     join_fibers,
 )
-from hypothesis import given
-from hypothesis import strategies as st
-
-from app.core.schemas.common import HsmState
 from app.shield_state.hsm import HsmEvent
 from app.shield_state.risk import (
     HOUR_MS,
@@ -326,3 +326,277 @@ def test_join_rejects_different_keys() -> None:
     a = LoanJourneyFiber("a", "s", S.S0_IDLE, 0, 0)
     with pytest.raises(ValueError, match="fiber_key"):
         join_fibers(a, LoanJourneyFiber("b", "s", S.S0_IDLE, 0, 0))
+
+
+# --- Review fixes: S2-EC43 không cộng 2 lần, S8 resume, expire mọi trạng thái, tiền về ở S1/S2 ----
+
+
+def test_ec43_b2b_then_edge_notif_counts_disbursement_once() -> None:
+    """S2-EC43: webhook B2B (khóa cụ thể) rồi thông báo trên máy (default) cho CÙNG một khoản →
+    1 bằng chứng, L = −3.5 + 2.8 = −0.7, P ≈ 33.2% → Cam nhờ sàn 120 phút vàng (không phải Đỏ)."""
+    sup = make_sup()
+    sup.arm_disbursement(
+        "loan-A",
+        E.E5_B2B_WEBHOOK,
+        now_ms=T0,
+        event_id="b2b-1",
+        source=EvidenceSource.B2B_CONFIRMED,
+    )
+    merged = sup.arm_disbursement(
+        DEFAULT_FIBER_KEY,
+        E.E4_HIGH_CONF_DISBURSEMENT_NOTIF,
+        now_ms=T0 + 1000,
+        event_id="notif-1",
+        source=EvidenceSource.EDGE_NOTIF,
+    )
+    assert merged is not None and merged.fiber_key == "loan-A"
+    assert len(sup.fibers) == 1
+    f = sup.fibers[0]
+    assert [e.event_id for e in f.evidence] == ["b2b-1"]
+    assert f.evidence_sources == {EvidenceSource.B2B_CONFIRMED, EvidenceSource.EDGE_NOTIF}
+    assert f.shield_expires_at_ms == T0 + 1000 + 24 * HOUR_MS  # MAX
+    ev = sup.evaluate(T0 + 2000, SensorContext())
+    assert ev.log_odds == pytest.approx(-0.7)
+    assert ev.probability == pytest.approx(1 / (1 + math.exp(0.7)))
+    assert round(ev.probability * 100, 1) == 33.2
+    assert ev.tier is RiskTier.ORANGE_SOFT_CHECK
+
+
+def test_ec43_notif_then_b2b_counts_once_and_takes_max_expiry() -> None:
+    sup = make_sup()
+    sup.arm_disbursement(
+        DEFAULT_FIBER_KEY,
+        E.E4_HIGH_CONF_DISBURSEMENT_NOTIF,
+        now_ms=T0,
+        event_id="n",
+        source=EvidenceSource.EDGE_NOTIF,
+    )
+    sup.arm_disbursement(
+        "p:l",
+        E.E5_B2B_WEBHOOK,
+        now_ms=T0 + 500,
+        event_id="b",
+        source=EvidenceSource.B2B_CONFIRMED,
+        shield_ms=48 * HOUR_MS,
+    )
+    f = sup.fibers[0]
+    assert len(f.evidence) == 1
+    assert f.shield_expires_at_ms == T0 + 500 + 48 * HOUR_MS
+    assert sup.base_log_odds(T0 + 600) == pytest.approx(-0.7)
+
+
+def test_same_source_second_disbursement_still_counts() -> None:
+    """Hai thông báo cùng nguồn = hai khoản khác nhau (khử trùng do idempotency 10m lo)."""
+    sup = make_sup()
+    for i in range(2):
+        sup.arm_disbursement(
+            DEFAULT_FIBER_KEY,
+            E.E4_HIGH_CONF_DISBURSEMENT_NOTIF,
+            now_ms=T0 + i,
+            event_id=f"n{i}",
+            source=EvidenceSource.EDGE_NOTIF,
+        )
+    assert len(sup.fibers[0].evidence) == 2
+
+
+def _to_s8(sup: FiberSupervisor) -> None:
+    sup.arm_disbursement(
+        "y",
+        E.E4_HIGH_CONF_DISBURSEMENT_NOTIF,
+        now_ms=T0,
+        event_id="d",
+        source=EvidenceSource.EDGE_NOTIF,
+    )
+    sup.broadcast(E.E6_BANKING_OR_WALLET_OPENED, now_ms=T0 + 10)
+    out = sup.apply_event("y", E.G2_NO_CALL_AND_SAFE_DECLARATION, now_ms=T0 + 20, event_id="g2")
+    assert out.accepted and out.to_state is S.S8_SAFE_ROUTINE_TX
+
+
+def test_s8_reopen_bank_resumes_watch_and_intercepts() -> None:
+    """S4→E6→S5→G2→S8; mở lại app ngân hàng: S8 resume về S4 rồi E6 → S5 (không UNDEFINED)."""
+    sup = make_sup()
+    _to_s8(sup)
+    outs = sup.broadcast(E.E6_BANKING_OR_WALLET_OPENED, now_ms=T0 + 30)
+    assert len(outs) == 1 and outs[0].accepted and outs[0].rejection is None
+    assert outs[0].from_state is S.S4_SHIELD_ARMED_24H
+    f = sup.get("y")
+    assert f is not None and f.state is S.S5_CRITICAL_INTERCEPTION
+    assert f.shield_expires_at_ms == T0 + 24 * HOUR_MS  # hạn Khiên giữ nguyên
+
+
+def test_s8_apply_event_e6_also_resumes() -> None:
+    sup = make_sup()
+    _to_s8(sup)
+    out = sup.apply_event("y", E.E6_BANKING_OR_WALLET_OPENED, now_ms=T0 + 30, event_id="o")
+    assert out.accepted and out.to_state is S.S5_CRITICAL_INTERCEPTION
+
+
+def test_s8_is_cleaned_after_shield_expiry_25h() -> None:
+    sup = make_sup()
+    _to_s8(sup)
+    outs = sup.expire(T0 + 25 * HOUR_MS)
+    assert [o.to_state for o in outs] == [S.S0_IDLE]
+    assert sup.fibers == ()
+
+
+def test_s8_reopen_after_expiry_does_not_resume() -> None:
+    sup = make_sup()
+    _to_s8(sup)
+    outs = sup.broadcast(E.E6_BANKING_OR_WALLET_OPENED, now_ms=T0 + 25 * HOUR_MS)
+    assert outs == [] and sup.fibers == ()
+
+
+@pytest.mark.parametrize(
+    ("event", "state"),
+    [
+        (E.A_MAX_ALERT_RESCUE_LOGGED, S.S7_ESCALATED_SCAM_CONFIRMED),
+        (E.A_TRIAGE_ACTIONS_DONE, S.S9_GOLDEN_HOUR_TRIAGE),
+    ],
+)
+def test_s7_s9_return_to_s4_via_explicit_action(event: HsmEvent, state: HsmState) -> None:
+    sup = make_sup()
+    sup.arm_disbursement(
+        "z",
+        E.E4_HIGH_CONF_DISBURSEMENT_NOTIF,
+        now_ms=T0,
+        event_id="d",
+        source=EvidenceSource.EDGE_NOTIF,
+    )
+    sup.broadcast(E.E6_BANKING_OR_WALLET_OPENED, now_ms=T0 + 1)
+    sup.apply_event("z", E.G1_CALL_OR_SCREENSHARE_OR_HIGH_RISK, now_ms=T0 + 2, event_id="g1")
+    if state is S.S7_ESCALATED_SCAM_CONFIRMED:
+        sup.apply_event("z", E.E7_COERCION_DETECTED, now_ms=T0 + 3, event_id="e7")
+    else:
+        sup.apply_event("z", E.E11_USER_ALREADY_TRANSFERRED, now_ms=T0 + 3, event_id="e11")
+    f = sup.get("z")
+    assert f is not None and f.state is state
+    out = sup.apply_event("z", event, now_ms=T0 + 4, event_id="a")
+    assert out.accepted and out.to_state is S.S4_SHIELD_ARMED_24H
+
+
+@pytest.mark.parametrize(
+    "state",
+    [
+        S.S5_CRITICAL_INTERCEPTION,
+        S.S6_COOLING_OFF_LOCK,
+        S.S7_ESCALATED_SCAM_CONFIRMED,
+        S.S9_GOLDEN_HOUR_TRIAGE,
+    ],
+)
+def test_post_intercept_states_expire_with_shield(state: HsmState) -> None:
+    f = LoanJourneyFiber("k", "s", state, T0, T0, shield_expires_at_ms=T0 + 24 * HOUR_MS)
+    sup = FiberSupervisor([f])
+    assert sup.expire(T0 + 24 * HOUR_MS - 1) == []
+    sup.expire(T0 + 24 * HOUR_MS)
+    assert sup.fibers == ()
+
+
+def test_s9_without_shield_expires_24h_after_entering() -> None:
+    sup = FiberSupervisor([LoanJourneyFiber("k", "s", S.S9_GOLDEN_HOUR_TRIAGE, T0, T0)])
+    sup.expire(T0 + 24 * HOUR_MS - 1)
+    assert len(sup.fibers) == 1
+    sup.expire(T0 + 24 * HOUR_MS)
+    assert list(sup.fibers) == []
+
+
+def test_s2_without_progress_is_cleaned_after_4h() -> None:
+    sup = make_sup()
+    sup.apply_event("x", E.E2_IMAGE_OR_VOICE_TERMS_SUBMITTED, now_ms=T0, event_id="e2")
+    sup.expire(T0 + 4 * HOUR_MS - 1)
+    assert len(sup.fibers) == 1
+    sup.expire(T0 + 4 * HOUR_MS)
+    assert list(sup.fibers) == []
+
+
+def test_s3_after_4h_window_resumes_s4_keeps_evidence_then_bank_open_intercepts() -> None:
+    """S3 hết cửa sổ 4h không bị kẹt: về S4 (giữ bằng chứng spoof, Khiên ≥ 24h từ lúc vào S3),
+    mở app ngân hàng sau đó vẫn bị chặn (S5)."""
+    sup = make_sup()
+    sup.apply_event("x", E.E2_IMAGE_OR_VOICE_TERMS_SUBMITTED, now_ms=T0, event_id="e2")
+    sup.apply_event("x", E.V1_UPFRONT_FEE_OR_BRAND_SPOOF_OR_BNPL_CASHOUT, now_ms=T0, event_id="v1")
+    sup.expire(T0 + 5 * HOUR_MS)
+    f = sup.get("x")
+    assert f is not None and f.state is S.S4_SHIELD_ARMED_24H
+    assert f.shield_expires_at_ms == T0 + 24 * HOUR_MS
+    assert [e.event_id for e in f.evidence] == ["v1"]
+    outs = sup.broadcast(E.E6_BANKING_OR_WALLET_OPENED, now_ms=T0 + 6 * HOUR_MS)
+    assert outs[0].accepted and outs[0].to_state is S.S5_CRITICAL_INTERCEPTION
+    sup.expire(T0 + 24 * HOUR_MS)
+    assert sup.fibers == ()
+
+
+def test_k8_slots_freed_by_expiry_of_stuck_states() -> None:
+    sup = make_sup()
+    for i in range(K_MAX_FIBERS):
+        sup.apply_event(f"a{i}", E.E2_IMAGE_OR_VOICE_TERMS_SUBMITTED, now_ms=T0, event_id=f"{i}")
+    assert len(sup.fibers) == K_MAX_FIBERS
+    sup.expire(T0 + 5 * HOUR_MS)
+    assert list(sup.fibers) == []
+
+
+@pytest.mark.parametrize(
+    "event",
+    [E.E3_ANY_ORG_CREDIT_INFLOW, E.E4_HIGH_CONF_DISBURSEMENT_NOTIF, E.E5_B2B_WEBHOOK],
+)
+def test_credit_in_s1_arms_shield(event: HsmEvent) -> None:
+    sup = make_sup()
+    sup.apply_event("x", E.E1_APK_INSTALLED, now_ms=T0, event_id="apk")
+    f = sup.arm_disbursement(
+        "x", event, now_ms=T0 + HOUR_MS, event_id="d", source=EvidenceSource.EDGE_NOTIF
+    )
+    assert f is not None and f.state is S.S4_SHIELD_ARMED_24H
+    assert f.shield_expires_at_ms == T0 + HOUR_MS + 24 * HOUR_MS
+
+
+@pytest.mark.parametrize(
+    "event",
+    [E.E3_ANY_ORG_CREDIT_INFLOW, E.E4_HIGH_CONF_DISBURSEMENT_NOTIF, E.E5_B2B_WEBHOOK],
+)
+def test_credit_in_s2_arms_shield_and_bank_open_intercepts(event: HsmEvent) -> None:
+    sup = make_sup()
+    sup.apply_event("x", E.E2_IMAGE_OR_VOICE_TERMS_SUBMITTED, now_ms=T0, event_id="e2")
+    f = sup.arm_disbursement(
+        "x", event, now_ms=T0 + 1000, event_id="d", source=EvidenceSource.EDGE_NOTIF
+    )
+    assert f is not None and f.state is S.S4_SHIELD_ARMED_24H
+    assert f.shield_expires_at_ms == T0 + 1000 + 24 * HOUR_MS
+    outs = sup.broadcast(E.E6_BANKING_OR_WALLET_OPENED, now_ms=T0 + 2000)
+    assert outs[0].accepted and outs[0].to_state is S.S5_CRITICAL_INTERCEPTION
+
+
+def test_s1_credit_after_72h_starts_fresh_journey_not_half_state() -> None:
+    sup = make_sup()
+    sup.apply_event("x", E.E1_APK_INSTALLED, now_ms=T0, event_id="apk")
+    f = sup.arm_disbursement(
+        "x",
+        E.E4_HIGH_CONF_DISBURSEMENT_NOTIF,
+        now_ms=T0 + 73 * HOUR_MS,
+        event_id="d",
+        source=EvidenceSource.EDGE_NOTIF,
+    )
+    assert f is not None and f.state is S.S4_SHIELD_ARMED_24H
+    assert f.shield_expires_at_ms == T0 + 73 * HOUR_MS + 24 * HOUR_MS
+
+
+def test_low_confidence_credit_without_journey_is_rejected_explicitly() -> None:
+    sup = make_sup()
+    f = sup.arm_disbursement(
+        "x", E.E3_ANY_ORG_CREDIT_INFLOW, now_ms=T0, event_id="d", source=EvidenceSource.EDGE_NOTIF
+    )
+    assert f is None and sup.fibers == ()
+
+
+def test_v2_prearm_72h_not_shortened_by_credit_assumption() -> None:
+    """Giả định (lệch spec "Pre-arm 72h -> 24h on Credit" theo hướng an toàn): V2 pre-arm 72h,
+    tiền về tại t0+1h → hạn Khiên vẫn là t0+72h (MAX), không rút về t0+1h+24h."""
+    sup = make_sup()
+    sup.apply_event("k", E.E2_IMAGE_OR_VOICE_TERMS_SUBMITTED, now_ms=T0, event_id="1")
+    sup.apply_event("k", E.V2_LOAN_TERMS_EXTRACTED, now_ms=T0, event_id="2")
+    f = sup.arm_disbursement(
+        "k",
+        E.E4_HIGH_CONF_DISBURSEMENT_NOTIF,
+        now_ms=T0 + HOUR_MS,
+        event_id="3",
+        source=EvidenceSource.EDGE_NOTIF,
+    )
+    assert f is not None and f.shield_expires_at_ms == T0 + 72 * HOUR_MS

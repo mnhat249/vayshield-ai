@@ -1,4 +1,10 @@
-"""Keyspace Redis ``vs:*`` + TTL (File 4 §3.1) và nạp script Lua."""
+"""Keyspace Redis ``vs:*`` + TTL (File 4 §3.1) và nạp script Lua.
+
+Redis Cluster: ``atomic_smurf_and_risk_eval.lua`` chạm 2 khóa (``vs:smurf:win:{session_id}`` và
+``vs:shield:state:{device_id}``) nên trên Cluster phải cùng slot. Giữ nguyên tên khóa theo đặc tả
+(Redis đơn/Memorystore Standard); nếu chuyển sang Cluster thì bọc phần chung bằng hash tag, vd
+``vs:shield:state:{<device_id>}`` và ``vs:smurf:win:{<device_id>}:<session_id>``.
+"""
 
 from __future__ import annotations
 

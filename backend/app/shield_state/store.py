@@ -7,6 +7,11 @@
   ``protection_sessions``, do tầng repository cung cấp); không có/lỗi → trạng thái an toàn
   (``S4_SHIELD_ARMED_24H``, ``degraded=True``) — thà hỏi lại 1 chạm còn hơn bỏ lọt.
 - Cache miss (Redis khởi động lại, mất dữ liệu) → read-through fallback + tái nạp cache.
+- Phân biệt "PG không có dữ liệu" (``None``) với "PG lỗi/timeout" (``_FallbackUnavailableError``):
+  PG lỗi thì KHÔNG BAO GIỜ coi như rỗng — ``load`` trả ``SAFE_DEFAULT`` (``degraded=True``, sàn
+  Mức Cam khi đánh giá) và ``mutate`` trả 503 không ghi (không đầu độc cache bằng ``[]``).
+- HASH không lưu ``last_call_end_ts`` (File 4 §3.1): thiết bị tự tính dư chấn 180s và gửi
+  ``AudioCallState.ENDED_WITHIN_180S`` → Ψ = 1.9 truyền vào Lua qua ``call_synergy_weight``.
 
 Thời gian luôn do caller truyền (``now_ms`` epoch ms từ ``Clock.now()``), không đọc đồng hồ ở đây.
 """
@@ -90,6 +95,10 @@ class _RedisDownError(Exception):
     pass
 
 
+class _FallbackUnavailableError(Exception):
+    """Nguồn dự phòng (PG) lỗi/timeout — khác với "không có dữ liệu"."""
+
+
 def _encode(sup: FiberSupervisor, now_ms: int) -> dict[str, str]:
     fibers = [f.to_dict() for f in sup.fibers]
     base = sup.base_log_odds(now_ms)
@@ -164,14 +173,36 @@ class ShieldStateStore:
         return int(res)
 
     async def _read_fallback(self, device_id: str) -> tuple[LoanJourneyFiber, ...] | None:
+        """``None`` = không cấu hình fallback hoặc PG không có dữ liệu. PG lỗi/timeout → ném
+        ``_FallbackUnavailableError`` (caller phải xử lý an toàn, không coi là rỗng)."""
         if self._fallback is None:
             return None
         try:
             async with asyncio.timeout(self._fallback_timeout_s):
                 fibers = await self._fallback(device_id)
-        except Exception:  # fallback lỗi không được làm sập luồng bảo vệ
-            return None
+        except Exception as exc:  # mọi lỗi PG → "không khả dụng", không làm sập luồng bảo vệ
+            raise _FallbackUnavailableError from exc
         return None if fibers is None else tuple(fibers)
+
+    @staticmethod
+    def _safe_default(device_id: str) -> DeviceShieldSnapshot:
+        return DeviceShieldSnapshot(
+            device_id=device_id,
+            fibers=(),
+            version=0,
+            state=SAFE_DEFAULT_STATE,
+            shield_expires_at_ms=None,
+            source=SnapshotSource.SAFE_DEFAULT,
+            degraded=True,
+        )
+
+    @staticmethod
+    def _degraded_error() -> AppError:
+        return AppError(
+            ErrorCode.SERVICE_DEGRADED,
+            503,
+            "Bộ nhớ trạng thái Khiên tạm thời gián đoạn, vui lòng thử lại.",
+        )
 
     @staticmethod
     def _snapshot(
@@ -198,23 +229,22 @@ class ShieldStateStore:
         try:
             raw = await self._read_raw(device_id)
         except _RedisDownError:
-            fb = await self._read_fallback(device_id)
+            try:
+                fb = await self._read_fallback(device_id)
+            except _FallbackUnavailableError:
+                return self._safe_default(device_id)
             if fb is not None:
                 return self._snapshot(device_id, fb, 0, SnapshotSource.PG_FALLBACK, degraded=True)
-            return DeviceShieldSnapshot(
-                device_id=device_id,
-                fibers=(),
-                version=0,
-                state=SAFE_DEFAULT_STATE,
-                shield_expires_at_ms=None,
-                source=SnapshotSource.SAFE_DEFAULT,
-                degraded=True,
-            )
+            return self._safe_default(device_id)
         version = int(raw.get("version") or 0)
         fibers = _decode_fibers(raw)
         if fibers is not None:
             return self._snapshot(device_id, fibers, version, SnapshotSource.REDIS)
-        fb = await self._read_fallback(device_id)
+        try:
+            fb = await self._read_fallback(device_id)
+        except _FallbackUnavailableError:
+            # Redis sống nhưng mất khóa + PG lỗi: KHÔNG được coi là "không có Khiên" (fail-open).
+            return self._safe_default(device_id)
         if fb is None:
             return self._snapshot(device_id, (), version, SnapshotSource.EMPTY)
         # Read-through: tái nạp cache (best-effort; xung đột/lỗi thì lần sau nạp lại).
@@ -234,26 +264,22 @@ class ShieldStateStore:
             try:
                 raw = await self._read_raw(device_id)
             except _RedisDownError as exc:
-                raise AppError(
-                    ErrorCode.SERVICE_DEGRADED,
-                    503,
-                    "Bộ nhớ trạng thái Khiên tạm thời gián đoạn, vui lòng thử lại.",
-                ) from exc
+                raise self._degraded_error() from exc
             version = int(raw.get("version") or 0)
             fibers = _decode_fibers(raw)
             if fibers is None:
-                fibers = await self._read_fallback(device_id) or ()
+                try:
+                    fibers = await self._read_fallback(device_id) or ()
+                except _FallbackUnavailableError as exc:
+                    # Không ghi: ghi "[]" sẽ đầu độc cache và làm mất Khiên đang có trong PG.
+                    raise self._degraded_error() from exc
             sup = FiberSupervisor(fibers)
             sup.expire(now_ms)
             result = op(sup)
             try:
                 new_version = await self._cas_write(device_id, version, sup, now_ms)
             except _RedisDownError as exc:
-                raise AppError(
-                    ErrorCode.SERVICE_DEGRADED,
-                    503,
-                    "Bộ nhớ trạng thái Khiên tạm thời gián đoạn, vui lòng thử lại.",
-                ) from exc
+                raise self._degraded_error() from exc
             if new_version >= 0:
                 return (
                     self._snapshot(device_id, sup.fibers, new_version, SnapshotSource.REDIS),
@@ -290,7 +316,8 @@ class ShieldStateStore:
         event_id: str,
         source: EvidenceSource,
         shield_ms: int | None = None,
-    ) -> tuple[DeviceShieldSnapshot, LoanJourneyFiber]:
+    ) -> tuple[DeviceShieldSnapshot, LoanJourneyFiber | None]:
+        """``None`` ở vị trí 2 = tiền về bị từ chối rõ ràng (E3 khi chưa có hành trình vay)."""
         return await self.mutate(
             device_id,
             now_ms,
@@ -315,7 +342,11 @@ class ShieldStateStore:
         sensors: SensorContext,
     ) -> BankOpenEvaluation:
         """Ψ/Ξ/Ω + cửa sổ smurf 15 phút tính trong Lua; phần nền tính từ các luồng tại ``now_ms``.
-        ``sensors.bank_open_count_15m`` bị bỏ qua (Redis là nguồn đếm)."""
+        ``sensors.bank_open_count_15m`` bị bỏ qua (Redis là nguồn đếm).
+
+        Chống TOCTOU: nền được tính từ snapshot phiên bản ``v``; Lua chỉ dùng nền đó nếu HASH vẫn ở
+        phiên bản ``v``, ngược lại dùng ``base_log_odds`` mới hơn do bên ghi CAS vừa lưu. Lua
+        không ghi đè ``base_log_odds`` (trường đó chỉ do CAS sở hữu)."""
         snap = await self.load(device_id, now_ms)
         sup = FiberSupervisor(snap.fibers)
         sup.expire(now_ms)
@@ -344,6 +375,7 @@ class ShieldStateStore:
                         repr(proj),
                         repr(base),
                         shield_state_ttl_ms(now_ms, sup.shield_expires_at_ms()),
+                        snap.version,
                     ],
                 )
         except (TimeoutError, RedisError, OSError):

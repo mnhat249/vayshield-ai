@@ -77,7 +77,18 @@ async def test_extension_args_proj_and_fresh_base(redis: Redis) -> None:
     await redis.hset(shield_state_key("d"), mapping={"base_log_odds": "-3.5"})
     _, _, total = await _run(redis, "s", "d", NOW, "o1", "0.0", "4.5", "-0.7")
     assert float(total) == pytest.approx(3.8)
-    assert await redis.hget(shield_state_key("d"), "base_log_odds") == "-0.7"
+    # Lua không ghi đè base_log_odds (trường chỉ do CAS sở hữu — chống TOCTOU).
+    assert await redis.hget(shield_state_key("d"), "base_log_odds") == "-3.5"
+
+
+async def test_toctou_stale_base_ignored_when_version_moved(redis: Redis) -> None:
+    """Nền ARGV[5] tính từ phiên bản 3, nhưng CAS đã ghi phiên bản 4 (nền mới −0.7) chen giữa →
+    Lua dùng nền mới trong HASH."""
+    await redis.hset(shield_state_key("d"), mapping={"base_log_odds": "-0.7", "version": "4"})
+    _, _, stale = await _run(redis, "s", "d", NOW, "o1", "0.0", "0.0", "-3.5", "86400000", "3")
+    assert float(stale) == pytest.approx(-0.7)
+    _, _, fresh = await _run(redis, "s2", "d", NOW, "o1", "0.0", "0.0", "-3.5", "86400000", "4")
+    assert float(fresh) == pytest.approx(-3.5)
 
 
 @pytest.mark.redis_real

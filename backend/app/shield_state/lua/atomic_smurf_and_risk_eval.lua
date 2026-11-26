@@ -7,8 +7,11 @@
 -- ARGV[2]: event_uuid (ZADD lại cùng id = idempotent, không đếm trùng)
 -- ARGV[3]: call_synergy_weight (3.8 đang gọi, 1.9 cúp máy <= 180s, 0.0 còn lại)
 -- ARGV[4]: (mở rộng, tùy chọn) proj_weight Xi_proj (4.5 khi chia sẻ màn hình / điều khiển từ xa)
--- ARGV[5]: (mở rộng, tùy chọn) base_log_odds mới tính tại now (ghi đè giá trị cũ trong HASH)
+-- ARGV[5]: (mở rộng, tùy chọn) base_log_odds tính tại now từ snapshot phiên bản ARGV[7]
+--          (KHÔNG ghi vào HASH: trường base_log_odds chỉ do cas_write_state.lua sở hữu)
 -- ARGV[6]: (mở rộng, tùy chọn) TTL ms cho HASH nếu khóa chưa có TTL (mặc định 24h)
+-- ARGV[7]: (mở rộng, tùy chọn) phiên bản HASH mà ARGV[5] được tính từ đó. Nếu HASH đã sang
+--          phiên bản khác (CAS ghi chen giữa) → bỏ ARGV[5], dùng base_log_odds mới trong HASH.
 -- Trả về: {prob (chuỗi), open_count_15m (số nguyên), total_log_odds (chuỗi)}
 
 local win_key = KEYS[1]
@@ -24,12 +27,19 @@ redis.call('PEXPIRE', win_key, window_ms)
 
 local open_count_15m = redis.call('ZCARD', win_key)
 
-local base_log_odds
+local base_log_odds = nil
 if ARGV[5] ~= nil and ARGV[5] ~= '' then
-    base_log_odds = tonumber(ARGV[5])
-    redis.call('HSET', state_key, 'base_log_odds', ARGV[5])
-else
-    base_log_odds = tonumber(redis.call('HGET', state_key, 'base_log_odds') or '-3.5')
+    local fresh = true
+    if ARGV[7] ~= nil and ARGV[7] ~= '' then
+        local current = tonumber(redis.call('HGET', state_key, 'version') or '0') or 0
+        fresh = (current == tonumber(ARGV[7]))
+    end
+    if fresh then
+        base_log_odds = tonumber(ARGV[5])
+    end
+end
+if base_log_odds == nil then
+    base_log_odds = tonumber(redis.call('HGET', state_key, 'base_log_odds') or '-3.5') or -3.5
 end
 
 local synergy = tonumber(ARGV[3]) or 0.0

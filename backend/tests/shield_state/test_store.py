@@ -11,11 +11,11 @@ from redis.asyncio import Redis
 
 from app.core.errors import AppError
 from app.core.schemas.common import HsmState
-from app.shield_state.fibers import EvidenceSource, LoanJourneyFiber
+from app.shield_state.fibers import EvidenceSource, FiberSupervisor, LoanJourneyFiber
 from app.shield_state.hsm import HsmEvent
 from app.shield_state.keys import shield_state_key
 from app.shield_state.risk import HOUR_MS, MINUTE_MS, AudioMode, RiskTier, SensorContext
-from app.shield_state.store import ShieldStateStore, SnapshotSource
+from app.shield_state.store import DeviceShieldSnapshot, ShieldStateStore, SnapshotSource
 
 DEV = "019361a0-0000-7000-8000-000000000001"
 NOW = 1_795_543_200_000
@@ -51,6 +51,7 @@ async def test_hash_roundtrip_and_fields(redis: Redis) -> None:
         event_id="n1",
         source=EvidenceSource.EDGE_NOTIF,
     )
+    assert fiber is not None
     assert snap.version == 1 and fiber.state is S.S4_SHIELD_ARMED_24H
     h = await redis.hgetall(shield_state_key(DEV))
     assert h["state"] == "S4_SHIELD_ARMED_24H"
@@ -119,7 +120,9 @@ async def test_ec43_b2b_webhook_and_edge_notif_same_second_race(redis: Redis) ->
     assert f.evidence_sources == {EvidenceSource.B2B_CONFIRMED, EvidenceSource.EDGE_NOTIF}
     assert f.shield_expires_at_ms == NOW + 300 + 36 * HOUR_MS
     assert f.state is S.S4_SHIELD_ARMED_24H
-    assert {e.event_id for e in f.evidence} == {"notif", "b2b"}
+    # Cùng một khoản tiền → đúng 1 bằng chứng DISBURSEMENT (không cộng w_disb 2 lần).
+    assert len(f.evidence) == 1 and f.evidence[0].event_id in {"notif", "b2b"}
+    assert FiberSupervisor(snap.fibers).base_log_odds(NOW + 1000) == pytest.approx(-3.5 + 2.8)
 
 
 async def test_evaluate_bank_open_disbursement_in_call_95_7(redis: Redis) -> None:
@@ -278,6 +281,111 @@ async def test_cas_retry_exhaustion_is_409(redis: Redis) -> None:
             DEV, "k", E.E1_APK_INSTALLED, now_ms=NOW, event_id="x"
         )
     assert ei.value.status_code == 409
+
+
+# --- EC-DB11: Redis sống nhưng mất khóa + PG lỗi → không fail-open ---------------------------
+
+
+def _s4_pg_fiber() -> LoanJourneyFiber:
+    return LoanJourneyFiber(
+        fiber_key="loan-A",
+        session_id="sess-pg",
+        state=S.S4_SHIELD_ARMED_24H,
+        entered_at_ms=NOW,
+        updated_at_ms=NOW,
+        shield_expires_at_ms=NOW + 24 * HOUR_MS,
+    )
+
+
+async def test_ec_db11_cache_miss_and_pg_error_is_safe_default_not_empty(redis: Redis) -> None:
+    """EC-DB11: Redis sống, cache trống, PG ném ConnectionError → SAFE_DEFAULT degraded (không
+    phải EMPTY S0) và mở app ngân hàng tối thiểu Mức Cam (không PASS_SILENT)."""
+
+    async def pg_down(_d: str) -> Sequence[LoanJourneyFiber] | None:
+        raise ConnectionError("pg down")
+
+    store = ShieldStateStore(redis, fallback=pg_down)
+    snap = await store.load(DEV, NOW)
+    assert snap.source is SnapshotSource.SAFE_DEFAULT and snap.degraded
+    assert snap.state is S.S4_SHIELD_ARMED_24H
+    ev = await store.evaluate_bank_open(DEV, "sess1", "ev1", now_ms=NOW, sensors=SensorContext())
+    assert ev.degraded and ev.tier is not RiskTier.PASS_SILENT
+    assert ev.tier is RiskTier.ORANGE_SOFT_CHECK
+    assert await redis.hget(shield_state_key(DEV), "fibers") is None  # không ghi cache rỗng
+
+
+async def test_ec_db11_pg_empty_when_redis_alive_is_empty_not_degraded(redis: Redis) -> None:
+    """PG trả về "không có dữ liệu" (None) khác với PG lỗi: EMPTY, không degraded."""
+
+    async def pg_none(_d: str) -> Sequence[LoanJourneyFiber] | None:
+        return None
+
+    snap = await ShieldStateStore(redis, fallback=pg_none).load(DEV, NOW)
+    assert snap.source is SnapshotSource.EMPTY and not snap.degraded
+
+
+async def test_ec_db11_mutate_with_pg_blip_does_not_poison_cache(redis: Redis) -> None:
+    """EC-DB11: PG giữ luồng S4; Redis restart (cache trống); PG chập chờn đúng lúc mutate(E6) →
+    503, KHÔNG ghi ``fibers=[]``; lần load sau vẫn đọc lại PG và còn Khiên."""
+    calls = {"n": 0}
+
+    async def flaky(_d: str) -> Sequence[LoanJourneyFiber] | None:
+        calls["n"] += 1
+        if calls["n"] == 1:
+            raise ConnectionError("pg blip")
+        return [_s4_pg_fiber()]
+
+    store = ShieldStateStore(redis, fallback=flaky)
+    with pytest.raises(AppError) as ei:
+        await store.mutate(
+            DEV, NOW + 1000, lambda s: s.broadcast(E.E6_BANKING_OR_WALLET_OPENED, now_ms=NOW + 1000)
+        )
+    assert ei.value.status_code == 503
+    assert await redis.hget(shield_state_key(DEV), "fibers") is None
+    assert await redis.exists(shield_state_key(DEV)) == 0
+    snap = await store.load(DEV, NOW + 2000)
+    assert snap.source is SnapshotSource.PG_FALLBACK
+    assert snap.state is S.S4_SHIELD_ARMED_24H
+    assert snap.shield_expires_at_ms == NOW + 24 * HOUR_MS
+    # Sau khi PG hồi phục, E6 áp đúng lên luồng thật.
+    after, _ = await store.mutate(
+        DEV, NOW + 3000, lambda s: s.broadcast(E.E6_BANKING_OR_WALLET_OPENED, now_ms=NOW + 3000)
+    )
+    assert after.state is S.S5_CRITICAL_INTERCEPTION
+
+
+async def test_ec_db11_redis_down_and_pg_error_is_safe_default() -> None:
+    async def pg_down(_d: str) -> Sequence[LoanJourneyFiber] | None:
+        raise ConnectionError("pg down")
+
+    client = _down_client()
+    snap = await ShieldStateStore(client, fallback=pg_down).load(DEV, NOW)
+    assert snap.source is SnapshotSource.SAFE_DEFAULT and snap.degraded
+    await client.aclose()
+
+
+async def test_bank_open_uses_fresh_base_when_cas_writes_in_between(redis: Redis) -> None:
+    """TOCTOU: snapshot đọc lúc chưa có giải ngân (nền −3.5); trước khi Lua chạy, CAS ghi khoản
+    giải ngân (nền −0.7, version tăng) → Lua phải dùng nền mới, không dùng nền cũ."""
+    writer = ShieldStateStore(redis)
+
+    class RacingStore(ShieldStateStore):
+        async def load(self, device_id: str, now_ms: int) -> DeviceShieldSnapshot:
+            snap = await super().load(device_id, now_ms)
+            await writer.arm_shield(
+                device_id,
+                "default",
+                E.E4_HIGH_CONF_DISBURSEMENT_NOTIF,
+                now_ms=now_ms,
+                event_id="n",
+                source=EvidenceSource.EDGE_NOTIF,
+            )
+            return snap
+
+    ev = await RacingStore(redis).evaluate_bank_open(
+        DEV, "sess1", "o1", now_ms=NOW, sensors=SensorContext()
+    )
+    assert ev.log_odds == pytest.approx(-0.7)
 
 
 @pytest.mark.redis_real
