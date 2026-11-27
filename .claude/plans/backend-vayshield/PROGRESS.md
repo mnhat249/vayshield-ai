@@ -3,14 +3,14 @@
 Plan: [`../backend-vayshield.md`](../backend-vayshield.md) · Cập nhật %: `node .claude/scripts/progress.js backend-vayshield --write`
 
 <!-- progress:start -->
-**Tổng tiến độ: 75.4%** `[███████████████░░░░░]` — merged 12/19 task · cập nhật 2026-11-28
+**Tổng tiến độ: 77.4%** `[███████████████░░░░░]` — merged 13/19 task · cập nhật 2026-11-28
 
 | Wave | Tiến độ | | Mốc | Tiến độ |
 |---|---|---|---|---|
 | W0 | 100% | | M0 | 100% |
 | W1 | 93% | | M1 | 82% |
-| W2 | 100% | | M2 | 76% |
-| W3 | 58% | | M3 | 50% |
+| W2 | 100% | | M2 | 82% |
+| W3 | 68% | | M3 | 50% |
 | W4 | 0% | | M4 | 0% |
 | W5 | 0% | |  |  |
 <!-- progress:end -->
@@ -45,7 +45,7 @@ Plan: [`../backend-vayshield.md`](../backend-vayshield.md) · Cập nhật %: `n
 | T10 | WP1-06 | Mật mã & bảo mật nền | 2 | M1 | T01 | 2 | merged | task/backend-vayshield/T10 | pass (539✓); PR#3 CI pg | approve sau sửa (2 major); CI pg xanh; rủi ro mở: chữ ký policy chỉ phủ payload cần task contract | – | |
 | T11 | WP1-06 | API Trạm 1 & 2 (SSE) | 3 | M1 | T02,T03,T04,T09,T10 | 6 | pending | task/backend-vayshield/T11 | – | – | – | |
 | T12 | WP1-08 | API Trạm 3 + WS + leo thang + gia đình | 3 | M2 | T05,T07,T10 | 6 | merged | task/backend-vayshield/T12 | pass (1927 test); PR#6 CI pg+redis xanh | approve sau 3 vòng sửa (1 blocker + 10 major); vòng 4 chỉ verify + CI pg redis thật xanh, chưa review lại; cần người duyệt: mã ghép đôi 8 ký tự, nhà cung cấp SMS, RLS family_guardian_links | – | |
-| T13 | WP1-02 | Legal GraphRAG | 3 | M2 | T08 | 2 | pending | task/backend-vayshield/T13 | – | – | – | |
+| T13 | WP1-02 | Legal GraphRAG | 3 | M2 | T08 | 2 | merged | task/backend-vayshield/T13 | pass (2000 test); CI pg xanh | approve sau sửa (2 blocker + 2 major); bản sửa chỉ verify + CI, chưa review lại | – | |
 | T14 | WP1-09 | Mule graph + Dynamic VA + B2B webhook | 3 | M2 | T01,T10 | 5 | merged | task/backend-vayshield/T14 | pass (1922 test); PR#8 CI pg xanh | approve sau sửa (3 major + 4 minor); bản sửa chỉ verify + CI pg xanh, chưa review lại; giả định cần duyệt: trọng số bằng chứng, quy tắc VA prefix | – | |
 | T15 | WP1-09 | Copilot + SIMO + triage + TTS | 4 | M2 | T13,T14 | 3 | pending | task/backend-vayshield/T15 | – | – | – | |
 | T16 | WP1-10 | Sandbox Mode + VIP quota | 4 | M2 | T11,T12 | 4 | pending | task/backend-vayshield/T16 | – | – | – | |
