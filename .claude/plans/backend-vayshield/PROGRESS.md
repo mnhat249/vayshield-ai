@@ -1,16 +1,16 @@
-|||||||| verified || pass (1922✓); PR#8 CI pg xanh | review đang chạy |||||||| verified || pass (1927✓); PR#6 CI pg+redis xanh | sửa 2 vòng (1 blocker + 6 major), re-review vòng 3 đang chạy |||||||| verified || pass (433✓); PR#7 CI xanh | vòng 4: 2 blocker + 2 major (số sai câu thường ngày), đang sửa vòng 5 |||||||| verified || pass (1922✓); PR#8 CI pg xanh | review đang chạy |||||||| verified || pass (1927✓); PR#6 CI pg+redis xanh | sửa 2 vòng (1 blocker + 6 major), re-review vòng 3 đang chạy |||||||| verified || pass (433✓); PR#7 CI xanh | vòng 4: 2 blocker + 2 major (số sai câu thường ngày) → đang sửa vòng 5 # PROGRESS — Backend VayShield AI
+|||||||| verified || pass (1922 test); PR#8 CI pg xanh | review đang chạy |||||||| verified || pass (1927 test); PR#6 CI pg+redis xanh | sửa 2 vòng (1 blocker + 6 major), re-review vòng 3 đang chạy |||||||| verified || pass (433 test); PR#7 CI xanh | vòng 4: 2 blocker + 2 major (số sai câu thường ngày), đang sửa vòng 5 |||||||| verified || pass (1922✓); PR#8 CI pg xanh | review đang chạy |||||||| verified || pass (1927✓); PR#6 CI pg+redis xanh | sửa 2 vòng (1 blocker + 6 major), re-review vòng 3 đang chạy |||||||| verified || pass (433✓); PR#7 CI xanh | vòng 4: 2 blocker + 2 major (số sai câu thường ngày), đang sửa vòng 5 |||||||| verified || pass (1922✓); PR#8 CI pg xanh | review đang chạy |||||||| verified || pass (1927✓); PR#6 CI pg+redis xanh | sửa 2 vòng (1 blocker + 6 major), re-review vòng 3 đang chạy |||||||| verified || pass (433✓); PR#7 CI xanh | vòng 4: 2 blocker + 2 major (số sai câu thường ngày) → đang sửa vòng 5 # PROGRESS — Backend VayShield AI
 
 Plan: [`../backend-vayshield.md`](../backend-vayshield.md) · Cập nhật %: `node .claude/scripts/progress.js backend-vayshield --write`
 
 <!-- progress:start -->
-**Tổng tiến độ: 64.4%** `[█████████████░░░░░░░]` — merged 10/19 task · cập nhật 2026-11-27
+**Tổng tiến độ: 72.1%** `[██████████████░░░░░░]` — merged 10/19 task · cập nhật 2026-11-27
 
 | Wave | Tiến độ | | Mốc | Tiến độ |
 |---|---|---|---|---|
 | W0 | 100% | | M0 | 100% |
 | W1 | 93% | | M1 | 82% |
-| W2 | 100% | | M2 | 47% |
-| W3 | 0% | | M3 | 50% |
+| W2 | 100% | | M2 | 68% |
+| W3 | 41% | | M3 | 50% |
 | W4 | 0% | | M4 | 0% |
 | W5 | 0% | |  |  |
 <!-- progress:end -->
@@ -36,7 +36,7 @@ Plan: [`../backend-vayshield.md`](../backend-vayshield.md) · Cập nhật %: `n
 | T01 | WP1-01 | PostgreSQL schema + RLS + hash-chain | 1 | M1 | T00 | 10 | merged | task/backend-vayshield/T01 | pass local + CI pg (PR#1) | approve sau sửa (2 major); CI pg xanh | – | |
 | T02 | WP1-03 | Kernel tài chính APR/XIRR/khoảng/MIRR | 1 | M1 | T00 | 8 | merged | task/backend-vayshield/T02 | pass (177✓) | approve sau sửa (1 major); bản sửa chỉ verify, chưa review lại | – | ≥35 pytest |
 | T03 | WP1-04 | Thị giác đối kháng + VietQR | 1 | M1 | T00 | 10 | merged | task/backend-vayshield/T03 | pass (210✓) sau sửa | approve sau 2 vòng sửa (1 blocker + 7 major); vòng 2 chỉ verify, chưa review lại | – | |
-| T04 | WP1-05 | Trích xuất LLM + Conformal + Voice | 1 | M1 | T00 | 12 | verified | task/backend-vayshield/T04 | pass (311✓) sau sửa | re-review đang chạy | – | |
+| T04 | WP1-05 | Trích xuất LLM + Conformal + Voice | 1 | M1 | T00 | 12 | verified | task/backend-vayshield/T04 | pass (433 test); PR#7 CI xanh | vòng 4: 2 blocker + 2 major (số sai câu thường ngày), đang sửa vòng 5 | – | |
 | T05 | WP1-07 | Redis HSM + Lua smurf + idempotency | 1 | M2 | T00 | 8 | merged | task/backend-vayshield/T05 | pass (462✓) | approve sau 2 vòng sửa (2 blocker + 6 major); vòng 2 chỉ verify + CI Redis thật xanh, chưa review lại | – | |
 | T06 | WP1-11 | Dataset Bench-340 (data + nhãn) | 1 | M3 | T00 | 2 | merged | task/backend-vayshield/T06 | validate pass | approve; nhãn APR đối chiếu solver T02: 63 trên 63 khớp, 17 null (advance-fee) | – | |
 | T07 | WP1-08 | Ontology 10 trục C1–C10 | 1 | M2 | T00 | 4 | merged | task/backend-vayshield/T07 | pass (188✓) | approve (sau 1 vòng sửa) | – | |
@@ -44,9 +44,9 @@ Plan: [`../backend-vayshield.md`](../backend-vayshield.md) · Cập nhật %: `n
 | T09 | WP1-03 | Ma trận 9 phán quyết + lookalike | 2 | M1 | T02,T01 | 4 | merged | task/backend-vayshield/T09 | pass (922✓); PR#5 CI pg | approve sau 3 vòng sửa (1 blocker + nhiều major); vòng 3 chỉ verify + CI pg xanh + bộ hồi quy 354 tên, chưa review lại | – | |
 | T10 | WP1-06 | Mật mã & bảo mật nền | 2 | M1 | T01 | 2 | merged | task/backend-vayshield/T10 | pass (539✓); PR#3 CI pg | approve sau sửa (2 major); CI pg xanh; rủi ro mở: chữ ký policy chỉ phủ payload cần task contract | – | |
 | T11 | WP1-06 | API Trạm 1 & 2 (SSE) | 3 | M1 | T02,T03,T04,T09,T10 | 6 | pending | task/backend-vayshield/T11 | – | – | – | |
-| T12 | WP1-08 | API Trạm 3 + WS + leo thang + gia đình | 3 | M2 | T05,T07,T10 | 6 | pending | task/backend-vayshield/T12 | – | – | – | |
+| T12 | WP1-08 | API Trạm 3 + WS + leo thang + gia đình | 3 | M2 | T05,T07,T10 | 6 | verified | task/backend-vayshield/T12 | pass (1927 test); PR#6 CI pg+redis xanh | sửa 2 vòng (1 blocker + 6 major), re-review vòng 3 đang chạy | – | |
 | T13 | WP1-02 | Legal GraphRAG | 3 | M2 | T08 | 2 | pending | task/backend-vayshield/T13 | – | – | – | |
-| T14 | WP1-09 | Mule graph + Dynamic VA + B2B webhook | 3 | M2 | T01,T10 | 5 | pending | task/backend-vayshield/T14 | – | – | – | |
+| T14 | WP1-09 | Mule graph + Dynamic VA + B2B webhook | 3 | M2 | T01,T10 | 5 | verified | task/backend-vayshield/T14 | pass (1922 test); PR#8 CI pg xanh | review đang chạy | – | |
 | T15 | WP1-09 | Copilot + SIMO + triage + TTS | 4 | M2 | T13,T14 | 3 | pending | task/backend-vayshield/T15 | – | – | – | |
 | T16 | WP1-10 | Sandbox Mode + VIP quota | 4 | M2 | T11,T12 | 4 | pending | task/backend-vayshield/T16 | – | – | – | |
 | T17 | WP1-11 | Runner benchmark + ablation | 4 | M3 | T06,T11,T12 | 2 | pending | task/backend-vayshield/T17 | – | – | – | Gọi Gemini thật: cần duyệt |
