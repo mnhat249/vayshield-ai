@@ -36,14 +36,21 @@ class LegalNode:
 
     @property
     def date_unknown(self) -> bool:
-        """Ngày sentinel của seed chưa xác minh: không được dùng để khẳng định còn hiệu lực."""
-        return (not self.verified) and self.effective_date == UNKNOWN_EFFECTIVE_DATE
+        """Ngày sentinel (kể cả node verified): không được dùng để khẳng định còn hiệu lực."""
+        return self.effective_date == UNKNOWN_EFFECTIVE_DATE
+
+    @property
+    def shown_effective_date(self) -> date | None:
+        return self.effective_date if self.verified and not self.date_unknown else None
 
     def status_note(self) -> str | None:
-        """Ghi chú trạng thái cho nguồn chưa xác minh (None nếu đã xác minh)."""
-        if self.verified:
-            return None
-        return UNVERIFIED_NOTE + (" " + UNKNOWN_DATE_NOTE if self.date_unknown else "")
+        """Ghi chú trạng thái nguồn (None nếu đã xác minh và có ngày thật)."""
+        parts: list[str] = []
+        if not self.verified:
+            parts.append(UNVERIFIED_NOTE)
+        if self.date_unknown:
+            parts.append(UNKNOWN_DATE_NOTE)
+        return " ".join(parts) or None
 
     @property
     def has_verbatim(self) -> bool:
@@ -95,6 +102,11 @@ class Explanation:
     def to_dict(self) -> dict[str, object]:
         return {
             "plain_vi": self.plain_vi,
+            "fully_verified": self.fully_verified,
+            "pending_sources": [
+                {"clause_code": p.clause_code, "title_vi": p.title_vi, "note": p.note}
+                for p in self.pending_sources
+            ],
             "citations": [
                 {
                     "clause_code": c.clause_code,

@@ -8,14 +8,14 @@ không được trích nguyên văn rỗng; tuyệt đối không bịa nội du
 
 from __future__ import annotations
 
-import re
 from collections.abc import Sequence
-from datetime import date
+from datetime import date, timedelta, timezone
 from typing import Protocol
 
 from app.core.clock import Clock, SystemClock
 
 from .embedding import Embedder, LexicalHashEmbedder
+from .guardrail import MAX_QUERY_CHARS, REFUSAL_MESSAGE, TOO_LONG_MESSAGE, is_in_scope
 from .models import (
     W_BM25,
     W_COSINE,
@@ -27,45 +27,12 @@ from .models import (
     SearchOutcome,
 )
 from .repository import LegalRepository
-from .text import bm25_scores, cosine, fold, tokenize
-
-# EC-AI14: từ học thuật/tiếng Anh cấm xuất ra câu đọc TTS.
-BANNED_TERMS: tuple[str, ...] = (
-    "amortization",
-    "usury",
-    "promissory",
-    "plaintiff",
-    "pursuant",
-    "hereby",
-    "liability",
-)
-
-# EC-AI17: ngoài phạm vi an toàn vay vốn và phòng chống lừa đảo tài chính (đã bỏ dấu).
-_OUT_OF_SCOPE: tuple[str, ...] = (
-    "dat dai",
-    "thua ke",
-    "ly hon",
-    "so do",
-    "quyen su dung dat",
-    "bung no",
-    "tron no",
-    "quit no",
-    "xoa no bat hop phap",
-    "lach luat",
-    "ne tranh tra no",
-    "giau tai san",
-)
-
-REFUSAL_MESSAGE = (
-    "Xin lỗi, VayShield chỉ hỗ trợ các câu hỏi về an toàn vay vốn và phòng chống lừa đảo tài "
-    "chính. Tôi không thể tư vấn câu hỏi này và không hướng dẫn cách né tránh nghĩa vụ trả nợ "
-    "trái pháp luật. Nếu đang bị đòi nợ quá mức hoặc bị đe dọa, hãy liên hệ cơ quan chức năng "
-    "hoặc tổ chức tín dụng liên quan."
-)
+from .safety import rewrite_is_safe
+from .text import bm25_scores, cosine, tokenize
 
 NO_NODE_MESSAGE = "Hiện chưa có quy định còn hiệu lực gắn với phán quyết này trong kho dữ liệu."
-
-_DOC_REF = re.compile(r"\d+/\d{4}(?:/[\w\-ĐđĐ]+)?|[Đđ]iều\s+\d+", re.IGNORECASE)
+MAX_TOP_K = 20
+VN_TZ = timezone(timedelta(hours=7))  # Asia/Ho_Chi_Minh, không DST
 
 
 class PlainRewriter(Protocol):
@@ -74,14 +41,15 @@ class PlainRewriter(Protocol):
     async def rewrite(self, summaries: Sequence[str]) -> str: ...
 
 
-def is_in_scope(query: str) -> bool:
-    """Domain Guardrail (EC-AI17)."""
-    folded = " " + fold(query) + " "
-    return not any(f" {kw} " in folded for kw in _OUT_OF_SCOPE)
-
-
-def _first_sentences(text: str, limit: int = 600) -> str:
-    return text if len(text) <= limit else text[: limit - 1].rstrip() + "…"
+def _snippet(text: str, limit: int = 600) -> str:
+    """Cắt tại ranh giới câu, nếu không có thì tại ranh giới từ."""
+    if len(text) <= limit:
+        return text
+    cut = text[:limit]
+    end = max(cut.rfind(". "), cut.rfind("; "), cut.rfind("! "), cut.rfind("? "))
+    if end >= limit // 2:
+        return cut[: end + 1]
+    return cut.rsplit(" ", 1)[0].rstrip(",;: ") + "…"
 
 
 def _citation(node: LegalNode) -> Citation:
@@ -92,7 +60,8 @@ def _citation(node: LegalNode) -> Citation:
             quote=node.verbatim_content.strip(),
             verified=True,
             doc_number=node.doc_number,
-            effective_date=node.effective_date,
+            effective_date=node.shown_effective_date,
+            note=node.status_note(),
         )
     return Citation(
         clause_code=node.clause_code,
@@ -101,17 +70,6 @@ def _citation(node: LegalNode) -> Citation:
         verified=False,
         note=node.status_note(),
     )
-
-
-def _rewrite_is_safe(text: str, allowed_nodes: Sequence[LegalNode]) -> bool:
-    folded = fold(text)
-    if any(term in folded for term in BANNED_TERMS):
-        return False
-    corpus = " ".join(
-        n.searchable_text() + " " + (n.doc_number if n.verified else "") for n in allowed_nodes
-    )
-    corpus_folded = fold(corpus)
-    return all(fold(ref) in corpus_folded for ref in _DOC_REF.findall(text))
 
 
 class LegalRagService:
@@ -129,7 +87,7 @@ class LegalRagService:
         self._emb_cache: dict[tuple[str, str], list[float]] = {}
 
     def _today(self) -> date:
-        return self._clock.now().date()
+        return self._clock.now().astimezone(VN_TZ).date()
 
     # ---- Chiều 1 ----------------------------------------------------------------------
     async def explain_verdict(self, verdict_code: str) -> Explanation:
@@ -171,12 +129,16 @@ class LegalRagService:
                 candidate = (await self._rewriter.rewrite(summaries)).strip()
             except Exception:
                 candidate = ""
-            if candidate and _rewrite_is_safe(candidate, nodes):
+            if candidate and rewrite_is_safe(candidate, nodes):
                 return candidate
         return " ".join(s.strip() for s in summaries)
 
     # ---- Chiều 2 ----------------------------------------------------------------------
     async def hybrid_search(self, query: str, top_k: int = 5) -> SearchOutcome:
+        if not 1 <= top_k <= MAX_TOP_K:
+            raise ValueError(f"top_k phải trong [1, {MAX_TOP_K}]")
+        if len(query) > MAX_QUERY_CHARS:
+            return SearchOutcome(query="", refused=True, refusal_message=TOO_LONG_MESSAGE)
         if not is_in_scope(query):
             return SearchOutcome(query=query, refused=True, refusal_message=REFUSAL_MESSAGE)
         today = self._today()
@@ -198,6 +160,8 @@ class LegalRagService:
         hits = [self._hit(n, score, cos, bm_s, False) for score, cos, bm_s, n in top]
         seen = {h.clause_code for h in hits}
         for n in await self._repo.neighbors(seen, today):
+            if len(hits) >= 2 * top_k:  # giới hạn số hit mở rộng 1-hop = top_k
+                break
             if n.clause_code not in seen and n.is_in_force(today):
                 seen.add(n.clause_code)
                 hits.append(self._hit(n, 0.0, 0.0, 0.0, True))
@@ -230,7 +194,7 @@ class LegalRagService:
             via_expansion=expansion,
             verified=n.verified,
             doc_number=n.doc_number if n.verified else None,
-            effective_date=n.effective_date if n.verified else None,
-            snippet=_first_sentences(n.verbatim_content.strip()) if n.has_verbatim else "",
+            effective_date=n.shown_effective_date,
+            snippet=_snippet(n.verbatim_content.strip()) if n.has_verbatim else "",
             note=n.status_note(),
         )
