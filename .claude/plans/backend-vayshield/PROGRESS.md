@@ -3,7 +3,7 @@
 Plan: [`../backend-vayshield.md`](../backend-vayshield.md) · Cập nhật %: `node .claude/scripts/progress.js backend-vayshield --write`
 
 <!-- progress:start -->
-**Tổng tiến độ: 75.4%** `[███████████████░░░░░]` — merged 12/19 task · cập nhật 2026-11-27
+**Tổng tiến độ: 75.4%** `[███████████████░░░░░]` — merged 12/19 task · cập nhật 2026-11-28
 
 | Wave | Tiến độ | | Mốc | Tiến độ |
 |---|---|---|---|---|
@@ -89,3 +89,4 @@ Plan: [`../backend-vayshield.md`](../backend-vayshield.md) · Cập nhật %: `n
 | 2026-11-27 | T09 merged (10/19). T12 sửa 2 vòng + sửa main.py lifespan (được phép), T14 implemented + repo SQL, cả hai CI xanh, đang review. T04 vòng 4 còn 2 blocker số sai → agent sửa vòng 5 |
 | 2026-11-27 | T12 merged (approve sau 3 vòng sửa (1 blocker + 10 major); vòng 4 chỉ verify + CI pg redis thật xanh, chưa review lại; cần người duyệt: mã ghép đôi 8 ký tự, nhà cung cấp SMS, RLS family_guardian_links) |
 | 2026-11-27 | T14 merged (approve sau sửa (3 major + 4 minor); bản sửa chỉ verify + CI pg xanh, chưa review lại; giả định cần duyệt: trọng số bằng chứng, quy tắc VA prefix) |
+| 2026-11-28 | T13 merged (approve sau sửa (2 blocker + 2 major); bản sửa chỉ verify + CI pg xanh, chưa review lại; cần người cấp nguyên văn luật để verified=true) |
