@@ -151,9 +151,19 @@ _TIME_PREPOSITIONS = frozenset({"sau", "trong", "vòng", "vong"})
 _CLAUSE_VERBS = frozenset(
     {
         "trả", "tra", "góp", "gop", "đóng", "nhận", "nhan", "vay", "mượn", "muon",
-        "thì", "thi", "và", "va", "nhưng", "nhung", "còn", "rồi",
+        "thì", "thi", "và", "va", "nhưng", "nhung", "còn", "con", "rồi", "roi",
     }
 )  # fmt: skip
+# Trợ từ cuối câu (ranh giới rõ sau số). Bản không dấu chỉ dùng khi cả câu không dấu.
+_PARTICLES = frozenset({"nha", "nhé", "nhá", "thôi", "ạ", "á", "luôn", "đó", "đấy", "hả", "nhỉ"})
+_PARTICLES_ASCII = frozenset({"nha", "nhe", "thoi", "a", "luon", "do", "day", "ha", "nhi"})
+# Trợ từ chỉ định ("hôm đó", "ngày ấy") — KHÔNG được coi là ranh giới sau đơn vị kỳ.
+_DEICTIC = frozenset({"đó", "đấy", "ấy", "do", "day", "ay", "nọ", "no", "kia"})
+# Giới từ: ranh giới khi token kế tiếp KHÔNG phải số ("vay 2 triệu 3 để mua xe").
+_PREPOSITIONS = frozenset({"để", "với", "từ", "cho", "của", "tại", "ở", "qua"})
+_PREPOSITIONS_ASCII = frozenset({"de", "voi", "tu", "cho", "cua", "tai", "o", "qua"})
+# Sau "N <kỳ>" chỉ những từ này mới cho phép đọc là SỐ ĐẾM ("3 tháng lãi 5%", "2 hôm trả").
+_COUNT_FOLLOWERS = frozenset({"lãi", "lai", "phí", "phi", "phạt", "phat", "gốc", "goc"})
 # Đơn vị lóng dễ trùng danh từ thường ("2 chai nước", "2 lít xăng", "3 củ khoai").
 _SLANG_UNITS = frozenset({"chai", "lít", "lit", "xị", "xi", "củ", "cu", "cành", "canh"})
 # "năm nay", "năm ngoái", "năm 2024" — mốc lịch, không phải số 5 hay thời hạn.
@@ -335,6 +345,17 @@ def _is_numeric(tok: str | None) -> bool:
     return tok is not None and _NUMERIC_RE.fullmatch(tok) is not None
 
 
+def _is_calendar_anchor(s: _Stream, k: int) -> bool:
+    """Mốc lịch CHẮC: ``năm 2024`` / ``năm ngoái``. ("2 năm nay/sau/trước/rồi" là thời lượng
+    hoặc mốc tương đối — không dùng làm ranh giới cho phần lẻ.)"""
+    if s.text(k) not in _YEAR_WORDS:
+        return False
+    nxt = s.peek(k + 1)
+    if nxt in {"ngoái", "ngoai"}:
+        return True
+    return nxt is not None and nxt.isdigit() and int(nxt) >= 1900
+
+
 def _is_calendar_year(s: _Stream, k: int) -> bool:
     """``năm 2024`` / ``năm nay`` / ``năm ngoái`` tại vị trí ``k``."""
     if s.text(k) not in _YEAR_WORDS:
@@ -404,6 +425,15 @@ def _parse_group(s: _Stream, k: int, *, after_scale: bool = False) -> _Group | N
     if not s.accented and t in _WEAK_INITIAL and not weak_ok:
         return None
 
+    def weak_unit(j: int) -> bool:
+        """Không dấu: từ yếu (sau/tam/bay/nam) ở vị trí hàng đơn vị/chục chỉ là chữ số khi ngay
+        sau là đơn vị tiền / trăm / mươi hoặc hết mệnh đề ("hai muoi tam nghin" = 28 nghìn)."""
+        w = s.text(j)
+        if s.accented or w not in _WEAK_INITIAL:
+            return False
+        nxt = s.peek(j + 1)
+        return not (nxt is None or nxt in _SCALE_WORDS or nxt in _HUNDRED or nxt in _TENS_SUFFIX)
+
     j = k
     acc: int = 0
     has_hundred = False
@@ -417,7 +447,7 @@ def _parse_group(s: _Stream, k: int, *, after_scale: bool = False) -> _Group | N
             if u is None:
                 return None
             return _Group(Decimal(acc + u), j + 2, True, None, False)
-        d = digit(j, initial=False)
+        d = None if weak_unit(j) else digit(j, initial=False)
         if d is None and word(j) not in _TEN:
             return _Group(Decimal(acc), j, True, None, False)
         if d is not None and word(j + 1) not in _TENS_SUFFIX:
@@ -433,6 +463,8 @@ def _parse_group(s: _Stream, k: int, *, after_scale: bool = False) -> _Group | N
     if word(j) in _TEN and (d is None or has_hundred):
         tens, j = 10, j + 1
         u_tok = word(j)
+        if weak_unit(j):
+            u_tok = None  # "chin muoi tam thoi": "tam" = 8 hay "tạm"? → không nhận
         if u_tok in _DIGIT_WORDS and u_tok not in _YEAR_WORDS and u_tok not in {"không", "khong"}:
             return _Group(
                 Decimal(acc + tens + _DIGIT_WORDS[u_tok or ""]), j + 1, has_hundred, None, False
@@ -443,6 +475,8 @@ def _parse_group(s: _Stream, k: int, *, after_scale: bool = False) -> _Group | N
     if word(j + 1) in _TENS_SUFFIX:
         tens, j = d * 10, j + 2
         u_tok = word(j)
+        if weak_unit(j):
+            u_tok = None  # "chin muoi tam thoi": "tam" = 8 hay "tạm"? → không nhận
         if u_tok in _DIGIT_WORDS and u_tok not in _YEAR_WORDS and u_tok not in {"không", "khong"}:
             return _Group(
                 Decimal(acc + tens + _DIGIT_WORDS[u_tok or ""]), j + 1, has_hundred, None, False
@@ -480,7 +514,9 @@ def _fraction(s: _Stream, start: int, end: int, scale: int) -> Decimal | None:
             return None
         return g.value * scale / (Decimal(10) ** g.numeric_digits)
     if g.single_word:
-        return None if g.value == 0 else g.value * scale / 10
+        if g.value == 0 or s.text(start) in _YEAR_WORDS:
+            return None  # "2 triệu năm" = 2,5tr hay "2 triệu / năm"? → mơ hồ
+        return g.value * scale / 10
     if g.has_hundred and g.value < 1000:
         return g.value * scale / 1000
     return None
@@ -518,31 +554,68 @@ _YEAR_COUNT_LIMIT = 10
 _ONE = frozenset({"một", "mot", "1"})
 
 
-# Kỳ trần + số / mốc ("ngày 15", "ngày mốt", "tháng sau", "tuần tới") là THAM CHIẾU thời
-# điểm, không phải đơn vị đếm hay "mỗi kỳ".
-_DATE_REF_AFTER = frozenset(
-    {"mốt", "mot", "sau", "tới", "toi", "này", "nay", "kia", "trước", "truoc", "nữa", "nua"}
-)
+def _is_particle(s: _Stream, k: int) -> bool:
+    t = s.text(k)
+    if t is None:
+        return False
+    return t in _PARTICLES or (not s.accented and t in _PARTICLES_ASCII)
 
 
-def _is_date_reference(s: _Stream, k: int) -> bool:
-    if s.text(k) not in PERIOD_DAYS:
+def _is_preposition_boundary(s: _Stream, k: int) -> bool:
+    t = s.text(k)
+    if t is None or not (t in _PREPOSITIONS or (not s.accented and t in _PREPOSITIONS_ASCII)):
         return False
     nxt = s.peek(k + 1)
-    return _is_numeric(nxt) or nxt in _DATE_REF_AFTER
+    return not (_is_numeric(nxt) or s.num(k + 1) is not None or (nxt or "").endswith("%"))
+
+
+def _is_rate_phrase(s: _Stream, k: int) -> bool:
+    """``lãi 3%`` / ``lãi 3 phần trăm`` — ranh giới rõ."""
+    if s.text(k) not in {"lãi", "lai"}:
+        return False
+    nxt = s.peek(k + 1) or ""
+    if nxt.endswith("%"):
+        return True
+    return _is_numeric(nxt) and s.peek(k + 2) in {"phần", "phan", "%"}
+
+
+def _ok_after_count(s: _Stream, k: int) -> bool:
+    """Token ``k`` đứng sau "N <kỳ>" có cho phép đọc N là SỐ ĐẾM không (whitelist đóng).
+
+    Có: hết mệnh đề, động từ mở mệnh đề (trừ "rồi"/"còn"), trợ từ cuối câu (trừ "đó/đấy"),
+    giới từ không kèm số (trừ "qua"/"từ"), "mỗi", "lãi/phí/phạt/gốc". Mọi từ khác ("hôm qua",
+    "ngày mai", "tuần rồi", "năm nay", "ngày 15", "hôm đó") → KHÔNG.
+    """
+    t = s.text(k)
+    if t is None:
+        return True
+    if t in _DEICTIC:
+        return False
+    if t in _CLAUSE_VERBS and t not in {"rồi", "roi", "còn", "con"}:
+        return not (s.accented and t in _ASCII_ONLY_WORDS)
+    if _is_particle(s, k):
+        return True
+    if t not in {"qua", "từ", "tu"} and _is_preposition_boundary(s, k):
+        return True
+    if t in _TIME_PREPOSITIONS:
+        nxt = s.peek(k + 1)
+        return _is_numeric(nxt) or nxt in PERIOD_DAYS  # "một ngày trong 30 ngày"
+    return t in _EVERY or t in _COUNT_FOLLOWERS
 
 
 def _is_counting_unit(s: _Stream, k: int) -> bool:
+    """``tokens[k]`` là đơn vị đếm (ngày/tuần/tháng/hôm/bữa/kỳ/năm) VÀ token sau nó cho phép
+    đọc là số đếm. Mặc định: KHÔNG (→ mơ hồ)."""
     t = s.text(k)
-    if t is None or _date_span(s, k) is not None or _is_date_reference(s, k):
+    if t is None or _date_span(s, k) is not None:
         return False
     if t in PERIOD_DAYS or t in _INSTALLMENT_WORDS:
-        return True
-    return (
-        t in _YEAR_WORDS
-        and not _is_calendar_year(s, k)
-        and not (s.accented and t in _ASCII_ONLY_WORDS)
-    )
+        return _ok_after_count(s, k + 1)
+    if t in _YEAR_WORDS and not _is_calendar_anchor(s, k):
+        if s.accented and t in _ASCII_ONLY_WORDS:
+            return False
+        return _ok_after_count(s, k + 1)
+    return False
 
 
 def _is_boundary(s: _Stream, k: int) -> bool:
@@ -560,9 +633,14 @@ def _is_boundary(s: _Stream, k: int) -> bool:
         return True
     if t in PERIOD_DAYS and s.slash_before(k):
         return True
-    if _is_calendar_year(s, k) or _date_span(s, k) is not None:
+    if _is_calendar_anchor(s, k):
+        return True
+    if _date_span(s, k) is not None and t not in _MONTH_WORDS:
+        # "ngày 15 tháng 3" rõ; "5 tháng 3 năm 2024" (không có "ngày") → số trước có thể là ngày.
         return True
     if t in _CLAUSE_VERBS and not (s.accented and t in _ASCII_ONLY_WORDS):
+        return True
+    if _is_particle(s, k) or _is_preposition_boundary(s, k) or _is_rate_phrase(s, k):
         return True
     if t in _TIME_PREPOSITIONS:
         prev = s.peek(k - 1)
@@ -583,6 +661,8 @@ def _run_end(s: _Stream, k: int) -> int:
         t = s.text(j)
         if _is_calendar_year(s, j):
             break
+        if j > k and not s.accented and t == "tu" and _is_numeric(s.text(j - 1)):
+            break  # "3 tu app" (không dấu): "tu" sau chữ số là giới từ "từ", không nối số
         nxt = s.text(j + 1)
         if j > k and t in _YEAR_WORDS and nxt not in PERIOD_DAYS and nxt not in _INSTALLMENT_WORDS:
             prev = s.text(j - 1)
@@ -676,7 +756,10 @@ def _parse_amount(s: _Stream, k: int) -> _Amount | None:
             total += group.value * scale
             last_scale = scale
             pos += 1
+            decimal_group = group.value != group.value.to_integral_value()
             if s.text(pos) in _HALF:
+                if decimal_group:
+                    return _Amount(None, pos + 1, True, slang)  # "1,5 triệu rưỡi"
                 total += Decimal(scale) / 2
                 pos += 1
                 break
@@ -685,7 +768,8 @@ def _parse_amount(s: _Stream, k: int) -> _Amount | None:
             if tail.kind == "compound" and tail.group is not None:
                 group, pos = tail.group, tail.end
                 continue
-            if tail.kind == "ambiguous":
+            if tail.kind == "ambiguous" or (decimal_group and tail.kind == "fraction"):
+                # "1,5tr2", "0,5 triệu 5", "2.5 tỷ 3": số thập phân + phần lẻ → mơ hồ.
                 return _Amount(None, tail.end, True, slang)
             total += tail.value
             pos = tail.end
@@ -815,11 +899,13 @@ def normalize_vn_currency_slang(text: str) -> SlangNormalization:
         days_per: int | None = PERIOD_DAYS.get(unit) if unit is not None else None
         if days_per is None and _is_counting_unit(s, k) and unit in _YEAR_WORDS:
             days_per = _YEAR_DAYS
+        after_unit = k + 2 if s.text(k + 1) in _HALF else k + 1
         if (
             days_per is not None
             and parsed.value is not None
             and _date_span(s, k) is None
             and not _after_percent(s, i)
+            and _ok_after_count(s, after_unit)  # "5 ngày mai", "2 năm qua" → không phải thời hạn
         ):
             # "15 tháng 3": số + tháng + số (không phải tiền) là ngày tháng, không phải thời hạn.
             is_date = (

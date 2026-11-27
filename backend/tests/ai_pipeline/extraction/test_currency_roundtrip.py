@@ -32,7 +32,6 @@ BOUNDARY_SUFFIXES = [
     " hàng tháng",
     "/tháng",
     " năm 2024",
-    " năm nay",
     " năm ngoái",
     " ngày 15 tháng 3",
     ", phải trả 15 triệu",
@@ -42,6 +41,8 @@ BOUNDARY_SUFFIXES = [
 # Ngữ cảnh lạ (không phải ranh giới): kiểu viết "đóng" (kết thúc bằng đơn vị/đ/rưỡi) vẫn phải
 # đúng; kiểu "mở" ("1 triệu 2 ...") được phép None (mơ hồ → hỏi lại).
 CONTEXT_SUFFIXES = [
+    # Vòng 4: "N năm nay" sau phần lẻ có thể là "N năm nay" (thời lượng) → mơ hồ với kiểu mở.
+    " năm nay",
     " tạm thời",
     " bây giờ",
     " lãi 3%/tháng",
@@ -156,8 +157,9 @@ def renderings(amount: int, rng: int) -> list[tuple[str, Kind]]:
                 (f"{m} triệu {r}00", "open"),
                 (f"{m},{r} triệu", "closed"),
                 (f"{m} củ {r}", "open"),
-                (f"{mw} triệu {DIGITS[r]}", "open"),
-                (f"{mw} chai {DIGITS[r]}", "open"),
+                # Vòng 4: "năm" đơn lẻ làm phần lẻ ("một triệu năm") là mơ hồ → loose.
+                (f"{mw} triệu {DIGITS[r]}", "loose" if r == 5 else "open"),
+                (f"{mw} chai {DIGITS[r]}", "loose" if r == 5 else "open"),
             ]
             if r == 5:
                 out += [(f"{mw} củ rưỡi", "closed"), (f"{m} triệu rưỡi", "closed")]

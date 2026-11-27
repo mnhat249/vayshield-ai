@@ -76,30 +76,74 @@ def normalize_label(text: str) -> str:
     return " ".join("".join(c if c.isalnum() else " " for c in stripped).split())
 
 
-# Tiền/hậu tố pháp nhân / quốc gia / loại hình không phân biệt thương hiệu (đã bỏ dấu).
-# Chỉ bỏ tiền tố pháp nhân Ở ĐẦU và hậu tố pháp nhân/quốc gia/loại hình Ở CUỐI (đã bỏ dấu).
-# Không bỏ ở giữa / ở vị trí khác: "VN Pay" ≠ "Pay", "Vay Co" ≠ "Vay" ("co" đơn lẻ giữ nguyên).
-_BRAND_PREFIX_RE = re.compile(
-    r"^(?:cong ty (?:tnhh mot thanh vien|tnhh mtv|tnhh|co phan|tai chinh|cp)?\s*"
-    r"(?:tai chinh\s+)?)"
+# Tiền tố pháp nhân Ở ĐẦU và hậu tố pháp nhân/quốc gia/loại hình Ở CUỐI (so trên token đã bỏ
+# dấu). Không bỏ ở giữa: "VN Pay" ≠ "Pay", "Vay Co" ≠ "Vay" ("co" đơn lẻ không phải hậu tố).
+_BRAND_PREFIXES: tuple[tuple[str, ...], ...] = (
+    ("cong", "ty", "tnhh", "mot", "thanh", "vien"),
+    ("cong", "ty", "tnhh", "mtv"),
+    ("cong", "ty", "co", "phan"),
+    ("cong", "ty", "tnhh"),
+    ("cong", "ty", "cp"),
+    ("cong", "ty"),
 )
-_BRAND_SUFFIX_RE = re.compile(
-    r"(?:\s+(?:viet nam|vietnam|vn|app|ung dung|finance|financial|jsc|co ltd|ltd|tnhh|mtv"
-    r"|joint stock company|company limited))+$"
+_BRAND_SUFFIXES: tuple[tuple[str, ...], ...] = (
+    ("joint", "stock", "company"),
+    ("company", "limited"),
+    ("viet", "nam"),
+    ("ung", "dung"),
+    ("co", "ltd"),
+    ("vietnam",),
+    ("vn",),
+    ("app",),
+    ("finance",),
+    ("financial",),
+    ("jsc",),
+    ("ltd",),
+    ("tnhh",),
+    ("mtv",),
 )
+
+
+def _brand_tokens(name: str) -> list[tuple[str, str]]:
+    """[(token CÓ DẤU đã NFKC+casefold, token bỏ dấu)]."""
+    text = unicodedata.normalize("NFKC", name).casefold()
+    toks = "".join(c if c.isalnum() else " " for c in text).split()
+    return [(t, normalize_label(t)) for t in toks]
 
 
 def brand_key(name: str) -> str:
-    """Khóa thương hiệu: bỏ dấu, chữ thường, bỏ tiền tố "công ty ..." ở đầu và hậu tố pháp nhân
-    (VN, Việt Nam, App, Finance, JSC, Ltd ...) ở cuối, bỏ khoảng trắng, qua alias.
+    """Khóa thương hiệu để tách thẻ (EC-AI07).
 
-    "FE Credit Việt Nam" ≡ "fe-credit"; "Tia Chop App" ≡ "Tia Chớp"; nhưng so khớp CHÍNH XÁC
-    phần còn lại nên "App Vay Nhanh A" ≠ "App Vay Nhanh B", "VN Pay" ≠ "Pay" (EC-AI07).
+    - So khớp CÓ DẤU (NFKC + casefold): "Vay Đông" ≠ "Vay Dòng", "Tiền Ơi" ≠ "Tiện Ơi".
+    - Bỏ tiền tố "công ty (tnhh/cp/…) (tài chính)" ở đầu và hậu tố pháp nhân/quốc gia ở cuối,
+      nhưng KHÔNG bao giờ rút còn 1 từ: "Cash VN" ≠ "Cash", "Vay Việt Nam" ≠ "Vay".
+    - Chỉ bỏ dấu khi tra ``BRAND_ALIASES`` ("Tia Chớp" ≡ "Tia Chop" vì có trong bảng alias).
     """
-    label = normalize_label(name)
-    core = _BRAND_SUFFIX_RE.sub("", _BRAND_PREFIX_RE.sub("", label)).strip()
-    key = (core or label).replace(" ", "")
-    return BRAND_ALIASES.get(key, key)
+    toks = _brand_tokens(name)
+    plain = [p for _, p in toks]
+    start, end = 0, len(toks)
+    for pre in _BRAND_PREFIXES:
+        if tuple(plain[: len(pre)]) == pre:
+            start = len(pre)
+            if tuple(plain[start : start + 2]) == ("tai", "chinh"):
+                start += 2
+            break
+    changed = True
+    while changed:
+        changed = False
+        for suf in _BRAND_SUFFIXES:
+            n = len(suf)
+            if end - start - n >= 2 and tuple(plain[end - n : end]) == suf:
+                end -= n
+                changed = True
+                break
+    if end - start < 1:
+        start, end = 0, len(toks)
+    core = toks[start:end]
+    alias = BRAND_ALIASES.get("".join(p for _, p in core))
+    if alias is not None:
+        return alias
+    return "".join(t for t, _ in core)
 
 
 _PAREN_RE = re.compile(r"[(\[{]([^)\]}]*)[)\]}]")
@@ -140,7 +184,9 @@ def fee_key(label: str) -> str:
 
     base = normalize_label(_PAREN_RE.sub(keep_or_drop, label))
     stripped = _FEE_PREFIX_RE.sub("", base)
-    return stripped or base
+    if stripped in {"", "phi", "tien", "khoan"}:
+        return base  # "Tiền phí" ≠ "Phí": không rút còn mỗi một từ chung
+    return stripped
 
 
 def page_authority(extraction: MultiImageLoanExtraction) -> int:

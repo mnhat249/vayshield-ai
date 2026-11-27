@@ -131,7 +131,8 @@ def test_ec_ai11_fraction_after_scale_still_works() -> None:
     assert parse_vnd_amount("tám triệu tư") == 8_400_000
     assert parse_vnd_amount("năm củ hai") == 5_200_000
     assert parse_vnd_amount("1tr2") == 1_200_000
-    assert parse_vnd_amount("hai triệu năm") == 2_500_000
+    # Vòng 4: "năm" đơn lẻ sau đơn vị tiền = 2,5tr hay "2 triệu / năm"? → mơ hồ, không đoán.
+    assert parse_vnd_amount("hai triệu năm") is None
 
 
 @pytest.mark.parametrize(
