@@ -88,8 +88,13 @@ class RealtimeServices:
 
     async def startup(self) -> None:
         """Gọi trong lifespan: bật hub pub/sub và vòng quét hạn ACK."""
-        await self.hub.start()
+        # Sweeper trước và độc lập: Redis chưa sẵn sàng không được làm mất SMS fallback (S2-EC44).
         await self.escalation.start()
+        try:
+            await self.hub.start()
+        except Exception:
+            logger.exception("hub_start_failed_retrying_in_background")
+            self.hub.start_in_background()
 
     async def shutdown(self) -> None:
         """Gọi trong lifespan khi tắt: hủy hẹn giờ/sweeper và đóng pub/sub."""

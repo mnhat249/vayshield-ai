@@ -77,6 +77,7 @@ class RealtimeHub:
         self._ping_interval_s = ping_interval_s
         self._send_timeout_s = send_timeout_s
         self._bg: set[asyncio.Task[None]] = set()
+        self._retry_task: asyncio.Task[None] | None = None
         self._conns: dict[UUID, set[LocalConnection]] = {}
         self._pubsub: Any = None
         self._task: asyncio.Task[None] | None = None
@@ -97,7 +98,29 @@ class RealtimeHub:
             self._pubsub = pubsub
             self._task = asyncio.create_task(self._listen(pubsub), name="realtime-hub-listener")
 
+    def start_in_background(self, retry_s: float = 2.0) -> None:
+        """Thử ``start`` lại nền cho tới khi Redis sẵn sàng (không chặn khởi động app)."""
+
+        async def run() -> None:
+            while True:
+                try:
+                    await self.start()
+                    return
+                except asyncio.CancelledError:
+                    raise
+                except Exception:
+                    logger.warning("hub: start thất bại, thử lại")
+                    await asyncio.sleep(retry_s)
+
+        if self._retry_task is None or self._retry_task.done():
+            self._retry_task = asyncio.create_task(run(), name="realtime-hub-start-retry")
+
     async def stop(self) -> None:
+        if self._retry_task is not None:
+            self._retry_task.cancel()
+            with contextlib.suppress(asyncio.CancelledError, Exception):
+                await self._retry_task
+            self._retry_task = None
         task, self._task = self._task, None
         if task is not None:
             task.cancel()

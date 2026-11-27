@@ -97,6 +97,35 @@ end
 return ids
 """
 LEASE_MS: Final = 30_000
+SEND_LEASE_MS: Final = 60_000  # hạn "đang gửi" của 1 link; > timeout nhà cung cấp SMS
+MAX_SEND_TRIES: Final = 3
+
+# Pha 1: giành quyền gửi cho 1 link. KEYS[1]=hash timer. ARGV: link, now_ms, lease_ms, max_tries,
+# ttl_s. Trả 1 được gửi | 0 đã xong | -1 hash đã hết hạn | -2 hết số lần thử | -3 đang có bên gửi.
+# Chỉ ghi khi hash còn tồn tại (không tạo key không TTL); mỗi lần claim gia hạn TTL hash.
+_CLAIM_SEND_LUA: Final = """
+if redis.call('EXISTS', KEYS[1]) == 0 then return -1 end
+redis.call('EXPIRE', KEYS[1], tonumber(ARGV[5]))
+local l = ARGV[1]
+if redis.call('HEXISTS', KEYS[1], 'done:' .. l) == 1 then return 0 end
+local s = redis.call('HGET', KEYS[1], 'sending:' .. l)
+if s and tonumber(s) > tonumber(ARGV[2]) then return -3 end
+local t = redis.call('HINCRBY', KEYS[1], 'tries:' .. l, 1)
+if t > tonumber(ARGV[4]) then
+  redis.call('HSET', KEYS[1], 'done:' .. l, 'exhausted')
+  redis.call('HDEL', KEYS[1], 'sending:' .. l)
+  return -2
+end
+redis.call('HSET', KEYS[1], 'sending:' .. l, tonumber(ARGV[2]) + tonumber(ARGV[3]))
+return 1
+"""
+# Pha 2: kết thúc. ARGV: link, ok('1'/'0'). done CHỈ ghi khi gửi thành công.
+_FINISH_SEND_LUA: Final = """
+if redis.call('EXISTS', KEYS[1]) == 0 then return 0 end
+redis.call('HDEL', KEYS[1], 'sending:' .. ARGV[1])
+if ARGV[2] == '1' then redis.call('HSET', KEYS[1], 'done:' .. ARGV[1], '1') end
+return 1
+"""
 
 
 def ack_timer_key(escalation_id: UUID) -> str:
@@ -146,6 +175,8 @@ class EscalationService:
         self._stale_after = timedelta(seconds=stale_after_s)
         self._transition_script = redis.register_script(_TRANSITION_LUA)
         self._claim_due = redis.register_script(_CLAIM_DUE_LUA)
+        self._claim_send = redis.register_script(_CLAIM_SEND_LUA)
+        self._finish_send = redis.register_script(_FINISH_SEND_LUA)
         self._watchers: dict[UUID, asyncio.Task[None]] = {}
         self._sweep_interval_s = sweep_interval_s
         self._sweeper: asyncio.Task[None] | None = None
@@ -290,10 +321,7 @@ class EscalationService:
         for o in outcomes:
             if o.fallback_channel is not None and o.fallback_channel not in channels:
                 channels.append(o.fallback_channel)
-        done = {f"done:{o.link.link_id}": "1" for o in outcomes if o.handled}
-        if done:
-            await self._redis.hset(ack_timer_key(escalation_id), mapping=done)  # type: ignore[arg-type]
-        if len(done) < len(outcomes):
+        if not all(o.handled for o in outcomes):
             self._spawn_watcher(escalation_id)
         else:
             await self._transition(escalation_id, (STATUS_PENDING,), STATUS_FALLBACK)
@@ -331,25 +359,18 @@ class EscalationService:
         if push_result is PushResult.GONE:
             # EC-DB14: subscription chết → cập nhật trạng thái, nhảy thẳng SMS/Email, không chờ 10s.
             await self._repo.mark_push_expired(link.link_id)
-            await self._mark_done(escalation_id, link)
-            chan = await self._send_fallback(
+            chan, finished = await self._send_fallback(
                 device_id, escalation_id, link, alert, "PUSH_EXPIRED_410"
             )
-            return _Outcome(link, push_attempted, chan, handled=True)
+            return _Outcome(link, push_attempted, chan, handled=finished)
         if push_result is not PushResult.DELIVERED:
             live = await self._hub.is_live(device_id, RealtimeRole.GUARDIAN, link_id=link.link_id)
             if not live:
-                await self._mark_done(escalation_id, link)
-                chan = await self._send_fallback(
+                chan, finished = await self._send_fallback(
                     device_id, escalation_id, link, alert, "NO_LIVE_SOCKET"
                 )
-                return _Outcome(link, push_attempted, chan, handled=True)
+                return _Outcome(link, push_attempted, chan, handled=finished)
         return _Outcome(link, push_attempted, None, handled=False)
-
-    async def _mark_done(self, escalation_id: UUID, link: GuardianLink) -> None:
-        """Đánh dấu link đã (sắp) nhận SMS NGAY, trước khi gửi: sweeper chạy song song (giao chậm
-        > 10s) sẽ bỏ qua link này, không gửi SMS lần 2."""
-        await self._redis.hset(ack_timer_key(escalation_id), f"done:{link.link_id}", "1")
 
     async def _send_fallback(
         self,
@@ -358,15 +379,44 @@ class EscalationService:
         link: GuardianLink,
         alert: EmergencyAlert,
         reason: str,
-    ) -> EscalationChannel | None:
+    ) -> tuple[EscalationChannel | None, bool]:
+        """Gửi SMS/Email dự phòng cho 1 link theo 2 pha (claim ``sending`` có hạn → gửi → ``done``
+        CHỈ khi thành công). Trả (kênh đã gửi, link đã xong — không cần thử lại nữa). Không bao giờ
+        ném lỗi nhà cung cấp ra ngoài (không làm hỏng /escalate)."""
         contact = link.fallback_contact
         if contact is None:
             logger.warning("escalation_no_fallback_contact", extra={"reason": reason})
-            return None
-        ok = await self._sms.send(contact, build_sms_text(alert))
+            return None, True
+        key = ack_timer_key(escalation_id)
+        now_ms = int(self._clock.now().timestamp() * 1000)
+        claim = int(
+            await self._claim_send(
+                keys=[key],
+                args=[str(link.link_id), now_ms, SEND_LEASE_MS, MAX_SEND_TRIES, ACK_TIMER_TTL_S],
+            )
+        )
+        if claim == 0:
+            return None, True  # bên khác đã gửi xong
+        if claim == -3:
+            return None, False  # bên khác đang gửi (inflight còn hạn): không gửi trùng
+        if claim == -2:
+            logger.error("escalation_fallback_exhausted", extra={"reason": reason})
+            return None, True
+        if claim == -1:
+            logger.error("ack_expired_dropped", extra={"reason": reason})
+            return None, True
+        ok = False
+        try:
+            ok = bool(await self._sms.send(contact, build_sms_text(alert)))
+        except asyncio.CancelledError:
+            await self._finish_send(keys=[key], args=[str(link.link_id), "0"])
+            raise
+        except Exception:
+            logger.exception("escalation_fallback_send_error", extra={"reason": reason})
+        await self._finish_send(keys=[key], args=[str(link.link_id), "1" if ok else "0"])
         if not ok:
             logger.error("escalation_fallback_send_failed", extra={"reason": reason})
-            return None
+            return None, False  # sweeper thử lại (có giới hạn MAX_SEND_TRIES)
         channel = EscalationChannel.SMS if contact.channel == "SMS" else EscalationChannel.EMAIL
         payload = EscalationFallback(
             escalation_id=escalation_id,
@@ -379,7 +429,7 @@ class EscalationService:
             RealtimeRole.BORROWER,
             make_frame("EVENT_ESCALATION_FALLBACK", payload, self._clock.now()),
         )
-        return channel
+        return channel, True
 
     # --- hẹn giờ ACK -----------------------------------------------------------------------
     def _spawn_watcher(self, escalation_id: UUID) -> None:
@@ -411,6 +461,12 @@ class EscalationService:
         for raw in ids:
             esc = UUID(raw.decode() if isinstance(raw, bytes) else str(raw))
             try:
+                # Gia hạn lease RIÊNG cho mã này ngay trước khi xử lý (lô dài không làm hết hạn).
+                await self._redis.zadd(
+                    ACK_DUE_KEY,
+                    {str(esc): int(self._clock.now().timestamp() * 1000) + LEASE_MS},
+                    xx=True,
+                )
                 if await self._sweep_one(esc):
                     handled += 1
             except asyncio.CancelledError:
@@ -425,17 +481,26 @@ class EscalationService:
         if moved != 1:
             status = await self._redis.hget(key, "status")
             status_s = status.decode() if isinstance(status, bytes) else status
-            finished = status_s != STATUS_FALLBACK or await self._redis.hexists(key, "fb_done")
-            if finished:  # đã ACK / hash hết hạn / đã gửi xong
+            if status_s is None:
+                # Hash hết hạn trước khi gửi xong: ghi lỗi rõ ràng, không im lặng (cần cảnh báo ops).
+                logger.error("ack_expired_dropped", extra={"escalation_id": str(esc)})
                 await self._redis.zrem(ACK_DUE_KEY, str(esc))
                 return False
-            # moved == 0 và đang FALLBACK chưa xong: lần trước lỗi giữa chừng → làm tiếp
-        await self._fallback_for(esc)
-        await self._redis.hset(key, "fb_done", "1")
+            if status_s != STATUS_FALLBACK or await self._redis.hexists(key, "fb_done"):
+                await self._redis.zrem(ACK_DUE_KEY, str(esc))  # đã ACK / đã gửi xong
+                return False
+            # đang FALLBACK nhưng chưa xong: lần trước lỗi giữa chừng → làm tiếp
+        if not await self._fallback_for(esc):
+            return False  # còn link chưa xong: giữ lease, thử lại khi hết hạn
+        async with self._redis.pipeline(transaction=True) as pipe:
+            pipe.hset(key, "fb_done", "1")
+            pipe.expire(key, ACK_TIMER_TTL_S)  # không tạo key không TTL nếu hash đã hết hạn
+            await pipe.execute()
         await self._redis.zrem(ACK_DUE_KEY, str(esc))
         return True
 
-    async def _fallback_for(self, escalation_id: UUID) -> None:
+    async def _fallback_for(self, escalation_id: UUID) -> bool:
+        """``True`` nếu MỌI link đã xong (gửi được / không có liên hệ / hết số lần thử)."""
         data = await self._redis.hgetall(ack_timer_key(escalation_id))
         flat = {
             (k.decode() if isinstance(k, bytes) else k): (v.decode() if isinstance(v, bytes) else v)
@@ -445,10 +510,11 @@ class EscalationService:
             device_id = UUID(flat["device_id"])
             link_ids = [UUID(x) for x in json.loads(flat["links"])]
         except (KeyError, ValueError, TypeError):
-            return
+            return True
+        all_finished = True
         for link_id in link_ids:
             if f"done:{link_id}" in flat:
-                continue  # đã chuyển SMS ngay (Push 410 / không có socket)
+                continue
             link = await self._repo.get_link(link_id)
             raw_alert = await self._redis.hget(
                 pending_alerts_key(device_id), f"{escalation_id}:{link_id}"
@@ -456,9 +522,11 @@ class EscalationService:
             if link is None or not raw_alert:
                 continue
             alert = EmergencyAlert.model_validate_json(raw_alert)
-            await self._send_fallback(device_id, escalation_id, link, alert, "ACK_TIMEOUT")
-            # Đánh dấu SAU khi gửi: lỗi giữa chừng thì retry vẫn gửi lại (thà trùng còn hơn mất).
-            await self._redis.hset(ack_timer_key(escalation_id), f"done:{link_id}", "1")
+            _, finished = await self._send_fallback(
+                device_id, escalation_id, link, alert, "ACK_TIMEOUT"
+            )
+            all_finished = all_finished and finished
+        return all_finished
 
     async def _transition(self, escalation_id: UUID, sources: tuple[str, ...], target: str) -> int:
         res = await self._transition_script(

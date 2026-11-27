@@ -32,10 +32,14 @@ API_DESCRIPTION = (
 @asynccontextmanager
 async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     await start_realtime(app)  # T12: hub WS + sweeper ACK (bỏ qua khi không có Redis)
-    yield
-    await stop_realtime(app)
-    await close_redis()
-    await dispose_engine()
+    try:
+        yield
+    finally:
+        try:
+            await stop_realtime(app)
+        finally:
+            await close_redis()
+            await dispose_engine()
 
 
 def create_app(settings: Settings | None = None) -> FastAPI:

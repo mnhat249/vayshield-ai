@@ -7,8 +7,8 @@
 - Đếm sai THEO MÃ: ``fail_attempts`` trong HASH, tối đa ``pairing_max_fail_attempts`` (3) lần thử
   sai trên chính mã đó (đầu vào không hợp lệ) → 423 ``PAIRING_LOCKED`` cho mã đó.
 - Đoán mã KHÔNG tồn tại không có phiên để đếm: chỉ có bộ đếm phụ theo IP (băm SHA-256, TTL = TTL
-  mã, ngưỡng ``IP_MAX_FAILS`` = 10, không phải 3) + rate limit IP riêng. Khóa IP chỉ áp cho các lần
-  đoán mã không tồn tại; mã đúng không bị chặn bởi nó (không khóa nhầm cả CGNAT).
+  mã, ngưỡng ``IP_MAX_FAILS`` = 20, không phải 3) + rate limit IP riêng. IP đã khóa bị 423 ngay,
+  không thử mã nào. Thêm giới hạn toàn cục lượt đoán sai/phút (429).
 - Phiên người thân = token mờ ``gst_...`` (Redis ``vs:guardian:session:{sha256}``); chỉ lưu băm.
 """
 
@@ -26,6 +26,7 @@ from redis.asyncio import Redis
 from app.core.clock import Clock
 from app.core.errors import AppError, ErrorCode, ErrorDetail
 from app.core.ids import new_uuid7
+from app.core.logging import get_logger
 from app.core.schemas.family import (
     PairConfirmRequest,
     PairConfirmResponse,
@@ -35,6 +36,8 @@ from app.core.schemas.family import (
 from app.services.realtime.models import GuardianLink
 from app.services.realtime.repository import LIVE_STATUSES, FamilyRepository
 from app.services.realtime.senders import is_allowed_push_endpoint
+
+logger = get_logger("vayshield.realtime.pairing")
 
 PAIRING_ALPHABET: Final = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789"  # khớp PAIRING_CODE_PATTERN
 CODE_LEN: Final = 6
@@ -68,7 +71,8 @@ local n = redis.call('INCR', KEYS[1])
 if n == 1 then redis.call('EXPIRE', KEYS[1], tonumber(ARGV[1])) end
 return n
 """
-IP_MAX_FAILS: Final = 10  # phụ: chặn dò mã hàng loạt, đủ rộng để không khóa nhầm cả CGNAT
+GLOBAL_FAILS_PER_MIN: Final = 300  # tổng lượt đoán sai/phút toàn hệ thống; vượt → 429
+IP_MAX_FAILS: Final = 20  # phụ: chặn dò mã hàng loạt, đủ rộng để không khóa nhầm cả CGNAT
 
 
 def pair_code_key(code: str) -> str:
@@ -109,6 +113,7 @@ class PairingService:
         self.code_ttl_s = code_ttl_s
         self.max_fail_attempts = max_fail_attempts
         self.session_ttl_s = session_ttl_s
+        self.global_fail_per_min = GLOBAL_FAILS_PER_MIN
         self._create_script = redis.register_script(_CREATE_CODE_LUA)
         self._attempt_script = redis.register_script(_ATTEMPT_CODE_LUA)
         self._ip_fail_script = redis.register_script(_IP_FAIL_LUA)
@@ -156,17 +161,27 @@ class PairingService:
             problem = ErrorDetail(field="body.webpush_subscription.endpoint", issue="not_allowed")
 
         fail_key = pair_fail_key(client_ip)
-        # Đếm sai THEO MÃ (fail_attempts trong HASH, tối đa 3): người lạ không đoán đúng mã thì
-        # không khóa được người thân thật. Khóa theo IP chỉ áp cho các lần đoán mã KHÔNG tồn tại,
-        # nên mã đúng luôn vượt qua được kể cả khi IP chung (CGNAT) đã bị đoán bừa nhiều lần.
+        # Đếm sai THEO MÃ (fail_attempts trong HASH, tối đa 3) + khóa phụ theo IP: IP đã khóa
+        # (>= IP_MAX_FAILS lần đoán mã không tồn tại trong TTL) bị 423 NGAY, không chạy thử mã nào,
+        # nên không thể tiếp tục brute-force 32^6. Đánh đổi: nhiều người sau cùng IP (CGNAT) có thể
+        # bị khóa chung; muốn giải quyết tận gốc cần tăng entropy mã (8 ký tự) = đổi contract.
+        fail_key = pair_fail_key(client_ip)
+        if int(await self._redis.get(fail_key) or 0) >= IP_MAX_FAILS:
+            raise AppError(ErrorCode.PAIRING_LOCKED, 423)
         res = await self._attempt_script(
             keys=[pair_code_key(body.pairing_code)],
             args=[self.max_fail_attempts, 0 if problem else 1],
         )
         outcome = int(res[0])
         if outcome == 0:
-            if int(await self._redis.get(fail_key) or 0) >= IP_MAX_FAILS:
-                raise AppError(ErrorCode.PAIRING_LOCKED, 423)
+            # Giới hạn TOÀN CỤC số lượt đoán sai mỗi phút (tín hiệu tấn công phân tán nhiều IP).
+            minute = int(self._clock.now().timestamp() // 60)
+            global_n = int(
+                await self._ip_fail_script(keys=[f"vs:pair:fail:global:{minute}"], args=[120])
+            )
+            if global_n > self.global_fail_per_min:
+                logger.error("pairing_global_guess_flood")
+                raise AppError(ErrorCode.RATE_LIMITED, 429, headers={"Retry-After": "60"})
             count = int(await self._ip_fail_script(keys=[fail_key], args=[self.code_ttl_s]))
             raise AppError(
                 ErrorCode.PAIRING_LOCKED

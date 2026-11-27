@@ -86,17 +86,41 @@ async def test_s2_ec24_stranger_wrong_guesses_do_not_lock_real_guardian(
     assert ok.status_code == 200, ok.text
 
 
-async def test_s2_ec24_mass_guessing_from_one_ip_locks_that_ip(
-    client: httpx.AsyncClient, services: RealtimeServices
+async def test_s2_ec24_mass_guessing_locks_ip_and_locked_ip_cannot_hit_live_code(
+    client: httpx.AsyncClient, services: RealtimeServices, fake_clock: FakeClock
 ) -> None:
-    """Bộ đếm phụ theo IP: 10 lần đoán sai liên tiếp → 423 cho IP đó."""
+    """20 lần đoán sai → IP bị khóa; từ đó KHÔNG thử mã nào nữa (kể cả mã sống đúng) → 423."""
+    code = str((await _init(client, fake_clock))["pairing_code"])
     codes = []
-    for i in range(10):
+    for i in range(25):
         r = await client.post(
-            CONFIRM, json={"pairing_code": f"BBBBB{PAIRING_ALPHABET[i]}", "consent_accepted": True}
+            CONFIRM,
+            json={
+                "pairing_code": f"BBBB{PAIRING_ALPHABET[i // 8]}{PAIRING_ALPHABET[i % 8]}",
+                "consent_accepted": True,
+            },
         )
         codes.append(r.status_code)
-    assert codes[:9] == [404] * 9 and codes[9] == 423
+        if i % 8 == 7:
+            fake_clock.advance(61)  # qua cửa sổ rate limit 10/phút
+    assert codes[:19] == [404] * 19 and set(codes[19:]) == {423}
+    fake_clock.advance(61)
+    live = await client.post(CONFIRM, json={"pairing_code": code, "consent_accepted": True})
+    assert live.status_code == 423  # IP khóa: không brute-force được tiếp
+
+
+async def test_s2_ec24_global_wrong_guess_flood_returns_429(
+    client: httpx.AsyncClient, services: RealtimeServices
+) -> None:
+    """Vượt giới hạn toàn cục lượt đoán sai/phút → 429 cho mọi mã sai mới (tín hiệu tấn công)."""
+    services.pairing.global_fail_per_min = 3
+    codes = []
+    for i in range(5):
+        r = await client.post(
+            CONFIRM, json={"pairing_code": f"CCCCC{PAIRING_ALPHABET[i]}", "consent_accepted": True}
+        )
+        codes.append(r.status_code)
+    assert codes == [404, 404, 404, 429, 429]
 
 
 async def test_s2_ec23_code_single_use_and_consent_required(
