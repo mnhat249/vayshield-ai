@@ -3,14 +3,14 @@
 Plan: [`../backend-vayshield.md`](../backend-vayshield.md) · Cập nhật %: `node .claude/scripts/progress.js backend-vayshield --write`
 
 <!-- progress:start -->
-**Tổng tiến độ: 72.1%** `[██████████████░░░░░░]` — merged 10/19 task · cập nhật 2026-11-27
+**Tổng tiến độ: 73.9%** `[███████████████░░░░░]` — merged 11/19 task · cập nhật 2026-11-27
 
 | Wave | Tiến độ | | Mốc | Tiến độ |
 |---|---|---|---|---|
 | W0 | 100% | | M0 | 100% |
 | W1 | 93% | | M1 | 82% |
-| W2 | 100% | | M2 | 68% |
-| W3 | 41% | | M3 | 50% |
+| W2 | 100% | | M2 | 72% |
+| W3 | 50% | | M3 | 50% |
 | W4 | 0% | | M4 | 0% |
 | W5 | 0% | |  |  |
 <!-- progress:end -->
@@ -44,7 +44,7 @@ Plan: [`../backend-vayshield.md`](../backend-vayshield.md) · Cập nhật %: `n
 | T09 | WP1-03 | Ma trận 9 phán quyết + lookalike | 2 | M1 | T02,T01 | 4 | merged | task/backend-vayshield/T09 | pass (922✓); PR#5 CI pg | approve sau 3 vòng sửa (1 blocker + nhiều major); vòng 3 chỉ verify + CI pg xanh + bộ hồi quy 354 tên, chưa review lại | – | |
 | T10 | WP1-06 | Mật mã & bảo mật nền | 2 | M1 | T01 | 2 | merged | task/backend-vayshield/T10 | pass (539✓); PR#3 CI pg | approve sau sửa (2 major); CI pg xanh; rủi ro mở: chữ ký policy chỉ phủ payload cần task contract | – | |
 | T11 | WP1-06 | API Trạm 1 & 2 (SSE) | 3 | M1 | T02,T03,T04,T09,T10 | 6 | pending | task/backend-vayshield/T11 | – | – | – | |
-| T12 | WP1-08 | API Trạm 3 + WS + leo thang + gia đình | 3 | M2 | T05,T07,T10 | 6 | verified | task/backend-vayshield/T12 | pass (1927 test); PR#6 CI pg+redis xanh | sửa 2 vòng (1 blocker + 6 major), re-review vòng 3 đang chạy | – | |
+| T12 | WP1-08 | API Trạm 3 + WS + leo thang + gia đình | 3 | M2 | T05,T07,T10 | 6 | merged | task/backend-vayshield/T12 | pass (1927 test); PR#6 CI pg+redis xanh | approve sau 3 vòng sửa (1 blocker + 10 major); vòng 4 chỉ verify + CI pg redis thật xanh, chưa review lại; cần người duyệt: mã ghép đôi 8 ký tự, nhà cung cấp SMS, RLS family_guardian_links | – | |
 | T13 | WP1-02 | Legal GraphRAG | 3 | M2 | T08 | 2 | pending | task/backend-vayshield/T13 | – | – | – | |
 | T14 | WP1-09 | Mule graph + Dynamic VA + B2B webhook | 3 | M2 | T01,T10 | 5 | verified | task/backend-vayshield/T14 | pass (1922 test); PR#8 CI pg xanh | review đang chạy | – | |
 | T15 | WP1-09 | Copilot + SIMO + triage + TTS | 4 | M2 | T13,T14 | 3 | pending | task/backend-vayshield/T15 | – | – | – | |
@@ -87,3 +87,4 @@ Plan: [`../backend-vayshield.md`](../backend-vayshield.md) · Cập nhật %: `n
 | 2026-11-26 | T08 merged (approve sau sửa (4 major); bản sửa chỉ verify + CI pg xanh, chưa review lại; dữ liệu verified=false cần người xác minh) |
 | 2026-11-27 | T09 merged (approve sau 3 vòng sửa (1 blocker + nhiều major); vòng 3 chỉ verify + CI pg xanh + bộ hồi quy 354 tên, chưa review lại) |
 | 2026-11-27 | T09 merged (10/19). T12 sửa 2 vòng + sửa main.py lifespan (được phép), T14 implemented + repo SQL, cả hai CI xanh, đang review. T04 vòng 4 còn 2 blocker số sai → agent sửa vòng 5 |
+| 2026-11-27 | T12 merged (approve sau 3 vòng sửa (1 blocker + 10 major); vòng 4 chỉ verify + CI pg redis thật xanh, chưa review lại; cần người duyệt: mã ghép đôi 8 ký tự, nhà cung cấp SMS, RLS family_guardian_links) |
