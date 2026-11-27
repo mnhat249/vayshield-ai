@@ -1,4 +1,4 @@
-# PROGRESS — Backend VayShield AI
+|||||||| verified || pass (1922✓); PR#8 CI pg xanh | review đang chạy |||||||| verified || pass (1927✓); PR#6 CI pg+redis xanh | sửa 2 vòng (1 blocker + 6 major), re-review vòng 3 đang chạy |||||||| verified || pass (433✓); PR#7 CI xanh | vòng 4: 2 blocker + 2 major (số sai câu thường ngày) → đang sửa vòng 5 # PROGRESS — Backend VayShield AI
 
 Plan: [`../backend-vayshield.md`](../backend-vayshield.md) · Cập nhật %: `node .claude/scripts/progress.js backend-vayshield --write`
 
@@ -86,3 +86,4 @@ Plan: [`../backend-vayshield.md`](../backend-vayshield.md) · Cập nhật %: `n
 | 2026-11-26 | T08 implemented + verified (881✓, mọi dữ liệu registry/luật verified=false), PR#4. T09 sửa xong (75a70ff), PR#5, re-review. T04 review vòng 3: 2 blocker + 4 major → agent sửa theo hướng whitelist ranh giới |
 | 2026-11-26 | T08 merged (approve sau sửa (4 major); bản sửa chỉ verify + CI pg xanh, chưa review lại; dữ liệu verified=false cần người xác minh) |
 | 2026-11-27 | T09 merged (approve sau 3 vòng sửa (1 blocker + nhiều major); vòng 3 chỉ verify + CI pg xanh + bộ hồi quy 354 tên, chưa review lại) |
+| 2026-11-27 | T09 merged (10/19). T12 sửa 2 vòng + sửa main.py lifespan (được phép), T14 implemented + repo SQL, cả hai CI xanh, đang review. T04 vòng 4 còn 2 blocker số sai → agent sửa vòng 5 |
