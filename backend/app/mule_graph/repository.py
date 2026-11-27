@@ -56,8 +56,11 @@ class MuleGraphRepository(Protocol):
 
     async def edges_for_nodes(self, node_ids: Sequence[UUID]) -> list[MuleEdgeRecord]: ...
     async def find_nodes_by_va(
-        self, bank_bin: str, va_prefix_hmac: str
-    ) -> list[MuleNodeRecord]: ...
+        self, bank_bin: str, va_prefix_hmacs: Sequence[str]
+    ) -> list[MuleNodeRecord]:
+        """Tra theo MỌI pepper đang hiệu lực (cửa sổ xoay pepper, EC-DB08)."""
+        ...
+
     async def get_cluster(self, cluster_id: UUID) -> ClusterRecord | None: ...
     async def save_cluster(self, cluster: ClusterRecord) -> None: ...
     async def nodes_in_cluster(self, cluster_id: UUID) -> list[MuleNodeRecord]: ...
@@ -138,11 +141,13 @@ class InMemoryRepository:
         wanted = set(node_ids)
         return [e for e in self.edges if e.mule_node_id in wanted]
 
-    async def find_nodes_by_va(self, bank_bin: str, va_prefix_hmac: str) -> list[MuleNodeRecord]:
+    async def find_nodes_by_va(
+        self, bank_bin: str, va_prefix_hmacs: Sequence[str]
+    ) -> list[MuleNodeRecord]:
         return [
             dataclasses.replace(n)
             for n in self.nodes.values()
-            if n.bank_bin == bank_bin and n.va_prefix_hmac == va_prefix_hmac
+            if n.bank_bin == bank_bin and n.va_prefix_hmac in va_prefix_hmacs
         ]
 
     async def get_cluster(self, cluster_id: UUID) -> ClusterRecord | None:

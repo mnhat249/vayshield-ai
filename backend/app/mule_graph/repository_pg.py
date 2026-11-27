@@ -18,7 +18,9 @@ Theo ``migrations/0001_core_schema.sql``:
 from __future__ import annotations
 
 import contextvars
-from collections.abc import AsyncIterator, Sequence
+import re
+import time
+from collections.abc import AsyncIterator, Callable, Sequence
 from contextlib import asynccontextmanager
 from datetime import datetime, timedelta
 from typing import Any, Final
@@ -45,6 +47,8 @@ from app.security.envelope import EnvelopeCipher, EnvelopeDecryptionError, recor
 _log = get_logger("vayshield.mule_graph.pg")
 
 API_KEY_PREFIX_LEN: Final = 16
+PARTNER_CACHE_TTL_S: Final = 120.0
+_PARTNER_KEY_RE: Final = re.compile(r"[A-Za-z0-9_\-]{16,128}")
 PARTNERS_TABLE: Final = "fintech_partners"
 SECRET_COLUMN: Final = "hmac_secret_cipher"  # noqa: S105 - tên cột, không phải bí mật
 
@@ -57,7 +61,9 @@ _NODE_COLS: Final = (
 _NODE_SELECT: Final = "SELECT " + _NODE_COLS + " FROM mule_account_nodes"  # noqa: S608
 _SQL_NODE_BY_HMAC: Final = _NODE_SELECT + " WHERE account_hmac_sha256 = ANY(:c) LIMIT 1"
 _SQL_NODE_BY_ID: Final = _NODE_SELECT + " WHERE id = :i"
-_SQL_NODES_BY_VA: Final = _NODE_SELECT + " WHERE bank_bin = :b AND va_prefix_hmac = :v ORDER BY id"
+_SQL_NODES_BY_VA: Final = (
+    _NODE_SELECT + " WHERE bank_bin = :b AND va_prefix_hmac = ANY(:v) ORDER BY id"
+)
 _SQL_NODES_IN_CLUSTER: Final = _NODE_SELECT + " WHERE cluster_id = :c"
 
 
@@ -92,12 +98,41 @@ def _node_from_row(row: Any) -> MuleNodeRecord:
 
 
 class SqlB2BRepository:
-    def __init__(self, sessionmaker: async_sessionmaker[AsyncSession], cipher: EnvelopeCipher):
+    def __init__(
+        self,
+        sessionmaker: async_sessionmaker[AsyncSession],
+        cipher: EnvelopeCipher,
+        *,
+        secret_cache_ttl_s: float = PARTNER_CACHE_TTL_S,
+        monotonic: Callable[[], float] = time.monotonic,
+    ) -> None:
         self._sm = sessionmaker
         self._cipher = cipher
+        self._ttl = secret_cache_ttl_s
+        self._monotonic = monotonic
+        self._cache: dict[str, tuple[float, PartnerRecord]] = {}
 
     async def get_partner_by_key(self, partner_key: str) -> PartnerRecord | None:
+        """Giả định: DB chỉ lưu 16 ký tự đầu (``api_key_prefix``) nên không so khớp được toàn bộ
+        khóa; kiểm dạng/độ dài chuẩn rồi để chữ ký HMAC (bí mật riêng) làm chốt xác thực. Nên thêm
+        cột băm toàn khóa bằng migration MỚI (ngoài vùng owns T14).
+
+        Bí mật đã giải mã được cache ngắn (``secret_cache_ttl_s``) để không giải envelope + truy vấn
+        mỗi request; đối tác bị vô hiệu hóa có hiệu lực chậm nhất sau TTL này."""
+        if not _PARTNER_KEY_RE.fullmatch(partner_key):
+            return None
         prefix = partner_key[:API_KEY_PREFIX_LEN]
+        hit = self._cache.get(prefix)
+        if hit is not None and hit[0] > self._monotonic():
+            return hit[1]
+        partner = await self._load_partner(prefix)
+        if partner is None:
+            self._cache.pop(prefix, None)
+        elif self._ttl > 0:
+            self._cache[prefix] = (self._monotonic() + self._ttl, partner)
+        return partner
+
+    async def _load_partner(self, prefix: str) -> PartnerRecord | None:
         async with self._sm() as session, session.begin():
             row = (
                 await session.execute(
@@ -394,12 +429,14 @@ class SqlMuleGraphRepository:
             for r in rows
         ]
 
-    async def find_nodes_by_va(self, bank_bin: str, va_prefix_hmac: str) -> list[MuleNodeRecord]:
+    async def find_nodes_by_va(
+        self, bank_bin: str, va_prefix_hmacs: Sequence[str]
+    ) -> list[MuleNodeRecord]:
         async with self._use() as s:
             rows = (
                 await s.execute(
                     text(_SQL_NODES_BY_VA),
-                    {"b": bank_bin, "v": va_prefix_hmac},
+                    {"b": bank_bin, "v": list(va_prefix_hmacs)},
                 )
             ).all()
         return [_node_from_row(r) for r in rows]

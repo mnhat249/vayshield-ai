@@ -12,7 +12,8 @@ idempotency + bật Khiên (``B2BShieldService``). Kho dữ liệu (``B2BReposit
 
 from __future__ import annotations
 
-from typing import Annotated
+import contextlib
+from typing import Annotated, Final
 
 from fastapi import APIRouter, Depends, Header, Request, status
 from redis.asyncio import Redis
@@ -30,10 +31,16 @@ from app.mule_graph.shield_service import B2BShieldService
 from app.security.envelope import get_envelope_cipher
 from app.security.keys import SecurityConfigError
 from app.security.partner_hmac import verify_partner_request
-from app.security.rate_limit import CompositeRateLimiter
+from app.security.rate_limit import CompositeRateLimiter, client_ip
 from app.shield_state.store import ShieldStateStore
 
+_DUMMY_SECRET: Final = b"vayshield-dummy-partner-secret-not-a-credential"
+
 router = APIRouter(prefix="/api/v1/b2b", tags=["b2b"])
+
+
+def _ip_limiter(redis: Redis) -> CompositeRateLimiter:
+    return CompositeRateLimiter.from_settings(redis)
 
 
 async def get_b2b_repository() -> B2BRepository:
@@ -75,19 +82,33 @@ async def disbursement_shield(
     store: Annotated[ShieldStateStore, Depends(get_shield_store)],
     clock: Annotated[Clock, Depends(get_clock)],
 ) -> DisbursementShieldResponse:
-    partner = await repo.get_partner_by_key(caller.partner_key)
-    if partner is None or not partner.is_active:
-        # Không phân biệt "khóa lạ" với "chữ ký sai" (chống dò khóa đối tác).
-        raise AppError(ErrorCode.SIGNATURE_INVALID, 401)
+    # 1) Rate limit theo IP TRƯỚC mọi truy vấn DB/giải mã (chống dò khóa + tiêu hao tài nguyên).
+    await _ip_limiter(redis).enforce(device_id=None, ip=client_ip(request.client), clock=clock)
     raw_body = await request.body()
     now = clock.now()
+    now_s = int(now.timestamp())
+    timestamp_header = request.headers.get(PARTNER_TIMESTAMP_HEADER)
+    partner = await repo.get_partner_by_key(caller.partner_key)
+    if partner is None or not partner.is_active:
+        # Khóa lạ/vô hiệu: vẫn chạy 1 phép HMAC với secret giả để cân bằng thời gian, rồi trả đúng
+        # lỗi như chữ ký sai (không cho dò khóa đối tác).
+        with contextlib.suppress(AppError):
+            verify_partner_request(
+                secret=_DUMMY_SECRET,
+                signature_header=caller.signature,
+                timestamp_header=timestamp_header,
+                raw_body=raw_body,
+                now_s=now_s,
+            )
+        raise AppError(ErrorCode.SIGNATURE_INVALID, 401)
     verify_partner_request(
         secret=partner.hmac_secret,
         signature_header=caller.signature,
-        timestamp_header=request.headers.get(PARTNER_TIMESTAMP_HEADER),
+        timestamp_header=timestamp_header,
         raw_body=raw_body,
-        now_s=int(now.timestamp()),
+        now_s=now_s,
     )
+    # 2) Rate limit riêng theo đối tác (rpm của hợp đồng đối tác).
     limiter = CompositeRateLimiter(
         redis, device_rpm=partner.rate_limit_rpm, ip_rpm=partner.rate_limit_rpm
     )

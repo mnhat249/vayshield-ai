@@ -375,7 +375,8 @@ async def test_pg_ec_db02_va_range_cluster_and_envelope(
         scam_script_vec=vec,
     )
     assert r2.cluster_id is not None and r2.is_dynamic_va_range
-    assert r2.status is SimoDossierStatus.QUORUM_REACHED
+    assert r2.status is SimoDossierStatus.OBSERVING  # quorum ở mức cụm, không lan xuống STK
+    assert r2.cluster_distinct_devices == 2
     async with pg.connect() as c:
         cl = (
             await c.execute(

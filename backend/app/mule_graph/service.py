@@ -18,6 +18,7 @@ from __future__ import annotations
 
 import math
 import re
+from collections.abc import Sequence
 from dataclasses import dataclass
 from datetime import datetime, timedelta
 from typing import Final
@@ -62,13 +63,18 @@ def va_prefix_of(account_no: str) -> str | None:
     return account_no[: 8 if len(account_no) >= 12 else 6]
 
 
-def compute_confidence(channels: list[EvidenceChannel], quorum: int) -> float:
-    """Dưới quorum: chặn ở 0.35 (chống vu khống bởi 1 nguồn). Đủ quorum: noisy-OR trọng số."""
+def compute_confidence(edges: Sequence[MuleEdgeRecord], quorum: int) -> float:
+    """Dưới quorum: chặn ở 0.35 (chống vu khống bởi 1 nguồn). Đủ quorum: noisy-OR trọng số,
+    MỖI THIẾT BỊ chỉ góp 1 lần với kênh mạnh nhất (1 thiết bị bơm nhiều cạnh không đẩy điểm lên)."""
     if quorum < QUORUM_MIN_DEVICES:
         return DEFAULT_CONFIDENCE
+    best: dict[UUID, float] = {}
+    for e in edges:
+        w = EVIDENCE_WEIGHTS[e.evidence_channel]
+        best[e.reporter_device_id] = max(best.get(e.reporter_device_id, 0.0), w)
     miss = 1.0
-    for ch in channels:
-        miss *= 1.0 - EVIDENCE_WEIGHTS[ch]
+    for w in best.values():
+        miss *= 1.0 - w
     return min(MAX_CONFIDENCE, max(0.5, round(1.0 - miss, 4)))
 
 
@@ -81,6 +87,8 @@ class ReportResult:
     threat_confidence: float
     cluster_id: UUID | None
     is_dynamic_va_range: bool
+    cluster_distinct_devices: int = 0
+    cluster_severity: SeverityLevel | None = None
 
 
 class MuleGraphService:
@@ -112,15 +120,21 @@ class MuleGraphService:
         """Ghi nhận 1 báo cáo STK nghi vấn từ 1 thiết bị (idempotent theo thiết bị)."""
         if scam_script_vec is not None and len(scam_script_vec) != EMBEDDING_DIM:
             raise ValueError(f"scam_script_vec phải có {EMBEDDING_DIM} chiều")
+        if scam_script_vec is not None and not (
+            all(math.isfinite(x) for x in scam_script_vec) and any(scam_script_vec)
+        ):
+            raise ValueError("scam_script_vec phải hữu hạn và khác vector 0")
         canonical = normalize_mule_account(bank_bin, account_no)  # EC-DB09 (A-Z0-9, giữ số 0)
         bin_clean, acct = canonical.split(":", 1)
         lookup = self._indexer.lookup(BlindIndexKind.MULE_ACCOUNT, canonical)
         prefix = va_prefix_of(acct)
-        va_hmac = (
-            self._indexer.index(BlindIndexKind.MULE_ACCOUNT, f"{bin_clean}:VAPFX{prefix}")
+        va_lookup = (
+            self._indexer.lookup(BlindIndexKind.MULE_ACCOUNT, f"{bin_clean}:VAPFX{prefix}")
             if prefix is not None
             else None
         )
+        va_hmac = va_lookup.current if va_lookup is not None else None
+        va_candidates = va_lookup.candidates if va_lookup is not None else ()
         async with self._repo.transaction():
             await self._repo.lock_scope(va_hmac or lookup.current)
             node = await self._repo.find_node_by_hmacs(lookup.candidates)
@@ -148,8 +162,8 @@ class MuleGraphService:
                 node.account_hmac = lookup.current  # nâng cấp lười pepper (EC-DB08)
                 node.pepper_version = lookup.current_version
             node.last_reported_at = now
-            if node.va_prefix_hmac is None:
-                node.va_prefix_hmac = va_hmac
+            if va_hmac is not None:
+                node.va_prefix_hmac = va_hmac  # gán/nâng cấp lười pepper cho dải VA (EC-DB08)
             await self._repo.save_node(node)
 
             inserted = await self._repo.add_edge(
@@ -162,7 +176,9 @@ class MuleGraphService:
                 )
             )
             await self._repo.refresh_quorum(node.id)
-            await self._rebuild(node.id, now, scam_trap, impersonated_lender_id)
+            cluster_info = await self._rebuild(
+                node.id, now, scam_trap, impersonated_lender_id, va_hmac, va_candidates
+            )
             final = await self._node(node.id)
         return ReportResult(
             node_id=final.id,
@@ -172,6 +188,8 @@ class MuleGraphService:
             threat_confidence=final.threat_confidence,
             cluster_id=final.cluster_id,
             is_dynamic_va_range=final.is_dynamic_va_range,
+            cluster_distinct_devices=cluster_info[0],
+            cluster_severity=cluster_info[1],
         )
 
     async def _rebuild(
@@ -180,39 +198,49 @@ class MuleGraphService:
         now: datetime,
         scam_trap: ScamTrap,
         lender_id: UUID | None,
-    ) -> None:
-        """Tính lại trạng thái đỉnh + dải VA + cụm (trong giao dịch của caller)."""
+        va_hmac: str | None,
+        va_candidates: Sequence[str],
+    ) -> tuple[int, SeverityLevel | None]:
+        """Tính lại trạng thái đỉnh + dải VA + cụm (trong giao dịch của caller).
+
+        Quorum của MỖI STK chỉ tính từ thiết bị đã báo chính STK đó. Tín hiệu dải VA (nhiều STK
+        cùng ``(bank_bin, va_prefix_hmac)``) chỉ gom cụm và leo thang ở MỨC CỤM, không lan
+        ``QUORUM_REACHED``/độ tin cậy xuống STK chưa đủ quorum riêng (tránh gán nhầm STK hợp lệ
+        chỉ vì trùng 6–8 số đầu).
+        """
         node = await self._node(node_id)
         group = [node]
-        if node.va_prefix_hmac is not None:
-            group = await self._repo.find_nodes_by_va(node.bank_bin, node.va_prefix_hmac)
+        if va_hmac is not None:
+            group = await self._repo.find_nodes_by_va(node.bank_bin, va_candidates)
         in_range = len(group) >= QUORUM_MIN_DEVICES  # >= 2 STK khác đuôi cùng dải (EC-DB02)
         edges = await self._repo.edges_for_nodes([n.id for n in group])
         cluster_id: UUID | None = None
-        range_quorum = 0
+        cluster_info: tuple[int, SeverityLevel | None] = (0, None)
         if in_range:
             cluster = await self._ensure_cluster(group, edges, now, scam_trap, lender_id)
             cluster_id = cluster.id
-            range_quorum = len({e.reporter_device_id for e in edges})
+            cluster_info = (len({e.reporter_device_id for e in edges}), cluster.severity_level)
         for n in group:
             own = [e for e in edges if e.mule_node_id == n.id]
             quorum = len({e.reporter_device_id for e in own})
-            effective = max(quorum, range_quorum) if in_range else quorum
             if n.simo_dossier_status in (
                 SimoDossierStatus.OBSERVING,
                 SimoDossierStatus.QUORUM_REACHED,
             ):
-                reached = effective >= QUORUM_MIN_DEVICES
                 n.simo_dossier_status = (
-                    SimoDossierStatus.QUORUM_REACHED if reached else SimoDossierStatus.OBSERVING
+                    SimoDossierStatus.QUORUM_REACHED
+                    if quorum >= QUORUM_MIN_DEVICES
+                    else SimoDossierStatus.OBSERVING
                 )
-                chans = [e.evidence_channel for e in (edges if in_range else own)]
-                n.threat_confidence = compute_confidence(chans, effective)
+                n.threat_confidence = compute_confidence(own, quorum)
             n.distinct_device_quorum = quorum
+            if va_hmac is not None:
+                n.va_prefix_hmac = va_hmac
             if in_range:
                 n.is_dynamic_va_range = True
                 n.cluster_id = cluster_id
             await self._repo.save_node(n)
+        return cluster_info
 
     async def _node(self, node_id: UUID) -> MuleNodeRecord:
         found = await self._repo.get_node(node_id)

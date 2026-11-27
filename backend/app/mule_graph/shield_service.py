@@ -75,6 +75,10 @@ class B2BShieldService:
         if not claim.first:
             return await self._replay(partner, candidate, now)
         try:
+            # Chốt trùng ở DB TRƯỚC khi bật Khiên: khóa Redis có thể đã hết hạn/mất (degraded),
+            # nhưng ``UNIQUE (partner_id, idempotency_key)`` là nguồn sự thật (S2-EC26).
+            if await self._repo.get_shield(partner.id, idempotency_key) is not None:
+                return await self._replay(partner, candidate, now)
             status, device_id = await self._arm(candidate, now)
             record, created = await self._repo.create_shield(
                 _with(candidate, status=status, matched_device_id=device_id)
@@ -82,8 +86,8 @@ class B2BShieldService:
         except BaseException:
             await self._release(partner.id, idempotency_key)  # retry không bị kẹt 48h
             raise
-        if not created:
-            return await self._replay(partner, record, now, existing=record)
+        if not created:  # đua với yêu cầu song song cùng khóa: so với NỘI DUNG của yêu cầu này
+            return await self._replay(partner, candidate, now, existing=record)
         return await self._response(partner, record, now)
 
     async def _replay(

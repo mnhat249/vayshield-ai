@@ -4,6 +4,8 @@ from __future__ import annotations
 
 import asyncio
 import time
+from datetime import timedelta
+from typing import Any
 from uuid import UUID, uuid4
 
 import fakeredis
@@ -13,7 +15,7 @@ from fastapi import FastAPI
 
 from app.core.clock import FakeClock
 from app.core.schemas.common import HsmState
-from app.mule_graph.models import DeviceMatch, PartnerRecord
+from app.mule_graph.models import DeviceMatch, PartnerRecord, ShieldRecord
 from app.mule_graph.repository import InMemoryRepository
 from app.security.blind_index import BlindIndexer, BlindIndexKind
 from app.shield_state.fibers import EvidenceSource
@@ -379,3 +381,151 @@ async def test_default_repository_not_configured_is_503(
     app.dependency_overrides.pop(get_b2b_repository, None)
     resp = await _post(client, fake_clock, body_json(phone_hmac))
     assert resp.status_code == 503
+
+
+async def test_review_m1_expired_redis_key_same_idem_key_different_body_is_409_and_not_armed(
+    client: httpx.AsyncClient,
+    fake_clock: FakeClock,
+    phone_hmac: str,
+    device_id: UUID,
+    partner_a: PartnerRecord,
+    repo: InMemoryRepository,
+    indexer: BlindIndexer,
+    store: ShieldStateStore,
+    redis: fakeredis.FakeAsyncRedis,
+) -> None:
+    """Review M1: khóa Redis hết hạn/mất -> DB (UNIQUE) vẫn chặn; body khác -> 409, không bật
+    Khiên cho SĐT/thiết bị của body mới."""
+    first = await _post(client, fake_clock, body_json(phone_hmac), key="idem-m1-0001")
+    assert first.status_code == 202
+    await redis.delete(b2b_idem_key(str(partner_a.id), "idem-m1-0001"))  # TTL 48h hết / degraded
+
+    other_phone = indexer.index(BlindIndexKind.PHONE, "+84912000111")
+    other_dev = uuid4()
+    repo.devices_by_phone[other_phone] = DeviceMatch(
+        device_id=other_dev, phone_optin_exp_at=fake_clock.now() + timedelta(days=30)
+    )
+    for raw in (
+        body_json(phone_hmac, amount_bucket_tier="TIER_3M_10M"),
+        body_json(other_phone),  # SĐT khác
+    ):
+        resp = await _post(client, fake_clock, raw, key="idem-m1-0001")
+        assert resp.status_code == 409, resp.text
+        assert resp.json()["error"]["code"] == "IDEMPOTENCY_CONFLICT"
+        await redis.delete(b2b_idem_key(str(partner_a.id), "idem-m1-0001"))
+    snap = await store.load(str(other_dev), _now_ms(fake_clock))
+    assert snap.fibers == (), "body mới không được bật Khiên trên thiết bị khác"
+    assert len(repo.shields) == 1
+
+
+async def test_review_m1_expired_redis_key_same_body_replays_same_shield_without_rearming(
+    client: httpx.AsyncClient,
+    fake_clock: FakeClock,
+    phone_hmac: str,
+    device_id: UUID,
+    partner_a: PartnerRecord,
+    store: ShieldStateStore,
+    redis: fakeredis.FakeAsyncRedis,
+) -> None:
+    raw = body_json(phone_hmac)
+    first = await _post(client, fake_clock, raw, key="idem-m1-0002")
+    v1 = (await store.load(str(device_id), _now_ms(fake_clock))).version
+    await redis.delete(b2b_idem_key(str(partner_a.id), "idem-m1-0002"))
+    again = await _post(client, fake_clock, raw, key="idem-m1-0002")
+    assert again.status_code == 202 and again.json() == first.json()
+    assert (await store.load(str(device_id), _now_ms(fake_clock))).version == v1
+
+
+async def test_review_m1_race_branch_compares_against_request_not_itself(
+    client: httpx.AsyncClient,
+    fake_clock: FakeClock,
+    phone_hmac: str,
+    device_id: UUID,
+    partner_a: PartnerRecord,
+    repo: InMemoryRepository,
+    redis: fakeredis.FakeAsyncRedis,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Nhánh created=False (đua DB) phải so nội dung với yêu cầu hiện tại -> 409 nếu khác."""
+    first = await _post(client, fake_clock, body_json(phone_hmac), key="idem-m1-0003")
+    assert first.status_code == 202
+    await redis.delete(b2b_idem_key(str(partner_a.id), "idem-m1-0003"))
+    real_get = repo.get_shield
+    calls = 0
+
+    async def blind_first_get(partner_id: UUID, key: str) -> ShieldRecord | None:
+        nonlocal calls
+        calls += 1
+        return None if calls == 1 else await real_get(partner_id, key)  # pre-check "chưa thấy"
+
+    monkeypatch.setattr(repo, "get_shield", blind_first_get)
+    resp = await _post(
+        client,
+        fake_clock,
+        body_json(phone_hmac, amount_bucket_tier="TIER_3M_10M"),
+        key="idem-m1-0003",
+    )
+    assert resp.status_code == 409
+    assert resp.json()["error"]["code"] == "IDEMPOTENCY_CONFLICT"
+
+
+async def test_review_minor_ip_rate_limit_runs_before_partner_lookup(
+    client: httpx.AsyncClient,
+    fake_clock: FakeClock,
+    phone_hmac: str,
+    repo: InMemoryRepository,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from app.api.routes import b2b as b2b_routes
+    from app.security.rate_limit import CompositeRateLimiter
+
+    monkeypatch.setattr(
+        b2b_routes,
+        "_ip_limiter",
+        lambda r: CompositeRateLimiter(r, device_rpm=2, ip_rpm=2),
+    )
+    calls = 0
+    real = repo.get_partner_by_key
+
+    async def counting(key: str) -> PartnerRecord | None:
+        nonlocal calls
+        calls += 1
+        return await real(key)
+
+    monkeypatch.setattr(repo, "get_partner_by_key", counting)
+    codes = [
+        (
+            await _post(
+                client,
+                fake_clock,
+                body_json(phone_hmac),
+                partner_key="vsp_unknown_xxxx",
+                key=f"ip-lim-{i:04d}",
+            )
+        ).status_code
+        for i in range(4)
+    ]
+    assert codes[:2] == [401, 401] and codes[2:] == [429, 429]
+    assert calls == 2, "yêu cầu bị chặn bởi IP không được chạm DB đối tác"
+
+
+async def test_review_minor_unknown_key_runs_dummy_hmac_and_returns_signature_invalid(
+    client: httpx.AsyncClient,
+    fake_clock: FakeClock,
+    phone_hmac: str,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from app.api.routes import b2b as b2b_routes
+
+    seen: list[object] = []
+    from app.security.partner_hmac import verify_partner_request as real
+
+    def spy(**kw: Any) -> int:
+        seen.append(kw["secret"])
+        return real(**kw)
+
+    monkeypatch.setattr("app.api.routes.b2b.verify_partner_request", spy)
+    resp = await _post(client, fake_clock, body_json(phone_hmac), partner_key="vsp_unknown_xxxx")
+    assert resp.status_code == 401
+    assert resp.json()["error"]["code"] == "SIGNATURE_INVALID"
+    assert seen == [b2b_routes._DUMMY_SECRET]
