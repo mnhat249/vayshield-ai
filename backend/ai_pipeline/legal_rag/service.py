@@ -17,7 +17,6 @@ from app.core.clock import Clock, SystemClock
 
 from .embedding import Embedder, LexicalHashEmbedder
 from .models import (
-    UNVERIFIED_NOTE,
     W_BM25,
     W_COSINE,
     Citation,
@@ -100,7 +99,7 @@ def _citation(node: LegalNode) -> Citation:
         title_vi=node.title_vi,
         quote=node.verbatim_content.strip(),
         verified=False,
-        note=UNVERIFIED_NOTE,
+        note=node.status_note(),
     )
 
 
@@ -154,7 +153,9 @@ class LegalRagService:
         if not all_verified:
             plain = (
                 "Lưu ý: các nguồn pháp lý dưới đây chưa được đối chiếu với văn bản chính thức, "
-                "chỉ mang tính tham khảo. " + plain
+                "chỉ mang tính tham khảo"
+                + (", chưa rõ ngày hiệu lực. " if any(n.date_unknown for n in nodes) else ". ")
+                + plain
             )
         return Explanation(
             verdict_code=verdict_code,
@@ -231,5 +232,5 @@ class LegalRagService:
             doc_number=n.doc_number if n.verified else None,
             effective_date=n.effective_date if n.verified else None,
             snippet=_first_sentences(n.verbatim_content.strip()) if n.has_verbatim else "",
-            note=None if n.verified else UNVERIFIED_NOTE,
+            note=n.status_note(),
         )

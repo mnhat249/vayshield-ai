@@ -10,6 +10,9 @@ W_COSINE: Final = 0.65
 W_BM25: Final = 0.35
 
 UNVERIFIED_NOTE: Final = "Nguồn chưa được đối chiếu với văn bản chính thức."
+# Ngày giữ chỗ của seed (T08) cho "chưa biết ngày hiệu lực": KHÔNG phải ngày hiệu lực thật.
+UNKNOWN_EFFECTIVE_DATE: Final = date(1970, 1, 1)
+UNKNOWN_DATE_NOTE: Final = "Chưa rõ ngày hiệu lực."
 
 
 @dataclass(frozen=True)
@@ -30,6 +33,17 @@ class LegalNode:
     def is_in_force(self, today: date) -> bool:
         """EC-AI16: cùng điều kiện với ``is_currently_valid AND effective_date <= today``."""
         return self.is_currently_valid and self.effective_date <= today
+
+    @property
+    def date_unknown(self) -> bool:
+        """Ngày sentinel của seed chưa xác minh: không được dùng để khẳng định còn hiệu lực."""
+        return (not self.verified) and self.effective_date == UNKNOWN_EFFECTIVE_DATE
+
+    def status_note(self) -> str | None:
+        """Ghi chú trạng thái cho nguồn chưa xác minh (None nếu đã xác minh)."""
+        if self.verified:
+            return None
+        return UNVERIFIED_NOTE + (" " + UNKNOWN_DATE_NOTE if self.date_unknown else "")
 
     @property
     def has_verbatim(self) -> bool:
