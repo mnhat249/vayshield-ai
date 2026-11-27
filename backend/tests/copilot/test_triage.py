@@ -70,6 +70,9 @@ async def test_s2_ec48_bin_lookup_returns_freeze_hotlines_and_countdown(
     assert d["bank_freeze_hotlines"][0]["hotline"] == "1800 000 001"
     assert d["bank_freeze_hotlines"][0]["verified"] is True
     assert d["bank_freeze_hotlines"][1]["verified"] is False
+    assert (
+        d["bank_freeze_hotlines"][1]["hotline"] == ""
+    )  # registry chưa verified -> không hiển thị số
     assert d["police_hotline"] == "113"
     assert d["pdf_available"] is True
     assert any("Không chuyển thêm" in s for s in d["steps_vi"])

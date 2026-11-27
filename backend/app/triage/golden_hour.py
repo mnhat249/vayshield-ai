@@ -64,12 +64,13 @@ def _aware(ts: datetime) -> datetime:
 
 def _hotline_entry(registry: BankHotlineRegistry, bank_bin: str | None) -> BankFreezeHotline:
     found: BankHotline | None = registry.lookup(bank_bin) if bank_bin else None
-    if found is not None:
+    if found is not None and found.verified and found.hotline:
+        # Chỉ hiển thị số đã được người kiểm chứng; mục chưa verified bị coi như chưa có số.
         return BankFreezeHotline(
             bank_bin=found.bank_bin,
             bank_short_name=found.short_name,
             hotline=found.hotline,
-            verified=found.verified,
+            verified=True,
         )
     name = (
         f"Ngân hàng mã BIN {bank_bin} (chưa có tổng đài đã kiểm chứng)"

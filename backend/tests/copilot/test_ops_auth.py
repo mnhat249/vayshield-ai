@@ -79,7 +79,8 @@ async def test_rbac_garbage_forged_and_foreign_tokens_are_401(
     no_exp = jwt.encode(
         {k: v for k, v in claims.items() if k != "exp"}, JWT_SECRET, algorithm="HS256"
     )
-    for token in ("garbage", "a.b.c", forged, none_alg, wrong_issuer, no_exp):
+    hs512 = jwt.encode(claims, JWT_SECRET, algorithm="HS512")
+    for token in (hs512, "garbage", "a.b.c", forged, none_alg, wrong_issuer, no_exp):
         r = await client.get(CLUSTERS, headers=bearer(token))
         assert r.status_code == 401, token
 
@@ -265,3 +266,17 @@ def test_token_does_not_contain_password_or_code(tokens: OpsTokenService) -> Non
     payload = jwt.decode(t.access_token, options={"verify_signature": False})
     assert JUDGE_CODE not in str(payload) and ANALYST_PASSWORD not in str(payload)
     assert time.time() > 0  # đồng hồ thật không ảnh hưởng hạn token (dùng FakeClock)
+
+
+async def test_judge_access_token_expires_after_its_own_ttl(
+    ops_app: FastAPI, client: httpx.AsyncClient, fake_clock: FakeClock
+) -> None:
+    login = (
+        await client.post(
+            TOKEN, json={"grant_type": "judge_quick_login", "judge_access_code": JUDGE_CODE}
+        )
+    ).json()
+    fake_clock.advance(JUDGE_ACCESS_TTL_S - 1)
+    assert (await client.get(CLUSTERS, headers=bearer(login["access_token"]))).status_code == 200
+    fake_clock.advance(2)
+    assert (await client.get(CLUSTERS, headers=bearer(login["access_token"]))).status_code == 401
