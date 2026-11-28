@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import base64
+
 import pytest
 from pydantic import ValidationError
 
@@ -94,3 +96,35 @@ def test_ec_ops23_production_forbids_error_details() -> None:
 def test_production_ok_with_all_secrets() -> None:
     cfg = Settings(**_prod_kwargs())  # type: ignore[arg-type]
     assert cfg.is_production
+
+
+@pytest.mark.parametrize("env", [AppEnv.PRODUCTION, AppEnv.STAGING])
+@pytest.mark.parametrize(
+    ("field", "value"),
+    [
+        ("kms_master_kek", base64.b64encode(b"DEV-ONLY-kek-" + b"0" * 19).decode()),
+        ("pepper_b2b_phone", "dev-only-pepper-b2b-phone-local-0000000000"),
+        ("pepper_mule_account", base64.b64encode(b"dev-only-pepper-mule").decode()),
+        (
+            "ed25519_policy_private_key",
+            base64.b64encode(b"DEV-ONLY-ed25519-seed-000000000").decode(),
+        ),
+        ("jwt_ops_secret", "change-me-please"),
+    ],
+)
+def test_ec_ops_dev_only_secrets_rejected_in_prod_and_staging(
+    env: AppEnv, field: str, value: str
+) -> None:
+    """EC-OPS: khóa dev-only/mẫu (compose local) bị từ chối ở staging/production."""
+    kwargs = {**_prod_kwargs(), "app_env": env, field: value}
+    with pytest.raises(ValidationError, match=field.upper()):
+        Settings(**kwargs)  # type: ignore[arg-type]
+
+
+def test_ec_ops_dev_only_secrets_allowed_in_local() -> None:
+    cfg = Settings(
+        app_env=AppEnv.LOCAL,
+        pepper_b2b_phone="dev-only-pepper-b2b-phone-local-0000000000",  # type: ignore[arg-type]
+        jwt_ops_secret="change-me",  # type: ignore[arg-type]
+    )
+    assert not cfg.is_production

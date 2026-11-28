@@ -7,6 +7,8 @@ Giá trị mặc định chỉ dành cho môi trường local/test; ``APP_ENV=pr
 
 from __future__ import annotations
 
+import base64
+import binascii
 from enum import StrEnum
 from functools import lru_cache
 from typing import Annotated, Any
@@ -23,6 +25,24 @@ class AppEnv(StrEnum):
     TEST = "test"
     STAGING = "staging"
     PRODUCTION = "production"
+
+
+_DEV_ONLY_PREFIXES = ("dev-only", "change-me", "changeme")
+
+
+def _looks_dev_only(secret: SecretStr | None) -> bool:
+    """True nếu giá trị (hoặc bản giải base64 của nó) bắt đầu bằng dấu hiệu dev-only/mẫu."""
+    if secret is None:
+        return False
+    raw = secret.get_secret_value().strip()
+    candidates = [raw.lower().encode("utf-8", "ignore")]
+    for decoder in (base64.b64decode, base64.urlsafe_b64decode):
+        try:
+            padded = raw + "=" * (-len(raw) % 4)
+            candidates.append(decoder(padded).lower())
+        except (binascii.Error, ValueError):
+            continue
+    return any(c.startswith(tuple(p.encode() for p in _DEV_ONLY_PREFIXES)) for c in candidates)
 
 
 def _split_csv(value: Any) -> Any:
@@ -155,7 +175,29 @@ class Settings(BaseSettings):
 
     @model_validator(mode="after")
     def _production_guard(self) -> Settings:
-        """Ở production: bắt buộc đủ bí mật, cấm CORS ``*``, cấm lộ chi tiết lỗi."""
+        """Ở production: bắt buộc đủ bí mật, cấm CORS ``*``, cấm lộ chi tiết lỗi.
+
+        Production/staging: từ chối bí mật dev-only (vd khóa mẫu của docker-compose local)."""
+        if self.app_env in (AppEnv.PRODUCTION, AppEnv.STAGING):
+            dev_only = [
+                name
+                for name, value in {
+                    "KMS_MASTER_KEK": self.kms_master_kek,
+                    "KMS_MASTER_KEK_PREV": self.kms_master_kek_prev,
+                    "PEPPER_B2B_PHONE": self.pepper_b2b_phone,
+                    "PEPPER_B2B_PHONE_PREV": self.pepper_b2b_phone_prev,
+                    "PEPPER_MULE_ACCOUNT": self.pepper_mule_account,
+                    "PEPPER_MULE_ACCOUNT_PREV": self.pepper_mule_account_prev,
+                    "ED25519_POLICY_PRIVATE_KEY": self.ed25519_policy_private_key,
+                    "JWT_OPS_SECRET": self.jwt_ops_secret,
+                }.items()
+                if _looks_dev_only(value)
+            ]
+            if dev_only:
+                raise ValueError(
+                    "Giá trị dev-only/mẫu không được dùng ở staging/production: "
+                    + ", ".join(dev_only)
+                )
         if self.app_env is not AppEnv.PRODUCTION:
             return self
         required = {
