@@ -139,6 +139,30 @@ def _clause_bounds(src: str, start: int, end: int) -> tuple[int, int]:
     return lo, min(ends) if ends else len(src)
 
 
+# --- T19: phủ định / quá khứ / câu hỏi ("đúng hoặc None", không bao giờ số sai) ---------------
+# Phủ định đứng ngay trước số (cách ≤ 3 từ, cùng mệnh đề): "không vay 5 triệu", "hông phải sáu
+# tháng", "đâu phải năm triệu" → số đó BỊ LOẠI (kèm ghi chú hỏi lại), không bao giờ được điền.
+_NEG_RE = re.compile(
+    r"(?:^|\s)(?:không|khong|hông|hong|hổng|hỗng|chẳng|chang|chả|đâu\s+(?:phải|có)|dau\s+(?:phai|co))"
+    r"(?:\s+phải|\s+phai)?(?:\s+\w+){0,3}\s*$"
+)
+# "đã/mới/vừa/được + đóng/trả/góp N tháng" = đã đóng (quá khứ), KHÔNG phải thời hạn vay.
+_PAST_RE = re.compile(
+    r"(?:^|\s)(?:đã|da|mới|moi|vừa|vua|được|duoc)(?:\s+\w+){0,2}\s+(?:đóng|dong|trả|tra|góp|gop)"
+    r"\s*$|(?:^|\s)(?:đóng|dong|trả|tra|góp|gop)\s+(?:được|duoc|xong)\s*$"
+)
+# Đuôi hỏi "hông?" / "hong?": người nói đang HỎI, chưa khẳng định → không dựng lịch trả.
+_QUESTION_TAIL_RE = re.compile(r"(?:hông|hong|hổng)\s*[?？]\s*$")
+
+
+def _is_negated(window: str) -> bool:
+    return _NEG_RE.search(window.rstrip()) is not None
+
+
+def _is_past_paid(window: str) -> bool:
+    return _PAST_RE.search(window.rstrip()) is not None
+
+
 MAX_TENURE_DAYS = 3650  # schema: tenure_days_total ≤ 3650
 MAX_PERIODS = 360  # schema: period_count ≤ 360
 MAX_INTERVAL_DAYS = 365
@@ -211,7 +235,24 @@ def transcribe_terms_to_extraction(transcript: str) -> VoiceTermsDraft:
     fees: list[DeductedFeeItem] = []
     upfront: UpfrontFeeDemand | None = None
     notes: list[str] = []
-    tenure = _pick_tenure([d.days for d in slang.durations], notes)
+    all_ends = sorted([m.end for m in slang.money] + [d.end for d in slang.durations])
+    usable_days: list[int] = []
+    for d in slang.durations:
+        c_lo, _ = _clause_bounds(src, d.start, d.end)
+        w_lo = max([c_lo, *[e for e in all_ends if e <= d.start]])
+        dwin = src[w_lo : d.start]
+        if _is_negated(dwin):
+            notes.append(
+                f'Nghe có phủ định trước "{d.raw}" — đã bỏ qua, vui lòng nói lại thời hạn.'
+            )
+        elif _is_past_paid(dwin):
+            notes.append(f'"{d.raw}" nghe như đã đóng xong — đây có phải thời hạn vay không?')
+        else:
+            usable_days.append(d.days)
+    tenure = _pick_tenure(usable_days, notes)
+    question_tail = _QUESTION_TAIL_RE.search(transcript.strip()) is not None
+    if question_tail:
+        notes.append("Nghe như một câu hỏi — vui lòng xác nhận lại lịch góp.")
 
     prev_end = 0
     mentions = slang.money
@@ -222,6 +263,9 @@ def transcribe_terms_to_extraction(transcript: str) -> VoiceTermsDraft:
         after = src[m.end : min(clause_end, next_start)]
         clause = src[clause_start:clause_end]
         prev_end = m.end
+        if _is_negated(window):  # "không vay 5 triệu": số bị phủ định → loại, hỏi lại
+            notes.append(f'Nghe có phủ định trước "{m.raw}" — đã bỏ qua số này, vui lòng nói lại.')
+            continue
         role = _nearest_role(window, after)
         if m.value_vnd is None:  # cụm tiền mơ hồ: không đoán, hỏi lại
             notes.append(f'Chưa nghe rõ số tiền "{m.raw}" — vui lòng nói lại con số.')
@@ -259,6 +303,8 @@ def transcribe_terms_to_extraction(transcript: str) -> VoiceTermsDraft:
 
     regimes: list[RepaymentRegimeSegment] = []
     for amount, interval in per_period:
+        if question_tail:
+            break
         if tenure is None:
             notes.append("Chưa nghe rõ góp trong bao lâu — vui lòng nói thêm thời hạn.")
             continue

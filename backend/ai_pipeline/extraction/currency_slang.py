@@ -157,6 +157,10 @@ _CLAUSE_VERBS = frozenset(
 # Trợ từ cuối câu (ranh giới rõ sau số). Bản không dấu chỉ dùng khi cả câu không dấu.
 _PARTICLES = frozenset({"nha", "nhé", "nhá", "thôi", "ạ", "á", "luôn", "đó", "đấy", "hả", "nhỉ"})
 _PARTICLES_ASCII = frozenset({"nha", "nhe", "thoi", "a", "luon", "do", "day", "ha", "nhi"})
+# Trợ từ cuối câu vùng miền Trung/Nam. KHÔNG có "rồi" ("đóng 4 tháng rồi" = đã đóng, không phải
+# thời hạn). Chỉ có hiệu lực ở đuôi mệnh đề (xem _is_particle).
+_REGIONAL_TAIL = frozenset({"nghe", "nghen", "nhen", "hen", "hén", "nè", "hông", "đa", "rứa"})
+_REGIONAL_TAIL_ASCII = frozenset({"ne", "hong", "da", "rua"})
 # Trợ từ chỉ định ("hôm đó", "ngày ấy") — KHÔNG được coi là ranh giới sau đơn vị kỳ.
 _DEICTIC = frozenset({"đó", "đấy", "ấy", "do", "day", "ay", "nọ", "no", "kia"})
 # Giới từ: ranh giới khi token kế tiếp KHÔNG phải số ("vay 2 triệu 3 để mua xe").
@@ -554,11 +558,55 @@ _YEAR_COUNT_LIMIT = 10
 _ONE = frozenset({"một", "mot", "1"})
 
 
+def _is_regional_tail(s: _Stream, k: int) -> bool:
+    t = s.text(k)
+    if t is None:
+        return False
+    return t in _REGIONAL_TAIL or (not s.accented and t in _REGIONAL_TAIL_ASCII)
+
+
+def _only_tail_after(s: _Stream, k: int) -> bool:
+    """Mọi token còn lại của mệnh đề (từ ``k``) đều là trợ từ cuối câu → ``k`` là đuôi câu thật."""
+    j = k
+    while (u := s.peek(j)) is not None:
+        if not (
+            u in _PARTICLES or u in _REGIONAL_TAIL or (not s.accented and u in _REGIONAL_TAIL_ASCII)
+        ):
+            return False
+        j += 1
+    return True
+
+
 def _is_particle(s: _Stream, k: int) -> bool:
     t = s.text(k)
     if t is None:
         return False
-    return t in _PARTICLES or (not s.accented and t in _PARTICLES_ASCII)
+    if t in _PARTICLES or (not s.accented and t in _PARTICLES_ASCII):
+        return True
+    # Trợ từ vùng miền chỉ là ranh giới khi nằm ở ĐUÔI mệnh đề ("đóng bốn tháng nghe"); giữa câu
+    # ("nghe nói", "hông nổi") KHÔNG phải (đúng hoặc None, không bao giờ số sai).
+    return _is_regional_tail(s, k) and _only_tail_after(s, k)
+
+
+# Đuôi "đó/đấy" sau "N <kỳ>" cuối mệnh đề, chỉ khi N đứng ngay sau động từ trả/vay/thời gian:
+# "đóng bốn tháng đó" = thời hạn 4 tháng; "hôm đó"/"bữa đó" vẫn là chỉ định (không thành số đếm).
+_TAIL_DEICTIC = frozenset({"đó", "đấy"})
+_COUNT_LEAD = frozenset(
+    {"đóng", "trả", "góp", "vay", "mượn", "trong", "vòng", "dong", "tra", "gop", "muon", "vong"}
+)
+_NOT_TAIL_UNITS = frozenset({"hôm", "hom", "bữa", "bua"})
+
+
+def _is_tail_deictic_count(s: _Stream, lead_k: int, unit: str | None, k: int) -> bool:
+    return (
+        unit is not None
+        and unit in PERIOD_DAYS
+        and unit not in _NOT_TAIL_UNITS
+        and s.accented
+        and s.text(lead_k) in _COUNT_LEAD
+        and s.text(k) in _TAIL_DEICTIC
+        and _only_tail_after(s, k)
+    )
 
 
 def _is_preposition_boundary(s: _Stream, k: int) -> bool:
@@ -905,7 +953,10 @@ def normalize_vn_currency_slang(text: str) -> SlangNormalization:
             and parsed.value is not None
             and _date_span(s, k) is None
             and not _after_percent(s, i)
-            and _ok_after_count(s, after_unit)  # "5 ngày mai", "2 năm qua" → không phải thời hạn
+            and (
+                _ok_after_count(s, after_unit)  # "5 ngày mai", "2 năm qua" → không phải thời hạn
+                or _is_tail_deictic_count(s, i - 1, unit, after_unit)
+            )
         ):
             # "15 tháng 3": số + tháng + số (không phải tiền) là ngày tháng, không phải thời hạn.
             is_date = (

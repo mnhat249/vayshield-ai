@@ -156,6 +156,13 @@ def merge_escalation(
     return MultiImageLoanExtraction.model_validate(data)
 
 
+def _escalates_for_data(decision: RoutingDecision) -> bool:
+    """Leo thang vì CHẤT LƯỢNG SỐ LIỆU. Cờ injection (T19) KHÔNG tính: nội dung ảnh/OCR không được
+    làm số liệu hóa "mơ hồ" rồi hạ nhãn ĐỎ xuống AMBER — injection chỉ thêm cảnh báo + leo thang
+    sang model Pro, còn APR vẫn tính từ số đã trích."""
+    return any(r is not EscalationReason.PROMPT_INJECTION_SUSPECTED for r in decision.reasons)
+
+
 def _untrusted_fields(e: MultiImageLoanExtraction) -> list[str | None]:
     u = e.upfront_fee_demand
     return [
@@ -305,7 +312,7 @@ class ExtractionPipeline:
         # EC-AI15: chữ số sát nhau ở Pha 1 (< 0.55) → luôn ép xác nhận tay, kể cả khi Pro
         # tự khai đọc rõ (không tin điểm tự chấm của một model đơn lẻ).
         needs_confirm = (
-            (final_decision.escalate if escalated else decision.escalate)
+            _escalates_for_data(final_decision if escalated else decision)
             or decision.needs_user_confirmation
             or final_decision.needs_user_confirmation
             or bool(mag.suspicious_fields)
