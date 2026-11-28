@@ -3,16 +3,17 @@
 Plan: [`../backend-vayshield.md`](../backend-vayshield.md) · Cập nhật %: `node .claude/scripts/progress.js backend-vayshield --write`
 
 <!-- progress:start -->
-**Tổng tiến độ: 100.0%** `[████████████████████]` — merged 19/19 task · cập nhật 2026-11-28
+**Tổng tiến độ: 94.3%** `[███████████████████░]` — merged 19/22 task · cập nhật 2026-11-28
 
 | Wave | Tiến độ | | Mốc | Tiến độ |
 |---|---|---|---|---|
 | W0 | 100% | | M0 | 100% |
 | W1 | 100% | | M1 | 100% |
-| W2 | 100% | | M2 | 100% |
-| W3 | 100% | | M3 | 100% |
-| W4 | 100% | | M4 | 100% |
+| W2 | 100% | | M2 | 95% |
+| W3 | 100% | | M3 | 67% |
+| W4 | 100% | | M4 | 67% |
 | W5 | 100% | |  |  |
+| W6 | 0% | |  |  |
 <!-- progress:end -->
 
 ## Trạng thái & cách tính
@@ -51,6 +52,9 @@ Plan: [`../backend-vayshield.md`](../backend-vayshield.md) · Cập nhật %: `n
 | T16 | WP1-10 | Sandbox Mode + VIP quota | 4 | M2 | T11,T12 | 4 | merged | task/backend-vayshield/T16 | pass (3052 test); CI pg redis xanh | approve sau sửa (1 blocker + 3 major); bản sửa chỉ verify + CI | – | |
 | T17 | WP1-11 | Runner benchmark + ablation | 4 | M3 | T06,T11,T12 | 2 | merged | task/backend-vayshield/T17 | pass (3020 test); quick offline exit 0 | chưa review độc lập; số liệu trung thực: 5 SLA FAIL, 2 NOT_MEASURED | – | Gọi Gemini thật: cần duyệt |
 | T18 | WP1-12 | Cloud + Docker + gitleaks + k6 | 5 | M4 | tất cả | 4 | merged | task/backend-vayshield/T18 | pass (3052 test); 30 test cấu hình tĩnh; CI xanh | approve sau sửa (5 major); chưa chạy Docker/gitleaks/k6 thật | – | Deploy cần duyệt |
+| T19 | WP1-05 | Vá injection scanner + voice phương ngữ | 6 | M3 | T04,T17 | 2 | pending | task/backend-vayshield/T19 | – | – | – | Lỗ hổng từ benchmark T17 |
+| T20 | WP1-01 | Migration 0003: unique pubkey, RLS family links, ON DELETE SET NULL | 6 | M2 | T01,T11,T12 | 2 | pending | task/backend-vayshield/T20 | – | – | – | Chỉ thêm migration mới |
+| T21 | WP1-12 | Tích hợp: quorum→feed, dockerignore, CI infra, guard khóa dev | 6 | M4 | T14,T15,T18 | 2 | pending | task/backend-vayshield/T21 | – | – | – | Việc tích hợp nhỏ ngoài owns các task cũ |
 
 ## Nhật ký
 | Ngày | Sự kiện |
@@ -96,3 +100,4 @@ Plan: [`../backend-vayshield.md`](../backend-vayshield.md) · Cập nhật %: `n
 | 2026-11-28 | T17 merged (chưa review độc lập; verify + chạy lại quick offline exit 0; số liệu trung thực (5 SLA FAIL, 2 NOT_MEASURED), chưa chạy Gemini thật) |
 | 2026-11-28 | T16 merged (approve sau sửa (1 blocker + 3 major); bản sửa chỉ verify + CI pg redis xanh, chưa review lại; cần người duyệt: proxy tin cậy, Turnstile, chi phí giả định) |
 | 2026-11-28 | T18 merged (approve sau sửa (5 major); bản sửa chỉ verify + CI, chưa review lại; chưa chạy Docker/gitleaks/k6 thật; deploy là việc của người dùng) |
+| 2026-11-28 | 19/19 task merged. Mở Wave 6 vá lỗ hổng: T19 (injection + voice phương ngữ), T20 (migration 0003), T21 (tích hợp). Không đổi contract (cần người duyệt) |
