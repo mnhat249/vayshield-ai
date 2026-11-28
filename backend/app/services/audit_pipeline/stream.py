@@ -20,8 +20,8 @@ from __future__ import annotations
 
 import asyncio
 import contextlib
-from collections.abc import AsyncGenerator, Awaitable
-from dataclasses import dataclass
+from collections.abc import AsyncGenerator, Awaitable, Coroutine
+from dataclasses import dataclass, replace
 from functools import partial
 from typing import Any, Final
 from uuid import UUID
@@ -32,7 +32,8 @@ from ai_pipeline.extraction.prompts import sanitize_vi_text
 from app.core.errors import ErrorCode, current_trace_id
 from app.core.logging import get_logger
 from app.core.schemas.audits import ContractStreamMetadata
-from app.core.schemas.common import TriggerOrigin, VerdictCode
+from app.core.schemas.common import CitedClause, TriggerOrigin, VerdictCode
+from app.core.schemas.ops import ScamTrap
 from app.core.schemas.sse import (
     AuditError,
     AuditFieldsExtracted,
@@ -43,15 +44,16 @@ from app.core.schemas.sse import (
     FallbackMode,
 )
 from app.core.sse import format_sse
-from app.services.audit_pipeline.compute import assess
+from app.services.audit_pipeline.compute import Assessment, assess
 from app.services.audit_pipeline.container import AuditServices
 from app.services.audit_pipeline.facts import LoanFacts, facts_from_extraction
 from app.services.audit_pipeline.ingest import NO_QR, IngestResult, QrFinding, scan_qr
 from app.services.audit_pipeline.masking import mask_account, mask_optional
 from app.services.audit_pipeline.ports import MULE_REPORT_VERDICTS
-from app.services.audit_pipeline.provenance import load_apk_result
+from app.services.audit_pipeline.provenance import ApkProvenance, load_apk_result
 from app.services.audit_pipeline.records import build_record
 from app.services.realtime.models import BorrowerPrincipal
+from app.verdict.inputs import SpecialMorphology
 
 logger = get_logger("vayshield.audit_pipeline.stream")
 
@@ -139,6 +141,135 @@ async def _persist_quietly(save: Awaitable[None]) -> bool:
     return True
 
 
+_BACKGROUND: set[asyncio.Task[Any]] = set()
+
+
+def spawn[T](coro: Coroutine[Any, Any, T]) -> asyncio.Task[T]:
+    """Chạy tác vụ tách khỏi vòng đời kết nối SSE; giữ tham chiếu để không bị GC giữa chừng."""
+    task = asyncio.ensure_future(coro)
+    _BACKGROUND.add(task)
+    task.add_done_callback(_BACKGROUND.discard)
+    return task
+
+
+def _origin(principal: BorrowerPrincipal) -> TriggerOrigin:
+    return TriggerOrigin.SANDBOX_SIM if principal.is_sandbox else TriggerOrigin.STATION_2_SCAN
+
+
+def _facts_from_outcome(outcome: ExtractionOutcome, provenance: ApkProvenance) -> LoanFacts | None:
+    """Một khoản vay → facts bình thường. Nhiều khoản (EC-AI07): KHÔNG trộn số, nhưng cờ đỏ của
+    BẤT KỲ khoản nào vẫn được giữ (phí ứng trước, hình thái lừa đảo, biên lai đóng băng)."""
+    if not outcome.cards:
+        return None
+    extraction = outcome.extraction
+    if outcome.status == "OK" and extraction is not None:
+        return facts_from_extraction(
+            extraction,
+            ambiguous=outcome.needs_user_confirmation,
+            apk_signature_ok=provenance.signature_ok,
+            package_name=provenance.package_name,
+        )
+    base = facts_from_extraction(
+        outcome.cards[0].extraction,
+        ambiguous=True,
+        apk_signature_ok=provenance.signature_ok,
+        package_name=provenance.package_name,
+    )
+    flagged = [facts_from_extraction(c.extraction, ambiguous=True) for c in outcome.cards]
+    demanding = next((f for f in flagged if f.upfront_demanded), None)
+    morph = next(
+        (f.morphology for f in flagged if f.morphology is not SpecialMorphology.NONE), None
+    )
+    return replace(
+        base,
+        nominal_principal_vnd=None,
+        net_disbursed_vnd=None,
+        total_repayment_vnd=None,
+        tenure_days=None,
+        regimes=(),
+        fees=(),
+        stated_annual_rate=None,
+        upfront_demanded=demanding is not None,
+        upfront_amount_vnd=demanding.upfront_amount_vnd if demanding else None,
+        upfront_reason=demanding.upfront_reason if demanding else None,
+        fake_frozen_receipt=any(f.fake_frozen_receipt for f in flagged),
+        morphology=morph or SpecialMorphology.NONE,
+        frozen_notice=any(f.frozen_notice for f in flagged),
+        beneficiary_is_personal=(
+            demanding.beneficiary_is_personal if demanding else base.beneficiary_is_personal
+        ),
+        distinct_brands=max(2, len(outcome.cards)),
+        ambiguous=True,
+    )
+
+
+def _trap_for(code: VerdictCode, facts: LoanFacts) -> ScamTrap:
+    if code is VerdictCode.V_RED_BRAND_SPOOF and facts.apk_signature_ok is False:
+        return ScamTrap.TRAP_2_SHARK_APK
+    return ScamTrap.TRAP_1_ADVANCE_FEE
+
+
+async def _finalize(
+    services: AuditServices,
+    job: StreamJob,
+    *,
+    facts: LoanFacts,
+    assessment: Assessment,
+    qr: QrFinding,
+    origin: TriggerOrigin,
+    model_tier: str,
+    submitted: asyncio.Future[Any],
+) -> tuple[CitedClause, ...]:
+    """Lưu audit + HSM + mule — chạy nền, KHÔNG bị hủy khi client ngắt kết nối."""
+    principal, meta = job.principal, job.meta
+    code = assessment.verdict.verdict_code
+    try:
+        cited = await services.legal.cited_clauses(code.value)
+    except Exception:
+        cited = ()
+    record = build_record(
+        audit_id=job.audit_id,
+        principal=principal,
+        fiber_key=meta.fiber_key,
+        origin=origin,
+        image_count=len(job.ingest.images),
+        facts=facts,
+        assessment=assessment,
+        wage_vnd=job.wage_vnd,
+        qr_found=qr.found,
+        cited=tuple(c.code for c in cited),
+        latency_ms=int((services.clock.monotonic() - job.started) * 1000),
+        model_tier=model_tier,
+    )
+    await asyncio.gather(submitted, return_exceptions=True)  # E2 trước V1/V2
+    jobs: list[Awaitable[Any]] = [
+        _persist_quietly(services.audits.save(record)),
+        services.shield.on_verdict(principal.device_id, meta.fiber_key, code, str(job.audit_id)),
+    ]
+    if (
+        code in MULE_REPORT_VERDICTS
+        and qr.found
+        and qr.bank_bin
+        and qr.account_no
+        and not principal.is_sandbox
+    ):
+        jobs.append(
+            services.mule.report(
+                bank_bin=qr.bank_bin,
+                account_no=qr.account_no,
+                device_id=principal.device_id,
+                script_text=facts.upfront_reason or "",
+                impersonated_lender_id=(
+                    assessment.match.record.registry_id if assessment.match.record else None
+                ),
+                now=services.clock.now(),
+                scam_trap=_trap_for(code, facts),
+            )
+        )
+    await asyncio.gather(*jobs, return_exceptions=True)
+    return tuple(cited)
+
+
 async def contract_events(services: AuditServices, job: StreamJob) -> AsyncGenerator[str, None]:
     """Sinh các khung SSE. Không bao giờ ném lỗi ra ngoài: mọi lỗi → ``audit.error`` cuối."""
     tasks: list[asyncio.Future[Any]] = []
@@ -153,17 +284,17 @@ async def contract_events(services: AuditServices, job: StreamJob) -> AsyncGener
             ),
         )
         principal, meta = job.principal, job.meta
-        origin = TriggerOrigin.SANDBOX_SIM if principal.is_sandbox else TriggerOrigin.STATION_2_SCAN
+        origin = _origin(principal)
         event_id = str(job.audit_id)
 
         qr_task = asyncio.ensure_future(scan_qr(job.ingest.images, services.cpu))
         extract_task = asyncio.ensure_future(_extract(services, job))
-        hook_task = asyncio.ensure_future(
+        submitted = spawn(
             services.shield.on_submitted(
                 principal.device_id, meta.fiber_key, TriggerOrigin.STATION_2_SCAN, event_id
             )
         )
-        tasks += [qr_task, extract_task, hook_task]
+        tasks += [qr_task, extract_task]
         provenance = await load_apk_result(
             services.redis, meta.linked_apk_audit_id, principal.device_id
         )
@@ -188,7 +319,7 @@ async def contract_events(services: AuditServices, job: StreamJob) -> AsyncGener
                 apk_signature_ok=provenance.signature_ok,
                 package_name=provenance.package_name,
             )
-            await _save_degraded(services, job, degraded, qr.found)
+            await asyncio.shield(spawn(_save_degraded(services, job, degraded, qr.found)))
             yield _error_event(
                 ErrorCode.SERVICE_DEGRADED,
                 DEGRADED_MESSAGE_VI,
@@ -204,8 +335,8 @@ async def contract_events(services: AuditServices, job: StreamJob) -> AsyncGener
                 fallback=FallbackMode.RETAKE_PHOTO,
             )
             return
-        extraction = outcome.extraction
-        if outcome.status != "OK" or extraction is None:
+        facts = _facts_from_outcome(outcome, provenance)
+        if facts is None:
             yield _error_event(
                 ErrorCode.VALIDATION_ERROR,
                 SELECT_ONE_LOAN_MESSAGE_VI,
@@ -213,76 +344,31 @@ async def contract_events(services: AuditServices, job: StreamJob) -> AsyncGener
                 fallback=FallbackMode.RETAKE_PHOTO,
             )
             return
-
-        facts = facts_from_extraction(
-            extraction,
-            ambiguous=outcome.needs_user_confirmation,
-            apk_signature_ok=provenance.signature_ok,
-            package_name=provenance.package_name,
-        )
         yield format_sse("audit.fields_extracted", _fields_event(facts))
 
         assessment = await services.cpu.run(
             partial(assess, facts, services.registry, daily_wage_vnd=job.wage_vnd)
+        )
+        # Side-effect (lưu audit, HSM, mule) khởi động TRƯỚC khi client nhận verdict và sống
+        # tách khỏi kết nối: client ngắt giữa chừng vẫn có audit để /recalculate + HSM hard-stop.
+        finalize = spawn(
+            _finalize(
+                services,
+                job,
+                facts=facts,
+                assessment=assessment,
+                qr=qr,
+                origin=origin,
+                model_tier=outcome.models_used[-1] if outcome.models_used else "unknown",
+                submitted=submitted,
+            )
         )
         verdict_event = assessment.verdict.to_audit_verdict_computed()
         verdict_event = AuditVerdictComputed.model_validate(
             {**verdict_event.model_dump(), "contradictions": list(assessment.contradiction_codes)}
         )
         yield format_sse("audit.verdict_computed", verdict_event)
-
-        code = assessment.verdict.verdict_code
-        cited_task = asyncio.ensure_future(services.legal.cited_clauses(code.value))
-        tasks.append(cited_task)
-        try:
-            cited = await cited_task
-        except Exception:
-            cited = ()
-        latency_ms = int((services.clock.monotonic() - job.started) * 1000)
-        record = build_record(
-            audit_id=job.audit_id,
-            principal=principal,
-            fiber_key=meta.fiber_key,
-            origin=origin,
-            image_count=len(job.ingest.images),
-            facts=facts,
-            assessment=assessment,
-            wage_vnd=job.wage_vnd,
-            qr_found=qr.found,
-            cited=tuple(c.code for c in cited),
-            latency_ms=latency_ms,
-            model_tier=(outcome.models_used[-1] if outcome.models_used else "unknown"),
-        )
-        await asyncio.gather(hook_task, return_exceptions=True)  # E2 trước V1/V2
-        side_effects: list[asyncio.Future[Any]] = [
-            asyncio.ensure_future(_persist_quietly(services.audits.save(record))),
-            asyncio.ensure_future(
-                services.shield.on_verdict(principal.device_id, meta.fiber_key, code, event_id)
-            ),
-        ]
-        if (
-            code in MULE_REPORT_VERDICTS
-            and qr.found
-            and qr.bank_bin
-            and qr.account_no
-            and not principal.is_sandbox
-        ):
-            side_effects.append(
-                asyncio.ensure_future(
-                    services.mule.report(
-                        bank_bin=qr.bank_bin,
-                        account_no=qr.account_no,
-                        device_id=principal.device_id,
-                        script_text=facts.upfront_reason or "",
-                        impersonated_lender_id=(
-                            assessment.match.record.registry_id if assessment.match.record else None
-                        ),
-                        now=services.clock.now(),
-                    )
-                )
-            )
-        tasks += side_effects
-        await asyncio.gather(*side_effects, return_exceptions=True)  # audit đã lưu trước pha 5
+        cited = await asyncio.shield(finalize)  # audit đã lưu trước pha 5
         yield format_sse(
             "audit.legal_explained",
             AuditLegalExplained(
@@ -292,7 +378,7 @@ async def contract_events(services: AuditServices, job: StreamJob) -> AsyncGener
             ),
         )
     except asyncio.CancelledError:
-        raise  # client ngắt: dọn ở finally, không phát gì thêm
+        raise  # client ngắt: tác vụ nền (spawn) vẫn chạy tiếp
     except Exception:
         logger.exception("contract_stream_failed")
         yield _error_event(
@@ -320,7 +406,7 @@ async def _save_degraded(
             audit_id=job.audit_id,
             principal=job.principal,
             fiber_key=job.meta.fiber_key,
-            origin=TriggerOrigin.STATION_2_SCAN,
+            origin=_origin(job.principal),
             image_count=len(job.ingest.images),
             facts=facts,
             assessment=assessment,

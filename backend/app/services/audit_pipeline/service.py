@@ -119,7 +119,7 @@ async def voice_terms(
         audit_id=audit_id,
         principal=principal,
         fiber_key=meta.fiber_key,
-        origin=TriggerOrigin.STATION_2_VOICE,
+        origin=TriggerOrigin.SANDBOX_SIM if principal.is_sandbox else TriggerOrigin.STATION_2_VOICE,
         image_count=0,
         facts=facts,
         assessment=assessment,

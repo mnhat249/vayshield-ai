@@ -95,6 +95,7 @@ class MulePort(Protocol):
         script_text: str,
         impersonated_lender_id: UUID | None,
         now: datetime,
+        scam_trap: ScamTrap = ScamTrap.TRAP_1_ADVANCE_FEE,
     ) -> None: ...
 
 
@@ -134,6 +135,7 @@ class MuleGraphPort:
         script_text: str,
         impersonated_lender_id: UUID | None,
         now: datetime,
+        scam_trap: ScamTrap = ScamTrap.TRAP_1_ADVANCE_FEE,
     ) -> None:
         try:
             vec = (await self._embedder.embed([script_text or "advance fee"]))[0]
@@ -146,7 +148,7 @@ class MuleGraphPort:
                 channel=EvidenceChannel.VIETQR_CRYPTO_DECODED,  # server quyết định, không từ client
                 now=now,
                 scam_script_vec=tuple(vec) if vec else None,
-                scam_trap=ScamTrap.TRAP_1_ADVANCE_FEE,
+                scam_trap=scam_trap,
                 impersonated_lender_id=impersonated_lender_id,
             )
         except Exception:
