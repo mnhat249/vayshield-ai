@@ -20,6 +20,7 @@ from app.core.logging import configure_logging
 from app.core.openapi import install_openapi
 from app.core.redis import check_redis, close_redis
 from app.core.schemas.health import HealthChecks, HealthResponse
+from app.services.audit_pipeline.container import AuditServices, start_audit_pipeline
 from app.services.realtime.container import start_realtime, stop_realtime
 
 API_DESCRIPTION = (
@@ -33,6 +34,8 @@ API_DESCRIPTION = (
 async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     await start_realtime(app)  # T12: hub WS + sweeper ACK (bỏ qua khi không có Redis)
     try:
+        if get_settings().database_url is not None:  # T11: nạp registry cấp phép lúc khởi động
+            await start_audit_pipeline(app)
         yield
     finally:
         try:
@@ -90,6 +93,9 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     async def healthz() -> HealthResponse:
         db_status, redis_status = await check_db(), await check_redis()
         degraded = "down" in (db_status, redis_status)
+        audit: AuditServices | None = getattr(app.state, "audit_services", None)
+        if cfg.database_url is not None and audit is not None and not audit.loaded:
+            degraded = True  # registry chưa nạp = fail-closed (T09/T11)
         return HealthResponse(
             status="degraded" if degraded else "ok",
             version=cfg.app_version,
