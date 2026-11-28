@@ -159,3 +159,54 @@ def test_ec_db18_facts_json_is_shallow_and_bounded() -> None:
     validate_masked_extraction(blob)  # nông ≤ 5, < 64KB
     assert len(blob["terms"]["fees"]) <= 20 and len(blob["notes"]) <= 10
     assert LoanFacts.from_json(blob).fees[0].label == "phí 0"
+
+
+def _flat_webp(side: int) -> bytes:
+    import io as _io
+
+    from PIL import Image
+
+    buf = _io.BytesIO()
+    Image.new("RGB", (side, side), (255, 255, 255)).save(buf, format="WEBP", quality=50)
+    return buf.getvalue()
+
+
+async def test_pixel_flood_small_file_is_rejected_fast_and_cheap() -> None:
+    """Review BLOCKER: WebP trắng 4090² nhỏ vài chục KB không được làm tốn CPU/RAM."""
+    import time
+    import tracemalloc
+
+    bomb = _flat_webp(4090)
+    assert len(bomb) < 1_500_000
+    tracemalloc.start()
+    t0 = time.perf_counter()
+    with pytest.raises(AppError) as exc:
+        await ingest_images([bomb], CpuPool(1))
+    elapsed = time.perf_counter() - t0
+    _, peak = tracemalloc.get_traced_memory()
+    tracemalloc.stop()
+    assert exc.value.status_code == 413
+    assert elapsed < 0.5 and peak < 50 * 2**20
+
+
+async def test_large_but_allowed_image_is_downscaled_and_bounded() -> None:
+    import io as _io
+    import tracemalloc
+
+    from PIL import Image
+
+    raw = _flat_webp(2400)  # 5,76MP: được nhận, phải thu nhỏ <= 1280px
+    tracemalloc.start()
+    result = await ingest_images([raw], CpuPool(1))
+    _, peak = tracemalloc.get_traced_memory()
+    tracemalloc.stop()
+    assert max(Image.open(_io.BytesIO(result.images[0].jpeg)).size) <= 1280
+    assert not hasattr(result.images[0], "image")  # không giữ bitmap đầy đủ
+    assert peak < 200 * 2**20
+
+
+async def test_total_pixels_per_request_capped() -> None:
+    raws = [_flat_webp(2400)] * 3  # 17,3MP > 16MP
+    with pytest.raises(AppError) as exc:
+        await ingest_images(raws, CpuPool(2))
+    assert exc.value.status_code == 413

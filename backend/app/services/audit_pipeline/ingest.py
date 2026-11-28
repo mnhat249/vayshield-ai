@@ -27,6 +27,7 @@ from ai_pipeline.vision import (
     run_cpu_bound,
     sanitize_image,
 )
+from ai_pipeline.vision.upload_guard import read_header
 from app.core.errors import AppError, ErrorCode, ErrorDetail
 
 # S2-EC20: phương sai Laplacian dưới ngưỡng → ảnh mờ (giả định kinh nghiệm: 100 trên ảnh ≤1280px).
@@ -92,19 +93,41 @@ def laplacian_variance(image: Image.Image) -> float:
 
 @dataclass(frozen=True, slots=True)
 class CleanImage:
-    jpeg: bytes  # ảnh đã khử chữ tàng hình, không metadata → đưa cho LLM
-    image: Image.Image
+    """Chỉ giữ JPEG đã thu nhỏ (≤ 1280px) — không giữ bitmap đầy đủ suốt luồng."""
+
+    jpeg: bytes  # ảnh đã khử chữ tàng hình, không metadata → đưa cho LLM + quét QR
     blur_variance: float
     hidden_text_suspected: bool
 
 
+MAX_SIDE_PX: Final = 1280  # File 4 §4.2(A): client nén ≤ 1280px
+MAX_IMAGE_PIXELS: Final = 6_000_000  # trần mỗi ảnh (≈ 2450² ); vượt → 413 TRƯỚC khi giải mã
+MAX_REQUEST_PIXELS: Final = 16_000_000  # trần tổng pixel khai báo của cả request
+
+
+def _shrink(raw: bytes) -> bytes:
+    """Đọc header (guard T03), chặn ảnh quá lớn, thu nhỏ cạnh dài ≤ 1280px rồi trả PNG nhỏ."""
+    header = read_header(raw)
+    if header.width * header.height > MAX_IMAGE_PIXELS:
+        raise ImageRejectedError("IMAGE_TOO_LARGE", "Ảnh vượt giới hạn pixel của API.")
+    with Image.open(io.BytesIO(raw)) as img:
+        if header.fmt == "JPEG":
+            img.draft("RGB", (MAX_SIDE_PX, MAX_SIDE_PX))  # giải mã giảm tỉ lệ ngay từ đầu
+        img.load()
+        rgba = img.convert("RGBA")
+    if max(rgba.size) > MAX_SIDE_PX:
+        rgba.thumbnail((MAX_SIDE_PX, MAX_SIDE_PX), Image.Resampling.LANCZOS)
+    out = io.BytesIO()
+    rgba.save(out, format="PNG")
+    return out.getvalue()
+
+
 def _clean_one(raw: bytes) -> CleanImage:
-    clean = sanitize_image(raw)
+    clean = sanitize_image(_shrink(raw))
     buf = io.BytesIO()
     clean.image.convert("RGB").save(buf, format="JPEG", quality=LLM_JPEG_QUALITY)
     return CleanImage(
         jpeg=buf.getvalue(),
-        image=clean.image,
         blur_variance=laplacian_variance(clean.image),
         hidden_text_suspected=clean.hidden_text_suspected,
     )
@@ -139,6 +162,9 @@ class IngestResult:
 async def ingest_images(raw_images: Sequence[bytes], pool: CpuPool) -> IngestResult:
     """Chặng 1: magic-byte/pixel guard + khử chữ tàng hình + đo độ mờ, song song trên threadpool."""
     try:
+        total = sum(h.width * h.height for h in (read_header(r) for r in raw_images))
+        if total > MAX_REQUEST_PIXELS:
+            raise ImageRejectedError("IMAGE_TOO_LARGE", "Tổng pixel của request vượt giới hạn.")
         cleaned = await asyncio.gather(*(pool.run(_clean_one, raw) for raw in raw_images))
     except ImageRejectedError as exc:
         raise image_error(exc) from exc
@@ -157,7 +183,9 @@ class QrFinding:
 NO_QR: Final = QrFinding(found=False)
 
 
-def _scan_one(image: Image.Image) -> QrFinding:
+def _scan_one(jpeg: bytes) -> QrFinding:
+    with Image.open(io.BytesIO(jpeg)) as opened:
+        image = opened.convert("RGB")
     detections = detect_qr_codes(image)
     for attributed in attribute_qr_sender(image, detections):
         if not attributed.should_check:  # QR của chính người dùng (EC-AI02)
@@ -179,7 +207,7 @@ def _scan_one(image: Image.Image) -> QrFinding:
 async def scan_qr(images: Sequence[CleanImage], pool: CpuPool) -> QrFinding:
     """Chặng 2: VietQR (EMVCo TLV + CRC16). Lỗi quét không bao giờ làm hỏng audit."""
     results = await asyncio.gather(
-        *(pool.run(_scan_one, i.image) for i in images), return_exceptions=True
+        *(pool.run(_scan_one, i.jpeg) for i in images), return_exceptions=True
     )
     for r in results:
         if isinstance(r, QrFinding) and r.found:
