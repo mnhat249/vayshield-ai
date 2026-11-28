@@ -1,0 +1,87 @@
+# Cloud Run (Knative) — CHỈ LÀ CẤU HÌNH MẪU, KHÔNG được deploy tự động. Người vận hành duyệt rồi chạy:
+#   gcloud run services replace infra/cloudrun/service.yaml --region <REGION>
+# Mọi <PLACEHOLDER> phải thay bằng giá trị thật bởi người vận hành. Secret lấy từ Secret Manager
+# (EC-OPS01), KHÔNG ghi giá trị vào file này.
+#
+# Image PHẢI build linux/amd64 (EC-OPS04):
+#   docker buildx build --platform linux/amd64 -f backend/Dockerfile backend -t <REGION>-docker.pkg.dev/<PROJECT>/<REPO>/vayshield-backend:<TAG>
+apiVersion: serving.knative.dev/v1
+kind: Service
+metadata:
+  name: vayshield-backend
+  annotations:
+    run.googleapis.com/ingress: all
+spec:
+  template:
+    metadata:
+      annotations:
+        # Zero-cold-start (File 6 §1.2 mục 1): luôn có 1 instance, CPU luôn cấp phát.
+        autoscaling.knative.dev/minScale: "1"
+        autoscaling.knative.dev/maxScale: "10"
+        run.googleapis.com/cpu-throttling: "false"
+        run.googleapis.com/startup-cpu-boost: "true"
+    spec:
+      containerConcurrency: 80
+      # SSE / WSS sống lâu: tối đa 3600s (giới hạn Cloud Run).
+      timeoutSeconds: 3600
+      containers:
+        - image: <REGION>-docker.pkg.dev/<PROJECT>/<REPO>/vayshield-backend:<TAG>
+          ports:
+            - containerPort: 8000   # Cloud Run phơi HTTPS 443 ra ngoài; không mở cổng lạ (EC-OPS05)
+          resources:
+            limits:
+              cpu: "2"
+              memory: 1Gi
+          env:
+            - { name: APP_ENV, value: production }
+            - { name: APP_PUBLIC_BASE_URL, value: "https://<PUBLIC_DOMAIN>" }
+            - { name: CORS_ORIGINS, value: "https://<WEB_DOMAIN>" }   # không dùng *, không www (EC-OPS18)
+            - { name: EXPOSE_ERROR_DETAILS, value: "false" }
+            # Cloud Run đứng sau Google Front End. Đặt dải IP proxy tin cậy CHÍNH XÁC do người vận hành
+            # xác minh; KHÔNG dùng "*". Để mặc định (127.0.0.1) thì rate-limit IP gom về IP proxy.
+            - { name: FORWARDED_ALLOW_IPS, value: "<TRUSTED_PROXY_CIDRS>" }
+            - name: DATABASE_URL
+              valueFrom: { secretKeyRef: { name: vayshield-database-url, key: latest } }
+            - name: REDIS_URL
+              valueFrom: { secretKeyRef: { name: vayshield-redis-url, key: latest } }
+            - name: PEPPER_B2B_PHONE
+              valueFrom: { secretKeyRef: { name: vayshield-pepper-b2b-phone, key: latest } }
+            - name: PEPPER_MULE_ACCOUNT
+              valueFrom: { secretKeyRef: { name: vayshield-pepper-mule-account, key: latest } }
+            - name: KMS_MASTER_KEK
+              valueFrom: { secretKeyRef: { name: vayshield-kms-master-kek, key: latest } }
+            - name: ED25519_POLICY_PRIVATE_KEY
+              valueFrom: { secretKeyRef: { name: vayshield-ed25519-policy-key, key: latest } }
+            - name: JWT_OPS_SECRET
+              valueFrom: { secretKeyRef: { name: vayshield-jwt-ops-secret, key: latest } }
+            - name: GEMINI_API_KEYS
+              valueFrom: { secretKeyRef: { name: vayshield-gemini-api-keys, key: latest } }
+            - name: GEMINI_VIP_KEYS
+              valueFrom: { secretKeyRef: { name: vayshield-gemini-vip-keys, key: latest } }
+            - name: SANDBOX_VIP_CODE
+              valueFrom: { secretKeyRef: { name: vayshield-sandbox-vip-code, key: latest } }
+            # --- Tùy chọn (để trống/thiếu: xem hậu quả trong infra/env.sample) ---
+            - { name: SMS_PROVIDER, value: fake }        # fake = không gửi SMS thật
+            - { name: VAPID_SUBJECT, value: "mailto:<SECURITY_CONTACT>" }
+            - name: VAPID_PUBLIC_KEY
+              valueFrom: { secretKeyRef: { name: vayshield-vapid-public-key, key: latest } }
+            - name: VAPID_PRIVATE_KEY
+              valueFrom: { secretKeyRef: { name: vayshield-vapid-private-key, key: latest } }
+            - name: JUDGE_OPS_QUICK_LOGIN_CODE   # >= 16 ký tự, ngắn hơn = tắt
+              valueFrom: { secretKeyRef: { name: vayshield-judge-ops-code, key: latest } }
+            - name: SMS_API_KEY
+              valueFrom: { secretKeyRef: { name: vayshield-sms-api-key, key: latest } }
+            - name: SMS_API_SECRET
+              valueFrom: { secretKeyRef: { name: vayshield-sms-api-secret, key: latest } }
+          startupProbe:
+            httpGet: { path: /healthz, port: 8000 }
+            periodSeconds: 3
+            timeoutSeconds: 3
+            failureThreshold: 20
+          livenessProbe:
+            httpGet: { path: /healthz, port: 8000 }
+            periodSeconds: 30
+            timeoutSeconds: 5
+  traffic:
+    - percent: 100
+      latestRevision: true

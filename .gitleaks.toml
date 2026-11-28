@@ -1,0 +1,36 @@
+# gitleaks (EC-OPS01): quét trước khi nén .zip nộp bài. Chạy:  gitleaks detect --config .gitleaks.toml --no-banner
+title = "VayShield AI gitleaks"
+
+[extend]
+useDefault = true   # giữ toàn bộ rule mặc định (AWS, GCP, private key, ...)
+
+# Rule riêng cho khóa Gemini/Google API (AIzaSy... 39 ký tự) — File 6 §1.2 mục 5.
+[[rules]]
+id = "vayshield-google-api-key"
+description = "Khóa Google/Gemini API (AIzaSy...)"
+regex = '''AIzaSy[0-9A-Za-z_\-]{33}'''
+keywords = ["aizasy"]
+
+[[rules]]
+id = "vayshield-dsn-with-password"
+description = "Chuỗi kết nối DB/Redis chứa mật khẩu thật (không phải placeholder)"
+regex = '''(?i)(?:postgres(?:ql)?(?:\+asyncpg)?|redis|rediss)://[^\s:@/]+:(?P<pw>[^\s@/${}]{6,})@[A-Za-z0-9_.\-]+'''
+secretGroup = 1
+keywords = ["postgres", "redis"]
+
+# Allowlist HẸP: chỉ giá trị giả đã biết + file mẫu. KHÔNG allowlist cả thư mục mã nguồn.
+[allowlist]
+description = "Giá trị giả/placeholder (KHÔNG allowlist theo path .env.example/env.sample: dán khóa thật vào đó vẫn bị bắt)"
+paths = [
+  '''(^|/)uv\.lock$''',
+]
+regexes = [
+  '''vayshield_(admin_)?local_secret''',
+  '''change-me(-admin|-app)?''',
+  '''ci_only_[a-z_]*password''',
+  '''example\.invalid''',
+  '''REVWLU9OTFk[0-9A-Za-z+/=]*''',   # base64 của chuỗi "DEV-ONLY..." (khóa dev giả trong docker-compose.yml)
+  '''dev-only-[a-z0-9-]+''',
+  '''AIzaSyFAKE[0-9A-Za-z_\-]*''',
+]
+stopwords = ["placeholder", "dummy", "fake-key"]
