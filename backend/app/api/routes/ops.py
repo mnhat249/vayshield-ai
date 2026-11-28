@@ -1,4 +1,8 @@
-"""STUB M0 — Fraud Ops workspace: cụm mule, hồ sơ SIMO, live feed SSE, đăng nhập. Logic: T15."""
+"""Fraud Ops workspace: cụm mule, hồ sơ SIMO, live feed SSE, đăng nhập (File 4 §4.1, EC-OPS15).
+
+RBAC: mọi route dữ liệu cần JWT vai trò ``FRAUD_ANALYST`` (thiếu/sai/hết hạn -> 401; JWT hợp lệ
+nhưng thiếu vai trò -> 403). SSE dùng vé 1 lần TTL 45s (EventSource không gửi được header).
+"""
 
 from __future__ import annotations
 
@@ -6,13 +10,26 @@ from collections.abc import AsyncIterator
 from typing import Annotated, Any, Final
 from uuid import UUID
 
-from fastapi import APIRouter, Query
+from fastapi import APIRouter, Depends, Query, Request, Response
 from fastapi.responses import StreamingResponse
+from redis.asyncio import Redis
 
-from app.core import mocks
-from app.core.auth_headers import OpsCaller
+from app.copilot import service
+from app.copilot.advisory import AdvisoryWriter
+from app.copilot.deps import get_advisory_writer, get_ops_cipher, get_ops_repository
+from app.copilot.feed import threat_signal_frames
+from app.copilot.ops_auth import (
+    ROLE_FRAUD_ANALYST,
+    AnalystCaller,
+    OpsTokenService,
+    get_ops_token_service,
+)
+from app.copilot.repository import OpsRepository
+from app.core.clock import Clock, get_clock
 from app.core.config import get_settings
+from app.core.errors import AppError, ErrorCode
 from app.core.openapi import WS_TICKET_MAX_LEN, WS_TICKET_MIN_LEN, error_responses
+from app.core.redis import get_redis
 from app.core.schemas.ops import (
     MuleClusterPage,
     OpsStreamTicketResponse,
@@ -21,11 +38,24 @@ from app.core.schemas.ops import (
     SeverityLevel,
     SimoDossier,
 )
-from app.core.sse import SSE_HEADERS, SSE_MEDIA_TYPE, format_sse, with_keepalive
-from app.core.stubs import stub
+from app.core.sse import SSE_HEADERS, SSE_MEDIA_TYPE, with_keepalive
+from app.security.envelope import EnvelopeCipher
+from app.security.rate_limit import CompositeRateLimiter, client_ip
+from app.security.tickets import TicketNamespace, consume_ticket, issue_ticket
 
 router = APIRouter(prefix="/api/v1/ops", tags=["ops"])
 
+_NO_STORE: Final = {"Cache-Control": "no-store"}
+# /auth/token: bucket RIÊNG (không dùng chung ngưỡng API thường).
+# - theo IP: 10 lần/phút. LƯU Ý TRIỂN KHAI: ``client_ip`` là IP kết nối TCP; sau reverse proxy phải
+#   cấu hình proxy tin cậy (X-Forwarded-For) nếu không mọi người dùng chung 1 bucket.
+# - theo định danh: 10 lần/phút/username (grant password) hoặc /mã judge (grant judge_quick_login).
+# - trần toàn cục CHỈ đếm lần THẤT BẠI (401): đăng nhập đúng không làm cạn bucket của người khác.
+AUTH_IP_RPM: Final = 10
+AUTH_SCOPE_RPM: Final = 10
+AUTH_GLOBAL_FAIL_PER_MIN: Final = 200
+AUTH_BUCKET_TAG: Final = "ops-auth-token"
+_AUTH_FAIL_KEY: Final = "vs:ops:auth:fail:"
 _FEED_DOC: Final[dict[int | str, dict[str, Any]]] = {
     200: {
         "description": "SSE live threat feed (ops.threat_signal, ping). "
@@ -42,9 +72,58 @@ _FEED_DOC: Final[dict[int | str, dict[str, Any]]] = {
     responses=error_responses(401),
     summary="Cấp JWT Fraud Ops (password / refresh 30 ngày / đăng nhập nhanh giám khảo)",
 )
-@stub
-async def ops_token(body: OpsTokenRequest) -> OpsTokenResponse:
-    return mocks.OPS_TOKEN
+async def ops_token(
+    request: Request,
+    body: OpsTokenRequest,
+    response: Response,
+    tokens: Annotated[OpsTokenService, Depends(get_ops_token_service)],
+    redis: Annotated[Redis, Depends(get_redis)],
+    clock: Annotated[Clock, Depends(get_clock)],
+) -> OpsTokenResponse:
+    # Rate limit TRƯỚC khi chạm bộ kiểm tra mật khẩu/mã (chống dò mật khẩu): bucket RIÊNG cho
+    # endpoint này (không dùng chung ngưỡng với API thường) theo IP + một bucket toàn cục.
+    ip = client_ip(request.client)
+    per_ip = CompositeRateLimiter(redis, device_rpm=1, ip_rpm=AUTH_IP_RPM)
+    await per_ip.enforce(device_id=None, ip=f"{AUTH_BUCKET_TAG}|ip|{ip}", clock=clock)
+    scope = _auth_scope(body)
+    if scope is not None:
+        per_scope = CompositeRateLimiter(redis, device_rpm=1, ip_rpm=AUTH_SCOPE_RPM)
+        await per_scope.enforce(device_id=None, ip=f"{AUTH_BUCKET_TAG}|{scope}", clock=clock)
+    fail_key = _AUTH_FAIL_KEY + str(int(clock.now().timestamp()) // 60)
+    await _enforce_global_failures(redis, fail_key)
+    response.headers.update(_NO_STORE)
+    try:
+        return await tokens.exchange(body)
+    except AppError as exc:
+        if exc.status_code == 401:
+            await _count_failure(redis, fail_key)
+        raise
+
+
+def _auth_scope(body: OpsTokenRequest) -> str | None:
+    """Định danh bị dò: username (password) hoặc cả nhóm judge; refresh chỉ giới hạn theo IP."""
+    if body.grant_type == "password":
+        return "user|" + (body.username or "").strip().lower()[:128]
+    if body.grant_type == "judge_quick_login":
+        return "judge"
+    return None
+
+
+async def _enforce_global_failures(redis: Redis, key: str) -> None:
+    try:
+        raw = await redis.get(key)
+    except Exception:
+        raise AppError(ErrorCode.SERVICE_DEGRADED, 503) from None  # fail-closed
+    if raw is not None and int(raw) >= AUTH_GLOBAL_FAIL_PER_MIN:
+        raise AppError(ErrorCode.RATE_LIMITED, 429, headers={"Retry-After": "30"})
+
+
+async def _count_failure(redis: Redis, key: str) -> None:
+    try:
+        await redis.incr(key)
+        await redis.expire(key, 120)
+    except Exception:  # đã từ chối 401; không che lỗi chính bằng lỗi bộ đếm
+        return
 
 
 @router.get(
@@ -54,14 +133,14 @@ async def ops_token(body: OpsTokenRequest) -> OpsTokenResponse:
     responses=error_responses(401, 403),
     summary="Danh sách cụm tài khoản mồi (RBAC FRAUD_ANALYST)",
 )
-@stub
 async def mule_clusters(
-    _ops: OpsCaller,
+    _ops: AnalystCaller,
+    repo: Annotated[OpsRepository, Depends(get_ops_repository)],
     severity: Annotated[SeverityLevel | None, Query()] = None,
     limit: Annotated[int, Query(ge=1, le=100)] = 20,
     cursor: Annotated[str | None, Query(max_length=200)] = None,
 ) -> MuleClusterPage:
-    return mocks.MULE_CLUSTERS
+    return await service.list_clusters(repo, severity=severity, limit=limit, cursor=cursor)
 
 
 @router.get(
@@ -71,13 +150,27 @@ async def mule_clusters(
     responses=error_responses(401, 403, 404),
     summary="Hồ sơ SIMO cho 1 tài khoản mồi (unseal được ghi chuỗi băm kiểm toán)",
 )
-@stub
 async def simo_dossier(
-    _ops: OpsCaller,
+    ops: AnalystCaller,
+    response: Response,
+    repo: Annotated[OpsRepository, Depends(get_ops_repository)],
+    cipher: Annotated[EnvelopeCipher | None, Depends(get_ops_cipher)],
+    writer: Annotated[AdvisoryWriter, Depends(get_advisory_writer)],
+    clock: Annotated[Clock, Depends(get_clock)],
     mule_node_id: Annotated[UUID, Query()],
     unseal: Annotated[bool, Query()] = False,
 ) -> SimoDossier:
-    return mocks.SIMO_DOSSIER.model_copy(update={"mule_node_id": mule_node_id})
+    response.headers.update(_NO_STORE)  # chứa dữ liệu nhạy cảm khi unseal
+    return await service.build_dossier(
+        repo,
+        cipher,
+        writer,
+        mule_node_id=mule_node_id,
+        unseal=unseal,
+        actor_subject=ops.audit_actor,
+        now=clock.now(),
+        is_judge=ops.is_judge,
+    )
 
 
 @router.get(
@@ -87,9 +180,25 @@ async def simo_dossier(
     responses=error_responses(401, 403),
     summary="Cấp vé 1 lần (TTL 45s) để mở SSE live feed bằng EventSource",
 )
-@stub
-async def stream_ticket(_ops: OpsCaller) -> OpsStreamTicketResponse:
-    return mocks.OPS_STREAM_TICKET
+async def stream_ticket(
+    ops: AnalystCaller,
+    redis: Annotated[Redis, Depends(get_redis)],
+    clock: Annotated[Clock, Depends(get_clock)],
+) -> OpsStreamTicketResponse:
+    issued = await issue_ticket(
+        redis,
+        clock,
+        namespace=TicketNamespace.OPS_STREAM,
+        role=ROLE_FRAUD_ANALYST,
+        subject=ops.subject,
+        ttl_s=get_settings().ws_ticket_ttl_s,
+    )
+    return OpsStreamTicketResponse(
+        ticket=issued.ticket,
+        expires_at=issued.expires_at,
+        ttl_seconds=issued.ttl_seconds,
+        stream_path=f"/api/v1/ops/live-feed?ticket={issued.ticket}",
+    )
 
 
 @router.get(
@@ -99,8 +208,8 @@ async def stream_ticket(_ops: OpsCaller) -> OpsStreamTicketResponse:
     responses={**_FEED_DOC, **error_responses(401)},
     summary="SSE Live Threat Feed (xác thực bằng ?ticket= từ /ops/stream-ticket)",
 )
-@stub
 async def live_feed(
+    redis: Annotated[Redis, Depends(get_redis)],
     ticket: Annotated[
         str,
         Query(
@@ -110,11 +219,14 @@ async def live_feed(
         ),
     ],
 ) -> StreamingResponse:
-    async def events() -> AsyncIterator[str]:
-        yield format_sse("ops.threat_signal", mocks.SSE_OPS_SIGNAL)
-
+    # Tiêu thụ vé TRƯỚC khi mở luồng: sai/đã dùng -> 401 JSON (không phải SSE).
+    claims = await consume_ticket(redis, ticket, namespace=TicketNamespace.OPS_STREAM)
+    if claims.role != ROLE_FRAUD_ANALYST:
+        raise AppError(ErrorCode.FORBIDDEN, 403)
+    settings = get_settings()
+    frames: AsyncIterator[str] = threat_signal_frames(redis)  # trần = min(MAX_STREAM_S, TTL access)
     return StreamingResponse(
-        with_keepalive(events(), get_settings().sse_keepalive_interval_s),
+        with_keepalive(frames, settings.sse_keepalive_interval_s),
         media_type=f"{SSE_MEDIA_TYPE}; charset=utf-8",
         headers=dict(SSE_HEADERS),
     )
