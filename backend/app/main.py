@@ -20,6 +20,7 @@ from app.core.logging import configure_logging
 from app.core.openapi import install_openapi
 from app.core.redis import check_redis, close_redis
 from app.core.schemas.health import HealthChecks, HealthResponse
+from app.sandbox.deps import install_sandbox
 from app.services.audit_pipeline.container import AuditServices, start_audit_pipeline
 from app.services.audit_pipeline.stream import drain_background
 from app.services.realtime.container import start_realtime, stop_realtime
@@ -89,6 +90,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         max_age=600,
     )
     app.include_router(api_router)
+    install_sandbox(app, cfg)  # T16: ghi đè get_sandbox_resolver của T12
 
     @app.get(
         "/healthz",
