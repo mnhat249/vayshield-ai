@@ -160,8 +160,9 @@ class AuditServices:
         if not self.loaded:
             raise AppError(ErrorCode.SERVICE_DEGRADED, 503)
 
-    def pipeline_for(self, sandbox: bool) -> ExtractionPipeline | None:
-        return (self.vip_pipeline or self.pipeline) if sandbox else self.pipeline
+    def pipeline_for(self, sandbox: bool, *, vip: bool = False) -> ExtractionPipeline | None:
+        """Chỉ phiên sandbox JUDGE_VIP dùng kho khóa VIP; PUBLIC dùng pipeline thường (EC-OPS10)."""
+        return (self.vip_pipeline or self.pipeline) if (sandbox and vip) else self.pipeline
 
 
 def build_pipeline(

@@ -306,6 +306,8 @@ class ShieldService:
 
     # --- POST /shield/escalate -------------------------------------------------------------------
     async def escalate(self, who: BorrowerPrincipal, body: EscalateRequest) -> EscalateResponse:
+        if who.is_sandbox:  # phiên Sandbox không bao giờ gửi WS/Push/SMS thật (T16)
+            raise AppError(ErrorCode.FORBIDDEN, 403)
         now_ms = _ms(self._clock)
         sid = str(body.session_id)
         snap = await self._store.load(str(who.device_id), now_ms)
