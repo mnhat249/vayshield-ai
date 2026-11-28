@@ -46,9 +46,16 @@ from app.security.tickets import TicketNamespace, consume_ticket, issue_ticket
 router = APIRouter(prefix="/api/v1/ops", tags=["ops"])
 
 _NO_STORE: Final = {"Cache-Control": "no-store"}
-AUTH_IP_RPM: Final = 10  # /auth/token: 10 lần/phút/IP
-AUTH_GLOBAL_RPM: Final = 120  # và trần toàn cục (chống dò phân tán nhiều IP)
+# /auth/token: bucket RIÊNG (không dùng chung ngưỡng API thường).
+# - theo IP: 10 lần/phút. LƯU Ý TRIỂN KHAI: ``client_ip`` là IP kết nối TCP; sau reverse proxy phải
+#   cấu hình proxy tin cậy (X-Forwarded-For) nếu không mọi người dùng chung 1 bucket.
+# - theo định danh: 10 lần/phút/username (grant password) hoặc /mã judge (grant judge_quick_login).
+# - trần toàn cục CHỈ đếm lần THẤT BẠI (401): đăng nhập đúng không làm cạn bucket của người khác.
+AUTH_IP_RPM: Final = 10
+AUTH_SCOPE_RPM: Final = 10
+AUTH_GLOBAL_FAIL_PER_MIN: Final = 200
 AUTH_BUCKET_TAG: Final = "ops-auth-token"
+_AUTH_FAIL_KEY: Final = "vs:ops:auth:fail:"
 _FEED_DOC: Final[dict[int | str, dict[str, Any]]] = {
     200: {
         "description": "SSE live threat feed (ops.threat_signal, ping). "
@@ -77,11 +84,46 @@ async def ops_token(
     # endpoint này (không dùng chung ngưỡng với API thường) theo IP + một bucket toàn cục.
     ip = client_ip(request.client)
     per_ip = CompositeRateLimiter(redis, device_rpm=1, ip_rpm=AUTH_IP_RPM)
-    await per_ip.enforce(device_id=None, ip=f"{AUTH_BUCKET_TAG}|{ip}", clock=clock)
-    overall = CompositeRateLimiter(redis, device_rpm=1, ip_rpm=AUTH_GLOBAL_RPM)
-    await overall.enforce(device_id=None, ip=f"{AUTH_BUCKET_TAG}|*", clock=clock)
+    await per_ip.enforce(device_id=None, ip=f"{AUTH_BUCKET_TAG}|ip|{ip}", clock=clock)
+    scope = _auth_scope(body)
+    if scope is not None:
+        per_scope = CompositeRateLimiter(redis, device_rpm=1, ip_rpm=AUTH_SCOPE_RPM)
+        await per_scope.enforce(device_id=None, ip=f"{AUTH_BUCKET_TAG}|{scope}", clock=clock)
+    fail_key = _AUTH_FAIL_KEY + str(int(clock.now().timestamp()) // 60)
+    await _enforce_global_failures(redis, fail_key)
     response.headers.update(_NO_STORE)
-    return await tokens.exchange(body)
+    try:
+        return await tokens.exchange(body)
+    except AppError as exc:
+        if exc.status_code == 401:
+            await _count_failure(redis, fail_key)
+        raise
+
+
+def _auth_scope(body: OpsTokenRequest) -> str | None:
+    """Định danh bị dò: username (password) hoặc cả nhóm judge; refresh chỉ giới hạn theo IP."""
+    if body.grant_type == "password":
+        return "user|" + (body.username or "").strip().lower()[:128]
+    if body.grant_type == "judge_quick_login":
+        return "judge"
+    return None
+
+
+async def _enforce_global_failures(redis: Redis, key: str) -> None:
+    try:
+        raw = await redis.get(key)
+    except Exception:
+        raise AppError(ErrorCode.SERVICE_DEGRADED, 503) from None  # fail-closed
+    if raw is not None and int(raw) >= AUTH_GLOBAL_FAIL_PER_MIN:
+        raise AppError(ErrorCode.RATE_LIMITED, 429, headers={"Retry-After": "30"})
+
+
+async def _count_failure(redis: Redis, key: str) -> None:
+    try:
+        await redis.incr(key)
+        await redis.expire(key, 120)
+    except Exception:  # đã từ chối 401; không che lỗi chính bằng lỗi bộ đếm
+        return
 
 
 @router.get(

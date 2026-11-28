@@ -56,7 +56,8 @@ def _numbers() -> list[int]:
     rnd = random.Random(20261128)
     fixed = [1, 5, 10, 11, 15, 21, 25, 101, 105, 110, 115, 1000, 1001, 1200, 1500, 12_600, 200_000]
     fixed += [1_200_000, 12_600_000, 1_000_005, 100_000_000, 999_999_999, 2_000_500_000]
-    return fixed + [rnd.randint(1, 10 ** rnd.randint(2, 11)) for _ in range(90)]
+    magic = [1_800_000, 1_900_000, 1_800_000_000, 1_900_500, 1_000_000_000, 10_000_000_000]
+    return fixed + magic + [rnd.randint(1, 10 ** rnd.randint(2, 13)) for _ in range(280)]
 
 
 def _fmt(x: int, style: str) -> tuple[str, int]:
@@ -69,6 +70,13 @@ def _fmt(x: int, style: str) -> tuple[str, int]:
         "comma_vnd": (comma + " vnd", x),
         "comma_VNĐ": (comma + "VNĐ", x),
         "dot_VND": (dot + " VND", x),
+        "plain_dong": (f"{x} đồng", x),
+        "plain_VND": (f"{x} VND", x),
+        "plain_d": (f"{x}đ", x),
+        "prefix_dong_sign": (f"₫{comma}", x),
+        "prefix_VND": (f"VND {comma}", x),
+        "space_groups": (f"{x:,}".replace(",", " ") + " đ", x),
+        "negative": (f"-{dot}đ", -x),
         "k": (f"{x}k", x * 1000),
         "K": (f"{x}K", x * 1000),
         "tr": (f"{x}tr", x * 10**6),
@@ -77,19 +85,23 @@ def _fmt(x: int, style: str) -> tuple[str, int]:
 
 
 STYLES = ["dot", "dot_d", "dot_d_space", "comma_VND", "comma_vnd", "comma_VNĐ", "dot_VND", "k"]
-STYLES += ["K", "tr", "TR"]
+STYLES += ["K", "tr", "TR", "plain_dong", "plain_VND", "plain_d", "prefix_dong_sign"]
+STYLES += ["prefix_VND", "space_groups", "negative"]
 
 
 @pytest.mark.parametrize("style", STYLES)
 def test_ec_ai26_money_roundtrip_reads_exact_value(style: str) -> None:
-    """>= 100 số x 11 định dạng: không bao giờ đọc sai giá trị (nạn nhân nghe đúng số)."""
+    """>= 300 số x 18 định dạng: không bao giờ đọc sai giá trị (nạn nhân nghe đúng số)."""
     nums = _numbers()
-    assert len(nums) >= 100
+    assert len(nums) >= 300
     for x in nums:
         text, expected = _fmt(x, style)
         if style in {"k", "K", "tr", "TR"} and x >= 1000:
             continue
-        spoken = normalize_vi(text).replace("đồng", "")
+        spoken = normalize_vi(text).replace("đồng", "").strip()
+        if expected < 0:
+            assert spoken.startswith("âm "), (text, spoken)
+            spoken, expected = spoken.removeprefix("âm "), -expected
         assert parse_vi_number(spoken) == expected, (text, spoken)
 
 
@@ -119,3 +131,14 @@ def test_ec_ai26_ambiguous_unit_is_left_verbatim_not_misread(text: str) -> None:
 
 def test_ec_ai26_decimal_comma_without_currency_stays_decimal() -> None:
     assert normalize_vi("1,5 triệu") == "một phẩy năm triệu"
+
+
+def test_ec_ai26_huge_amount_over_1e21_reads_with_scale_words_not_digits() -> None:
+    assert normalize_vi("1.000.000.000.000.000.000.000.000đ") == "một triệu tỷ tỷ đồng"
+
+
+def test_ec_ai26_currency_amount_is_never_read_as_hotline_or_phone() -> None:
+    assert normalize_vi("1900000 VND") == "một triệu chín trăm nghìn đồng"
+    assert normalize_vi("10000000000 VND") == "mười tỷ đồng"
+    # Không có tiền tệ: vẫn đọc từng chữ số (SĐT/hotline).
+    assert normalize_vi("0912345678").startswith("không chín một hai")

@@ -42,6 +42,7 @@ from app.mule_graph.service import CIPHER_COLUMN, NODES_TABLE
 from app.security.envelope import EnvelopeCipher, EnvelopeDecryptionError, record_aad
 
 SIMULATED_SEED_PREFIX: Final = "[Dữ liệu Mô phỏng Thực tiễn]"  # EC-OPS16
+SEED_BANK_BIN: Final = "SANDBOX"  # seeds/run.py gán cho node seed (phong bì không giải mã được)
 UNSEAL_ACTION: Final = "SIMO_DOSSIER_UNSEAL"
 MAX_NODES_PER_CLUSTER: Final = 100
 MAX_LINKS_PER_CLUSTER: Final = 300
@@ -193,8 +194,14 @@ def _evidence(node: MuleNodeRecord, edges: Sequence[MuleEdgeRecord]) -> list[Dos
     ]
 
 
-def _is_seed_cluster(cluster: ClusterRecord | None) -> bool:
-    return cluster is not None and cluster.campaign_label.startswith(SIMULATED_SEED_PREFIX)
+def _is_seed_node(node: MuleNodeRecord) -> bool:
+    """Node dữ liệu mô phỏng (seeds): ``bank_bin == 'SANDBOX'`` — phân biệt theo CHÍNH node, không
+    theo nhãn cụm (nhãn có thể gắn lên cụm chứa node thật)."""
+    return node.bank_bin == SEED_BANK_BIN
+
+
+def _simulated_account(node: MuleNodeRecord) -> str:
+    return f"SIMULATED-{node.masked_account_display}"  # rõ ràng là mô phỏng, không giải mã
 
 
 def _actor(subject: str) -> str:
@@ -242,12 +249,13 @@ async def build_dossier(
 
     unsealed: str | None = None
     chain_hash: str | None = None
-    if unseal and is_judge and not _is_seed_cluster(cluster):
+    is_seed = _is_seed_node(node)
+    if unseal and is_judge and not is_seed:
         # Giám khảo (tài khoản dùng chung) chỉ được mở niêm phong dữ liệu mô phỏng, không bao giờ
         # STK thật; chặn TRƯỚC audit/giải mã.
         raise AppError(ErrorCode.FORBIDDEN, 403)
     if unseal:
-        if cipher is None:
+        if cipher is None and not is_seed:
             raise AppError(ErrorCode.SERVICE_DEGRADED, 503, "Kho khóa giải mã chưa được cấu hình.")
         try:  # kiểm toán TRƯỚC khi giải mã: không có dấu vết thì không có số tài khoản
             chain_hash = await repo.append_audit(_actor(actor_subject), UNSEAL_ACTION, node.id, now)
@@ -257,14 +265,10 @@ async def build_dossier(
                 503,
                 "Không ghi được nhật ký kiểm toán; từ chối mở niêm phong.",
             ) from None
-        try:
-            plain = cipher.decrypt(
-                node.account_cipher_envelope,
-                aad=record_aad(NODES_TABLE, CIPHER_COLUMN, node.id),
-            ).decode("utf-8")
-        except EnvelopeDecryptionError:
-            raise AppError(ErrorCode.INTERNAL_ERROR, 500) from None
-        unsealed = plain.split(":", 1)[-1]  # "<BIN>:<số tài khoản>" -> số tài khoản
+        if is_seed:  # node seed: phong bì giả, KHÔNG giải mã (sẽ 500) — trả STK mô phỏng
+            unsealed = _simulated_account(node)
+        elif cipher is not None:
+            unsealed = _unseal_real(cipher, node)
 
     return SimoDossier(
         dossier_id=new_uuid7(),
@@ -281,3 +285,14 @@ async def build_dossier(
         generated_at=now,
         audit_chain_entry_hash=chain_hash,
     )
+
+
+def _unseal_real(cipher: EnvelopeCipher, node: MuleNodeRecord) -> str:
+    try:
+        plain = cipher.decrypt(
+            node.account_cipher_envelope,
+            aad=record_aad(NODES_TABLE, CIPHER_COLUMN, node.id),
+        ).decode("utf-8")
+    except EnvelopeDecryptionError:
+        raise AppError(ErrorCode.INTERNAL_ERROR, 500) from None
+    return plain.split(":", 1)[-1]  # "<BIN>:<số tài khoản>" -> số tài khoản

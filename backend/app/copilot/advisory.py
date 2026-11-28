@@ -1,168 +1,289 @@
 """Copilot B2B (File 3 §5.2): Advisory Writer + Strict Outbound Sanitizer (EC-AI21).
 
-Mọi bản nháp cảnh báo (kể cả do LLM sinh) bị tước 100% URL, tên miền, email, SĐT/hotline lạ và mọi
-biến mẫu ``{{...}}`` ngoài ``{{OFFICIAL_HOTLINE}}``. Số hotline chính thức KHÔNG bao giờ được viết
-trong văn bản: chỉ chèn biến mẫu để nhân sự điền từ bảng cấu hình cứng của tổ chức. Dữ liệu từ ảnh
-lừa đảo (do kẻ tấn công kiểm soát) không bao giờ được đưa vào bản nháp: mẫu chỉ dùng trường có cấu
-trúc (kiểu bẫy, mức độ, tên bên cho vay trong danh bạ).
+Nguyên tắc TỪ CHỐI-THAY-VÌ-TƯỚC (đảo hướng sau 3 vòng vá danh sách chặn vẫn bị lách): bản nháp
+cảnh báo chỉ được ghép từ MẪU CỨNG + biến whitelist (``{{OFFICIAL_HOTLINE}}``, tên bên cho vay đã
+kiểm). Mọi văn bản KHÔNG tin cậy (LLM, nội dung ảnh, tên bên cho vay) phải qua kiểm allowlist:
 
-Hàm sanitize là thuần, không log nội dung.
+- ký tự chỉ gồm chữ cái Latin (kể cả tiếng Việt), chữ số ASCII, khoảng trắng/xuống dòng và dấu câu
+  ASCII cơ bản ``. , ; : ! ? - ( ) ' "`` (``%``, ``/``, ``₫`` chỉ hợp lệ bên trong số tiền/ngày/
+  phần trăm/số hiệu văn bản đã nhận diện);
+- số tiền (có hậu/tiền tố tiền tệ hoặc định dạng nghìn chuẩn ``1.200.000``) được nhận diện TRƯỚC và
+  thay bằng placeholder để không bị coi là SĐT/IP/hotline/URL;
+- gặp bất kỳ dấu hiệu nghi ngờ nào (ký tự lạ, ``@``, dãy >= 7 chữ số không phải tiền, chữ số đọc
+  thành lời, từ ``chấm``/``dot``, TLD, IP, base64, handle...) thì LOẠI CẢ ĐOẠN và quay về mẫu cứng
+  — không cố tước từng phần.
+
+Số hotline chính thức KHÔNG bao giờ được viết trong văn bản: chỉ chèn biến mẫu để nhân sự điền từ
+bảng cấu hình cứng. Hàm kiểm là thuần, không log nội dung.
 """
 
 from __future__ import annotations
 
 import re
 import unicodedata
-from collections.abc import Callable, Iterable
-from dataclasses import dataclass
+from collections.abc import Iterable
+from dataclasses import dataclass, replace
 from typing import Final, Protocol
 
 from app.core.schemas.ops import ScamTrap, SeverityLevel
 
 OFFICIAL_HOTLINE_VAR: Final = "{{OFFICIAL_HOTLINE}}"
-_SENTINEL: Final = "\u0001OFFICIAL\u0001"
 MIN_USEFUL_CHARS: Final = 40
+MAX_LENDER_NAME_LEN: Final = 60
 
-_ZERO_WIDTH_RE: Final = re.compile("[​-‏‪-‮⁠-⁤᠎͏﻿­]")
-_TEMPLATE_RE: Final = re.compile(r"\{\{.*?\}\}", re.DOTALL)
+_HOTLINE_SENTINEL: Final = "\ue002"  # biến hotline chính thức (private-use: input có sẽ bị loại)
+_MONEY_PH: Final = "\ue000"
+_SAFE_PH: Final = "\ue001"
+_PLACEHOLDERS: Final = frozenset({_MONEY_PH, _SAFE_PH, _HOTLINE_SENTINEL})
+_ALLOWED_PUNCT: Final = frozenset(".,;:!?-()'\"%/₫")
+_MAX_WORD_LEN: Final = 25
+_MAX_MIXED_CASE_WORD_LEN: Final = 16
+_MAX_PHONE_RUN: Final = 7  # >= 7 chữ số (kể cả đọc thành lời) liên tiếp = SĐT/tài khoản
 
-# Dấu chấm Unicode và chữ giả dạng Latin (Cyrillic/Hy Lạp) -> ASCII TRƯỚC khi dò tên miền/SĐT.
-_DOT_TABLE: Final = str.maketrans({"。": ".", "｡": ".", "․": ".", "‧": ".", "·": "."})
-_HOMOGLYPHS: Final = {
-    "а": "a", "е": "e", "о": "o", "р": "p", "с": "c", "у": "y", "х": "x", "і": "i", "ј": "j",
-    "ѕ": "s", "ԁ": "d", "ӏ": "l", "һ": "h", "ԛ": "q", "ԝ": "w", "к": "k", "м": "m", "н": "h",
-    "т": "t", "в": "b", "α": "a", "ε": "e", "ι": "i", "κ": "k", "ο": "o", "ρ": "p", "τ": "t",
-    "υ": "u", "χ": "x", "ν": "v",
-}  # fmt: skip
-_HOMOGLYPH_TABLE: Final = str.maketrans(
-    {**_HOMOGLYPHS, **{k.upper(): v.upper() for k, v in _HOMOGLYPHS.items()}}
-)
-
-_OBF_DOT_RE: Final = re.compile(
-    r"\s*[\[({<]\s*(?:dot|chấm|\.)\s*[\])}>]\s*"  # (dot) [dot] {.} (.)
-    r"|\s+(?:dot|chấm)\s+"  # "evil dot com"
-    r"|(?<=\w)\s+\.\s*(?=\w)",  # "zalo . me" (khoảng trắng TRƯỚC dấu chấm)
-    re.IGNORECASE,
-)
-_OBF_AT_RE: Final = re.compile(
-    r"\s*[\[({<]\s*(?:at|a còng|a cờ ng)\s*[\])}>]\s*|(?<=\w)\s+@\s*(?=\w)", re.I
-)
-_OBF_SCHEME_RE: Final = re.compile(r"(?<!\w)h(?:xx|tt)p(s?)\s*(?:://|:\\|\[:\]//)", re.IGNORECASE)
-_IP_RE: Final = re.compile(r"(?<![\w.])\d{1,3}(?:\.\d{1,3}){3}(?::\d{1,5})?(?:[/?#]\S*)?(?![\w])")
-_URL_RE: Final = re.compile(
-    r"(?:(?<!\w)[a-z][a-z0-9+.\-]{1,15}://\S+)"  # có scheme
-    r"|(?:(?<!\w)www\.\S+)"
-    # tên miền trần (zalo.me/x, bit.ly/y, vay-nhanh.việt): nhãn + TLD chữ cái Unicode
-    r"|(?:(?<![\w.])(?:[\w\-]+\.)+[^\W\d_]{2,24}(?![\w])(?:[/:?#]\S*)?)",
-    re.IGNORECASE,
-)
-_EMAIL_RE: Final = re.compile(r"[^\s@]+@[^\s@]+", re.IGNORECASE)
-_HANDLE_RE: Final = re.compile(r"@\w[\w.]{1,}")  # @scam_support_vn (Telegram/Zalo/IG...)
-_ENCODED_RE: Final = re.compile(r"[A-Za-z0-9+/_\-]{20,}={0,2}")  # base64/hex dài (URL mã hóa)
-# Dấu ngăn thường gặp khi kẻ gian tách chữ số để lách bộ lọc.
-_SEP: Final = r"[\s.\-_/\\()·,]"
-_PHONE_RES: Final[tuple[re.Pattern[str], ...]] = (
-    # 0/84/+84 + 8-10 chữ số, ngăn cách bằng dấu bất kỳ ở trên (gộp chữ số trước khi bắt).
-    re.compile(rf"(?<![\w.])(?:\+\s*84|84|0)(?:{_SEP}{{0,3}}\d){{8,10}}(?!\d)"),
+# --- số tiền / ngày / % / số hiệu văn bản: nhận diện TRƯỚC, đổi thành placeholder ---------------
+_NUM: Final = r"(?:[1-9]\d{0,2}(?:[.,]\d{3})+|[1-9]\d*|0)(?:[.,]\d{1,2})?"
+_CUR: Final = r"(?:đồng|đ|₫|vnđ|vnd)"
+_UNIT: Final = rf"(?:(?:triệu|trieu|tỷ|ty|nghìn|nghin|ngàn|ngan|tr|k)(?:\s?{_CUR})?|{_CUR})"
+_PER: Final = r"(?:/(?:năm|tháng|ngày|tuần|lần|người|kỳ))?"
+_MONEY_RES: Final[tuple[re.Pattern[str], ...]] = (
+    re.compile(rf"(?<![\w.,]){_NUM}\s?{_UNIT}(?!\w){_PER}", re.IGNORECASE),
+    re.compile(rf"(?<![\w.,])(?:vnđ|vnd|₫)\s?{_NUM}(?![\w]|[.,]\d){_PER}", re.IGNORECASE),
+    # định dạng nghìn chuẩn không hậu tố: 1.200.000, 1.900.000.000, 84.000.000.000
     re.compile(
-        rf"(?<!\d)1{_SEP}{{0,3}}[89]{_SEP}{{0,3}}0{_SEP}{{0,3}}0(?:{_SEP}{{0,3}}\d){{4,8}}(?!\d)"
+        rf"(?<![\w.,])[1-9]\d{{0,2}}(?:\.\d{{3}}){{2,}}(?:,\d{{1,2}})?(?![\w]|[.,]\d){_PER}"
     ),
-    # >= 9 chữ số tách bằng space/gạch/gạch chéo (KHÔNG dấu chấm: số tiền 1.200.000).
-    re.compile(r"(?<![\w.])\d(?:[\s\-_/]{0,3}\d){8,}(?!\d)"),
-    re.compile(r"(?<![\w.])\d{7,}(?!\d)"),  # chốt chặn: không để dãy >= 7 chữ số liền nhau
 )
-_LOOKALIKE_DIGITS_RE: Final = re.compile(r"(?<![A-Za-z0-9])[\dOoIl|]{9,}(?![A-Za-z0-9])")
-_LOOKALIKE_TABLE: Final = str.maketrans("OoIl|", "00111")
-_DIGIT_WORD: Final = (
-    r"(?:không|một|hai|ba|bốn|tư|năm|lăm|sáu|bảy|tám|chín"
-    r"|zero|one|two|three|four|five|six|seven|eight|nine)"
+_DATE_RES: Final[tuple[re.Pattern[str], ...]] = (
+    re.compile(r"(?<![\w/])(?:0?[1-9]|[12]\d|3[01])/(?:0?[1-9]|1[0-2])/(?:19|20)\d{2}(?![\w/])"),
+    re.compile(r"(?<![\w/])(?:0?[1-9]|1[0-2])/(?:19|20)\d{2}(?![\w/])"),
+    re.compile(r"(?<![\w/])(?:0?[1-9]|[12]\d|3[01])/(?:0?[1-9]|1[0-2])(?![\w/])"),
 )
-_SPOKEN_ITEM: Final = rf"(?:{_DIGIT_WORD}|\d+)"
-_SPOKEN_RUN_RE: Final = re.compile(
-    rf"(?<!\w){_SPOKEN_ITEM}(?:[\s,.\-]+{_SPOKEN_ITEM})+(?!\w)", re.IGNORECASE
+_PERCENT_RE: Final = re.compile(
+    r"(?<![\w.,])\d{1,3}(?:[.,]\d{1,2})?\s?%(?:/(?:năm|tháng|ngày|tuần))?(?!\w)"
 )
-_SPOKEN_MIN_DIGITS: Final = 7
+_LEGAL_RE: Final = re.compile(r"(?<![\w/])\d{1,3}/(?:19|20)\d{2}/[A-ZĐ]{2,}(?:-[A-ZĐ]{2,})*(?!\w)")
+_IP_RE: Final = re.compile(r"(?<![\d.])(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})(?!\d)")
+
+# --- dấu hiệu nghi ngờ sau khi đã bảo vệ số tiền -----------------------------------------------
+_TOKEN_RE: Final = re.compile(r"(\d+)|([^\W\d_]+)|[\ue000-\ue002]")
+_WORD_RE: Final = re.compile(r"[^\W_]+")
+_SPACE_BEFORE_PUNCT_RE: Final = re.compile(r"[ \n][.,;:]")
+_LETTER_PUNCT_LETTER_RE: Final = re.compile(r"[^\W\d_][.,;:][^\W\d_]")
+_LOWER_AFTER_STOP_RE: Final = re.compile(r"(?<![.])[.!?]\s+(?=[^\W\d_])")
+_CONTACT_RE: Final = re.compile(
+    r"\b(?:tg|telegram|zalo|fb|facebook|ig|insta|instagram|tiktok|viber|whatsapp|wechat|skype"
+    r"|kakao|kakaotalk)\s*:",  # "Zalo: <định danh>" = đưa kênh liên hệ
+    re.IGNORECASE,
+)
+_SPOKEN_AT_RE: Final = re.compile(r"\ba\s+(?:cong|co\s?ng|at)\b|\b(?:gach|dau)\s+(?:cheo|cham)\b")
+_DIGIT_WORDS: Final = frozenset(
+    [
+        "khong",
+        "mot",
+        "hai",
+        "ba",
+        "bon",
+        "tu",
+        "nam",
+        "lam",
+        "sau",
+        "bay",
+        "tam",
+        "chin",
+        "zero",
+        "one",
+        "two",
+        "three",
+        "four",
+        "five",
+        "six",
+        "seven",
+        "eight",
+        "nine",
+    ]
+)
+_BAD_WORDS: Final = frozenset(
+    [
+        "cham",
+        "dot",
+        "slash",
+        "gmail",
+        "yahoo",
+        "hotmail",
+        "outlook",
+        "icloud",
+        "http",
+        "https",
+        "hxxp",
+        "hxxps",
+        "www",
+    ]
+)
+_TLD_WORDS: Final = frozenset(
+    [
+        "com",
+        "net",
+        "org",
+        "vn",
+        "xyz",
+        "info",
+        "biz",
+        "io",
+        "ly",
+        "cc",
+        *(["tk", "ml", "tv", "ws", "gl", "gd"]),
+    ]
+)
 
 
 @dataclass(frozen=True, slots=True)
 class SanitizeResult:
-    text: str
-    removed: tuple[str, ...]  # loại đã tước: url|email|phone|template|handle|encoded
+    text: str  # văn bản đã kiểm (nguyên vẹn); RỖNG nếu bị loại
+    removed: tuple[str, ...]  # lý do loại: charset|url|phone|template|handle|encoded|obfuscation
+    rejected: bool = False
 
 
 def _digits(s: str) -> str:
     return "".join(c for c in s if c.isdigit())
 
 
+def _strip_accents(s: str) -> str:
+    decomposed = unicodedata.normalize("NFD", s.casefold())
+    return "".join(c for c in decomposed if unicodedata.category(c) != "Mn")
+
+
+def _reject(reason: str) -> SanitizeResult:
+    return SanitizeResult(text="", removed=(reason,), rejected=True)
+
+
+def _charset_ok(text: str) -> bool:
+    for c in text:
+        if c in " \n" or c in _ALLOWED_PUNCT or c in _PLACEHOLDERS:
+            continue
+        if c.isascii() and c.isdigit():
+            continue
+        if unicodedata.category(c).startswith("L") and "LATIN" in unicodedata.name(c, ""):
+            continue
+        return False
+    return True
+
+
+def _hotline_regex(number: str) -> re.Pattern[str] | None:
+    digits = _digits(number)
+    if len(digits) < 4:
+        return None
+    prefix = ""
+    if digits.startswith("0"):
+        digits, prefix = digits[1:], r"(?:\+\s?84[ .\-]?|84[ .\-]?|0)"
+    body = r"[ .\-]?".join(re.escape(d) for d in digits)
+    return re.compile(rf"(?<![\d]){prefix}{body}(?!\d)")
+
+
+def _is_money_like_ip(parts: tuple[str, ...]) -> bool:
+    return parts[2] == "000" and parts[3] == "000"  # 1.200.000.000 / 84.000.000.000
+
+
+def _protect(text: str) -> str:
+    out = text
+    for pattern in _DATE_RES:
+        out = pattern.sub(_SAFE_PH, out)
+    out = _LEGAL_RE.sub(_SAFE_PH, out)
+    out = _PERCENT_RE.sub(_SAFE_PH, out)
+    for pattern in _MONEY_RES:
+        out = pattern.sub(_MONEY_PH, out)
+    return out
+
+
+def _digit_run_too_long(text: str) -> bool:
+    """Dãy chữ số/số đọc thành lời liên tiếp (ngăn bằng khoảng trắng/dấu câu) >= 7 chữ số."""
+    run = 0
+    for m in _TOKEN_RE.finditer(text):
+        digits, word = m.group(1), m.group(2)
+        if digits:
+            run += len(digits)
+        elif word and _strip_accents(word) in _DIGIT_WORDS:
+            if _strip_accents(word) == "nam" and run == 0:
+                continue  # "năm" (year) không khởi đầu dãy: "Năm 2024"
+            run += 1
+        else:
+            run = 0
+        if run >= _MAX_PHONE_RUN:
+            return True
+    return False
+
+
+def _words_suspicious(text: str) -> str | None:
+    for w in _WORD_RE.findall(text):
+        letters = [c for c in w if c.isalpha()]
+        if letters and len(letters) != len(w):
+            return "obfuscation"  # trộn chữ + số (kh0ng, d0t, O912...)
+        low, bare = w.casefold(), _strip_accents(w)
+        if len(w) > _MAX_WORD_LEN:
+            return "encoded"
+        if (
+            len(w) >= _MAX_MIXED_CASE_WORD_LEN
+            and any(c.isupper() for c in w[1:])
+            and any(c.islower() for c in w)
+        ):
+            return "encoded"  # base64 chỉ chữ cái
+        if "dot" in low or bare == "cham" or (bare in _BAD_WORDS) or low in _BAD_WORDS:
+            return "url"
+        if bare in _TLD_WORDS and w != "VN":
+            return "url"
+    return None
+
+
 def sanitize_outbound(text: str, *, whitelist_hotlines: Iterable[str] = ()) -> SanitizeResult:
-    """Strict Outbound Sanitizer. ``whitelist_hotlines``: số chính thức (cấu hình cứng) — nếu bản
-    nháp chứa đúng số đó thì thay bằng ``{{OFFICIAL_HOTLINE}}`` (không để số rõ trong văn bản)."""
-    allowed = {d for h in whitelist_hotlines if (d := _digits(h))}
-    removed: list[str] = []
-    out = unicodedata.normalize("NFKC", text)
-    out = out.translate(_DOT_TABLE).translate(_HOMOGLYPH_TABLE)
-    out = _ZERO_WIDTH_RE.sub("", out)
-    out = out.replace(OFFICIAL_HOTLINE_VAR, _SENTINEL)
-
-    def strip_templates(m: re.Match[str]) -> str:
-        removed.append("template")
-        return ""
-
-    out = _TEMPLATE_RE.sub(strip_templates, out)
-    out = _OBF_SCHEME_RE.sub(lambda m: f"http{m.group(1)}://", out)
-    out = _OBF_DOT_RE.sub(".", out)
-    out = _OBF_AT_RE.sub("@", out)
-
-    def strip_as(kind: str) -> Callable[[re.Match[str]], str]:
-        def _strip(m: re.Match[str]) -> str:
-            removed.append(kind)
-            return " "
-
-        return _strip
-
-    def fix_lookalike(m: re.Match[str]) -> str:
-        run = m.group(0)  # "09l2345678", "O912345678": chữ giả dạng chữ số
-        real = sum(c.isdigit() for c in run)
-        return run.translate(_LOOKALIKE_TABLE) if real >= 6 else run
-
-    out = _LOOKALIKE_DIGITS_RE.sub(fix_lookalike, out)
-    out = _EMAIL_RE.sub(strip_as("email"), out)
-    out = _HANDLE_RE.sub(strip_as("handle"), out)
-    out = _URL_RE.sub(strip_as("url"), out)
-    out = _ENCODED_RE.sub(strip_as("encoded"), out)
-
-    def strip_phone(m: re.Match[str]) -> str:
-        digits = _digits(m.group(0))
-        if digits in allowed or ("84" + digits[1:] in allowed if digits.startswith("0") else False):
-            return _SENTINEL
-        removed.append("phone")
-        return " "
-
-    for pattern in _PHONE_RES:
-        out = pattern.sub(strip_phone, out)
-
-    out = _IP_RE.sub(strip_as("url"), out)  # sau SĐT: "1.8.0.0.5.8.8.8" là hotline, không phải IP
-
-    def strip_spoken(m: re.Match[str]) -> str:
-        run = m.group(0)
-        words = re.findall(_DIGIT_WORD, run, flags=re.IGNORECASE)
-        total = len(words) + len(_digits(run))
-        if words and total >= _SPOKEN_MIN_DIGITS:  # chữ số đọc thành lời (có thể trộn số)
-            removed.append("phone")
-            return " "
-        return run
-
-    out = _SPOKEN_RUN_RE.sub(strip_spoken, out)
-    out = out.replace("@", " ")  # allowlist: không còn '@' nào ngoài kết quả đã lọc
-    out = re.sub(r"[ 	]{2,}", " ", out).replace(" ,", ",").replace(" .", ".").strip()
-    out = out.replace(_SENTINEL, OFFICIAL_HOTLINE_VAR)
-    return SanitizeResult(text=out, removed=tuple(dict.fromkeys(removed)))
+    """Kiểm allowlist văn bản không tin cậy. Hợp lệ -> trả nguyên văn (số hotline whitelist đổi
+    thành ``{{OFFICIAL_HOTLINE}}``); có BẤT KỲ dấu hiệu nghi ngờ -> ``rejected`` và ``text`` rỗng
+    (người gọi phải dùng mẫu cứng, không dùng một phần văn bản)."""
+    raw = unicodedata.normalize("NFC", text)
+    if any(unicodedata.category(c) == "Co" for c in raw):
+        return _reject("charset")  # private-use trùng placeholder nội bộ
+    out = raw.replace(OFFICIAL_HOTLINE_VAR, _HOTLINE_SENTINEL)
+    for number in whitelist_hotlines:
+        pattern = _hotline_regex(number)
+        if pattern is not None:
+            out = pattern.sub(_HOTLINE_SENTINEL, out)
+    if "{" in out or "}" in out or "@" in out:
+        return _reject("template" if "{" in out or "}" in out else "handle")
+    if not _charset_ok(out):
+        return _reject("charset")
+    for m in _IP_RE.finditer(out):
+        parts = m.groups()
+        if all(int(p) <= 255 for p in parts) and not _is_money_like_ip(parts):
+            return _reject("url")
+    checked = out
+    out = _protect(out)
+    if "/" in out or "%" in out or "₫" in out:
+        return _reject("url")
+    if _digit_run_too_long(out):
+        return _reject("phone")
+    if "xn--" in out.casefold():
+        return _reject("url")
+    why = _words_suspicious(out)
+    if why is not None:
+        return _reject(why)
+    bare = _strip_accents(out)
+    if (
+        _SPACE_BEFORE_PUNCT_RE.search(out)
+        or _LETTER_PUNCT_LETTER_RE.search(out)
+        or _SPOKEN_AT_RE.search(bare)
+        or _CONTACT_RE.search(out)
+    ):
+        return _reject("obfuscation")
+    for m in _LOWER_AFTER_STOP_RE.finditer(out):
+        if out[m.end()].islower():
+            return _reject("obfuscation")  # "vaynhanh. com": sau dấu chấm câu phải viết hoa
+    return SanitizeResult(
+        text=checked.replace(_HOTLINE_SENTINEL, OFFICIAL_HOTLINE_VAR).strip(), removed=()
+    )
 
 
 def is_outbound_safe(text: str) -> bool:
-    """True nếu ``text`` không còn URL/email/SĐT/biến mẫu lạ (dùng để kiểm lại đầu ra)."""
+    """True nếu ``text`` vượt kiểm allowlist và không đổi sau khi kiểm."""
     result = sanitize_outbound(text)
-    return result.text == text.strip() and not result.removed
+    return not result.rejected and result.text == text.strip()
 
 
 @dataclass(frozen=True, slots=True)
@@ -200,8 +321,8 @@ _TRAP_BODY: Final[dict[ScamTrap, str]] = {
         "chính thức và xin quyền đọc danh bạ, tin nhắn. Không cài đặt ứng dụng từ nguồn lạ."
     ),
     ScamTrap.TRAP_3_LOAN_RECALL: (
-        "đang xuất hiện cuộc gọi {actor} tự xưng nhân viên nhắc nợ/thu hồi khoản vay và yêu cầu "
-        "chuyển tiền vào tài khoản cá nhân. Hãy kiểm tra lại khoản vay trong ứng dụng chính thức."
+        "đang xuất hiện cuộc gọi {actor} tự xưng nhân viên nhắc nợ hoặc thu hồi khoản vay, yêu cầu "
+        "chuyển tiền vào tài khoản cá nhân. Hãy kiểm tra khoản vay trong ứng dụng chính thức."
     ),
 }
 
@@ -219,6 +340,16 @@ def _template_draft(ctx: AdvisoryContext) -> str:
         f"chuyển tiền vào tài khoản lạ. Cần hỗ trợ, vui lòng liên hệ tổng đài chính thức: "
         f"{OFFICIAL_HOTLINE_VAR}."
     )
+
+
+def _safe_lender(name: str | None) -> str | None:
+    """Tên bên cho vay chỉ được dùng nếu vượt kiểm allowlist (chữ cái/khoảng trắng, ngắn)."""
+    if not name or len(name) > MAX_LENDER_NAME_LEN:
+        return None
+    result = sanitize_outbound(name)
+    if result.rejected or any(not (c.isalpha() or c == " ") for c in result.text):
+        return None
+    return result.text
 
 
 class AdvisoryWriter:
@@ -241,16 +372,23 @@ class AdvisoryWriter:
             except Exception:
                 raw = ""
             clean = sanitize_outbound(raw, whitelist_hotlines=self._whitelist)
-            if len(clean.text) >= MIN_USEFUL_CHARS:
-                return AdvisoryDraft(clean.text, used_llm=True, sanitized_removed=clean.removed)
+            if not clean.rejected and len(clean.text) >= MIN_USEFUL_CHARS:
+                return AdvisoryDraft(clean.text, used_llm=True, sanitized_removed=())
+            # Bị loại (hoặc quá ngắn): bỏ CẢ đoạn LLM, không dùng một phần.
             removed = clean.removed
-        # Mẫu cứng cũng đi qua sanitizer (tên bên cho vay đến từ danh bạ nhưng vẫn kiểm).
-        final = sanitize_outbound(_template_draft(ctx), whitelist_hotlines=self._whitelist)
-        return AdvisoryDraft(
-            final.text,
-            used_llm=False,
-            sanitized_removed=tuple(dict.fromkeys(removed + final.removed)),
-        )
+        # Tên bên cho vay (danh bạ) cũng là văn bản không tin cậy: không qua kiểm -> dùng chung.
+        lender = _safe_lender(ctx.lender_name)
+        if ctx.lender_name and lender is None:
+            removed += ("lender_name",)
+        text = _template_draft(replace(ctx, lender_name=lender))
+        final = sanitize_outbound(text, whitelist_hotlines=self._whitelist)
+        if final.rejected:  # không thể xảy ra với mẫu cứng; phòng thủ chiều sâu
+            text = _template_draft(replace(ctx, lender_name=None))
+            final = sanitize_outbound(text)
+            if final.rejected:
+                text = f"Cảnh báo lừa đảo vay tiền. Liên hệ tổng đài: {OFFICIAL_HOTLINE_VAR}."
+                final = SanitizeResult(text=text, removed=())
+        return AdvisoryDraft(final.text, used_llm=False, sanitized_removed=removed)
 
 
 @dataclass(frozen=True, slots=True)

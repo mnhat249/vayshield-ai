@@ -46,26 +46,31 @@ def _has_forbidden(text: str) -> bool:
 
 
 @pytest.mark.parametrize("hostile", HOSTILE)
-def test_ec_ai21_sanitizer_strips_urls_phones_emails_templates(hostile: str) -> None:
-    """EC-AI21: không URL/SĐT/email/biến mẫu lạ nào sống sót."""
+def test_ec_ai21_sanitizer_rejects_urls_phones_emails_templates(hostile: str) -> None:
+    """EC-AI21: từ chối cả đoạn (không tước từng phần): không gì sống sót."""
     result = sanitize_outbound(hostile)
-    assert not _has_forbidden(result.text), result.text
-    digits = re.sub(r"\D", "", result.text)
-    assert len(digits) < 7
-    assert result.removed  # có ghi nhận đã tước
+    assert result.rejected and result.text == ""
+    assert result.removed  # có lý do loại
 
 
 def test_ec_ai21_whitelisted_hotline_becomes_template_variable_not_raw_number() -> None:
     """EC-AI21: số trong whitelist chỉ xuất hiện dưới dạng {{OFFICIAL_HOTLINE}}."""
-    out = sanitize_outbound("Gọi 1900 633 633 hoặc 0909123456", whitelist_hotlines=["1900 633 633"])
-    assert OFFICIAL_HOTLINE_VAR in out.text
-    assert "1900" not in out.text and "0909" not in out.text
+    out = sanitize_outbound(
+        "Hãy gọi 1900 633 633 để được hỗ trợ", whitelist_hotlines=["1900 633 633"]
+    )
+    assert out.text == f"Hãy gọi {OFFICIAL_HOTLINE_VAR} để được hỗ trợ"
+    assert "1900" not in out.text
+    mixed = sanitize_outbound(
+        "Gọi 1900 633 633 hoặc 0909123456", whitelist_hotlines=["1900 633 633"]
+    )
+    assert mixed.rejected and mixed.text == ""  # có số lạ -> loại cả đoạn
 
 
-def test_ec_ai21_official_variable_survives_other_templates_removed() -> None:
-    out = sanitize_outbound(f"Gọi {OFFICIAL_HOTLINE_VAR} hoặc {{{{PHISH}}}}")
-    assert OFFICIAL_HOTLINE_VAR in out.text
-    assert "PHISH" not in out.text
+def test_ec_ai21_official_variable_ok_other_templates_rejected() -> None:
+    ok = sanitize_outbound(f"Gọi {OFFICIAL_HOTLINE_VAR} nếu cần.")
+    assert ok.text == f"Gọi {OFFICIAL_HOTLINE_VAR} nếu cần."
+    bad = sanitize_outbound(f"Gọi {OFFICIAL_HOTLINE_VAR} hoặc {{{{PHISH}}}}")
+    assert bad.rejected and bad.text == ""
 
 
 def test_ec_ai21_legit_money_amounts_and_dates_not_mangled() -> None:
@@ -108,10 +113,11 @@ CTX = AdvisoryContext(
 async def test_ec_ai21_llm_draft_copied_from_attacker_content_is_sanitized() -> None:
     """EC-AI21: LLM (bị đầu độc) chép URL/SĐT lạ -> bản nháp vẫn sạch."""
     draft = await AdvisoryWriter(_HostileLLM()).draft(CTX)
-    assert draft.used_llm
+    assert not draft.used_llm  # loại CẢ đoạn LLM, quay về mẫu cứng
     assert not _has_forbidden(draft.text)
-    assert "evil" not in draft.text
-    assert set(draft.sanitized_removed) >= {"url", "phone"}
+    assert "evil" not in draft.text and "hoạt động" not in draft.text
+    assert draft.sanitized_removed  # có ghi nhận lý do loại
+    assert OFFICIAL_HOTLINE_VAR in draft.text
     assert draft.requires_human_approval
 
 
@@ -148,6 +154,8 @@ async def test_ec_ai21_malicious_lender_name_cannot_inject_link() -> None:
     )
     draft = await AdvisoryWriter().draft(ctx)
     assert is_outbound_safe(draft.text)
+    assert "evil" not in draft.text.lower() and "lender_name" in draft.sanitized_removed
+    assert "mạo danh tổ chức cho vay" in draft.text  # tên xấu bị bỏ, dùng cụm chung
 
 
 def test_shield_trigger_suggestion_requires_human_approval() -> None:

@@ -15,8 +15,7 @@ import unicodedata
 from typing import Final
 
 _DIGITS: Final = ("không", "một", "hai", "ba", "bốn", "năm", "sáu", "bảy", "tám", "chín")
-_SCALES: Final = ("", "nghìn", "triệu", "tỷ")
-_MAX_GROUPS: Final = 7  # tới 10^21; lớn hơn thì đọc từng chữ số
+_MAX_GROUPS: Final = 12  # tới 10^36 (đọc "nghìn tỷ tỷ"...); lớn hơn thì đọc từng chữ số
 _LONG_DIGITS: Final = 10  # chuỗi chữ số liền >= 10 ký tự: đọc từng chữ số (SĐT, số tài khoản)
 
 # Viết tắt pháp lý/tài chính (khớp cả từ, phân biệt hoa thường). Cụm dài đặt trước.
@@ -36,6 +35,13 @@ _ABBREVIATIONS: Final[tuple[tuple[str, str], ...]] = (
 )
 
 _DATE_RE: Final = re.compile(r"(?<![\d/])(?:ngày\s+)?(\d{1,2})/(\d{1,2})/(\d{4})(?![\d/])")
+# Số tiền CÓ tiền tệ (hậu tố đ/đồng/₫/VND/VNĐ hoặc tiền tố ₫/VND): nhận diện TRƯỚC hotline/số dài để
+# "1900000 VND" đọc là số tiền chứ không phải hotline; hỗ trợ nhóm cách khoảng trắng và dấu âm.
+_MONEY_RE: Final = re.compile(
+    r"(?<![\w.,])(?P<sign>[-−–])?(?P<pre>(?i:vn[dđ]|₫)\s?)?"
+    r"(?P<num>\d{1,3}(?: \d{3})+|\d(?:[\d.,]*\d)?)"
+    r"(?:\s?(?P<suf>(?i:đồng|đ|₫|vn[dđ]))(?![\wÀ-ỹ]))?"
+)
 _HOTLINE_RE: Final = re.compile(r"(?<!\d)1[89]00(?:[ .]?\d{3,4}){1,2}(?!\d)")
 # Đơn vị không phân biệt hoa thường (500K, 2TR, 1.200 vnd). Số dính liền chữ lạ (``12k3``, ``5m``)
 # không khớp -> giữ nguyên, không đọc sai nghĩa.
@@ -112,10 +118,10 @@ def number_to_vi(n: int) -> str:
 
 
 def _scale_name(idx: int) -> str:
-    """idx 0:'' 1:nghìn 2:triệu 3:tỷ 4:nghìn tỷ 5:triệu tỷ 6:tỷ tỷ."""
-    if idx < len(_SCALES):
-        return _SCALES[idx]
-    return f"{_SCALES[idx - 3]} tỷ"
+    """idx 0:'' 1:nghìn 2:triệu 3:tỷ 4:nghìn tỷ 5:triệu tỷ 6:tỷ tỷ 7:nghìn tỷ tỷ ..."""
+    quotient, rest = divmod(idx, 3)
+    base = ("", "nghìn", "triệu")[rest]
+    return " ".join(part for part in [base, *(["tỷ"] * quotient)] if part)
 
 
 def _split_number(token: str, currency: bool) -> tuple[str, str] | None:
@@ -182,10 +188,25 @@ def _verbalize_tr_decimal(m: re.Match[str]) -> str:
     return number_to_vi(value)
 
 
+def _verbalize_money(m: re.Match[str]) -> str:
+    if not m.group("pre") and not m.group("suf"):
+        return m.group(0)  # không có tiền tệ: để các bước sau xử lý
+    token = m.group("num").replace(" ", "")
+    parts = _split_number(token, True)
+    if parts is None:
+        spoken = digits_to_vi(token)
+    else:
+        whole, frac = parts
+        spoken = number_to_vi(int(whole)) + (" phẩy " + digits_to_vi(frac) if frac else "")
+    sign = "âm " if m.group("sign") else ""
+    return f"{sign}{spoken} đồng"
+
+
 def normalize_vi(text: str) -> str:
     """Chuẩn hóa văn bản tiếng Việt để đọc thành tiếng. Idempotent với văn bản đã chuẩn hóa."""
     out = unicodedata.normalize("NFC", text)
     out = _CONTROL_RE.sub(" ", out)
+    out = _MONEY_RE.sub(_verbalize_money, out)
     out = _HOTLINE_RE.sub(lambda m: digits_to_vi(m.group(0)), out)
     out = _DATE_RE.sub(
         lambda m: (

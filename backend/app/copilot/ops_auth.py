@@ -16,10 +16,13 @@
 
 from __future__ import annotations
 
+import asyncio
 import hashlib
 import hmac
 import logging
+import time
 import uuid
+from collections.abc import Callable
 from dataclasses import dataclass
 from typing import Annotated, Final, Protocol
 
@@ -46,6 +49,11 @@ IAT_LEEWAY_S: Final = 30
 MIN_JUDGE_CODE_LEN_PROD: Final = 16
 _RT_USED_PREFIX: Final = "vs:ops:rt:used:"
 _RT_FAMILY_PREFIX: Final = "vs:ops:rt:revoked:"
+_RT_GRACE_PREFIX: Final = "vs:ops:rt:grace:"
+_PENDING: Final = "pending"
+REFRESH_GRACE_S: Final = 10  # hai tab refresh song song nhận CÙNG cặp token (không bị đăng xuất)
+_GRACE_POLL_S: Final = 0.05
+_GRACE_POLLS: Final = 40
 
 
 @dataclass(frozen=True, slots=True)
@@ -120,11 +128,18 @@ def get_ops_directory() -> OpsUserDirectory:
 
 
 class RefreshStateStore(Protocol):
-    """Trạng thái refresh token: dùng-một-lần + thu hồi theo họ (sid)."""
+    """Trạng thái refresh token: dùng-một-lần (có cửa sổ ân hạn) + thu hồi theo họ (sid)."""
 
-    async def consume(self, jti: str, ttl_s: int) -> bool:
-        """True nếu đây là lần dùng đầu tiên của ``jti``."""
+    async def consume(self, jti: str, ttl_s: int, grace_s: int) -> bool:
+        """True nếu đây là lần dùng đầu tiên của ``jti`` (đồng thời mở cửa sổ ân hạn)."""
         ...
+
+    async def grace_result(self, jti: str) -> str | None:
+        """None: ngoài cửa sổ ân hạn. ``"pending"``: lần dùng đầu chưa xong. Khác: kết quả đã
+        phát hành cho lần dùng đầu (JSON) — trả lại y nguyên cho request song song."""
+        ...
+
+    async def remember(self, jti: str, payload: str, grace_s: int) -> None: ...
 
     async def revoke_family(self, sid: str, ttl_s: int) -> None: ...
 
@@ -134,15 +149,29 @@ class RefreshStateStore(Protocol):
 class InMemoryRefreshStateStore:
     """Cho test/dev một tiến trình (không dùng ở production nhiều worker)."""
 
-    def __init__(self) -> None:
+    def __init__(self, monotonic: Callable[[], float] = time.monotonic) -> None:
+        self._now = monotonic
         self._used: set[str] = set()
+        self._grace: dict[str, tuple[float, str]] = {}  # jti -> (hết hạn, payload|"pending")
         self._revoked: set[str] = set()
 
-    async def consume(self, jti: str, ttl_s: int) -> bool:
+    async def consume(self, jti: str, ttl_s: int, grace_s: int) -> bool:
         if jti in self._used:
             return False
         self._used.add(jti)
+        self._grace[jti] = (self._now() + grace_s, _PENDING)
         return True
+
+    async def grace_result(self, jti: str) -> str | None:
+        entry = self._grace.get(jti)
+        if entry is None or entry[0] <= self._now():
+            return None
+        return entry[1]
+
+    async def remember(self, jti: str, payload: str, grace_s: int) -> None:
+        entry = self._grace.get(jti)
+        if entry is not None and entry[0] > self._now():
+            self._grace[jti] = (entry[0], payload)  # giữ nguyên hạn cửa sổ
 
     async def revoke_family(self, sid: str, ttl_s: int) -> None:
         self._revoked.add(sid)
@@ -151,8 +180,17 @@ class InMemoryRefreshStateStore:
         return sid in self._revoked
 
 
+_CONSUME_LUA: Final = """
+if redis.call('SET', KEYS[1], '1', 'NX', 'EX', ARGV[1]) then
+  redis.call('SET', KEYS[2], 'pending', 'EX', ARGV[2])
+  return 1
+end
+return 0
+"""
+
+
 class RedisRefreshStateStore:
-    """Redis ``SET NX EX``; mọi lỗi Redis -> 503 (fail-closed, không bao giờ cho qua)."""
+    """Redis (``SET NX EX`` trong Lua nguyên tử); mọi lỗi Redis -> 503 (fail-closed)."""
 
     def __init__(self, redis: Redis) -> None:
         self._redis = redis
@@ -162,11 +200,32 @@ class RedisRefreshStateStore:
         logger.warning("ops_auth: Redis lỗi — từ chối refresh (fail-closed)")
         return AppError(ErrorCode.SERVICE_DEGRADED, 503)
 
-    async def consume(self, jti: str, ttl_s: int) -> bool:
+    async def consume(self, jti: str, ttl_s: int, grace_s: int) -> bool:
         try:
-            return bool(
-                await self._redis.set(_RT_USED_PREFIX + jti, "1", ex=max(1, ttl_s), nx=True)
+            res = await self._redis.eval(
+                _CONSUME_LUA,
+                2,
+                _RT_USED_PREFIX + jti,
+                _RT_GRACE_PREFIX + jti,
+                max(1, ttl_s),
+                max(1, grace_s),
             )
+            return int(res) == 1
+        except Exception:
+            raise self._degraded() from None
+
+    async def grace_result(self, jti: str) -> str | None:
+        try:
+            raw = await self._redis.get(_RT_GRACE_PREFIX + jti)
+        except Exception:
+            raise self._degraded() from None
+        if raw is None:
+            return None
+        return raw.decode("utf-8") if isinstance(raw, bytes) else str(raw)
+
+    async def remember(self, jti: str, payload: str, grace_s: int) -> None:
+        try:  # XX: chỉ ghi khi cửa sổ ân hạn còn; KEEPTTL: không kéo dài cửa sổ
+            await self._redis.set(_RT_GRACE_PREFIX + jti, payload, xx=True, keepttl=True)
         except Exception:
             raise self._degraded() from None
 
@@ -211,7 +270,7 @@ class OpsTokenService:
         self._directory = directory
         self._judge_code = judge_code
         self._judge_access_ttl = judge_access_ttl_s
-        self._state: RefreshStateStore = state or InMemoryRefreshStateStore()
+        self._state: RefreshStateStore = state or InMemoryRefreshStateStore(clock.monotonic)
 
     def _judge_ver(self) -> str:
         """Băm (có khóa) của mã judge hiện hành: đổi mã -> ``ver`` đổi -> token cũ vô hiệu."""
@@ -263,7 +322,7 @@ class OpsTokenService:
             return self.issue(self._judge_principal(req.judge_access_code))
         if not req.refresh_token:
             raise _unauthorized()
-        return self.issue(await self._principal_from_refresh(req.refresh_token))
+        return await self._exchange_refresh(req.refresh_token)
 
     def _judge_principal(self, code: str | None) -> OpsPrincipal:
         if not self._judge_code or not code:
@@ -324,17 +383,38 @@ class OpsTokenService:
             session_id=str(claims.get("sid", "")),
         )
 
-    async def _principal_from_refresh(self, token: str) -> OpsPrincipal:
+    async def _exchange_refresh(self, token: str) -> OpsTokenResponse:
         claims = self._decode(token, "refresh")
         jti, sid = claims.get("jti"), claims.get("sid")
         if not isinstance(jti, str) or not jti or not isinstance(sid, str) or not sid:
             raise _unauthorized()  # token không có jti/sid (cũ/giả) không được đổi
         if await self._state.is_family_revoked(sid):
             raise _unauthorized()
-        if not await self._state.consume(jti, self._refresh_ttl):
-            # Dùng lại token đã xoay vòng = nghi bị đánh cắp: thu hồi cả họ.
+        if not await self._state.consume(jti, self._refresh_ttl, REFRESH_GRACE_S):
+            # Trong cửa sổ ân hạn (2 tab refresh song song): trả lại CÙNG cặp token đã phát hành.
+            cached = await self._await_grace_result(jti)
+            if cached is not None:
+                return OpsTokenResponse.model_validate_json(cached)
+            # Ngoài cửa sổ: dùng lại token đã xoay vòng = nghi bị đánh cắp -> thu hồi cả họ.
             await self._state.revoke_family(sid, self._refresh_ttl)
             raise _unauthorized()
+        principal = await self._principal_from_claims(claims, sid)
+        response = self.issue(principal)
+        await self._state.remember(jti, response.model_dump_json(), REFRESH_GRACE_S)
+        return response
+
+    async def _await_grace_result(self, jti: str) -> str | None:
+        """Kết quả của lần dùng đầu nếu còn trong cửa sổ ân hạn; None nếu đã hết cửa sổ."""
+        for _ in range(_GRACE_POLLS):
+            value = await self._state.grace_result(jti)
+            if value is None:
+                return None
+            if value != _PENDING:
+                return value
+            await asyncio.sleep(_GRACE_POLL_S)
+        raise _unauthorized()  # lần dùng đầu không hoàn tất: không phát token, không thu hồi họ
+
+    async def _principal_from_claims(self, claims: dict[str, object], sid: str) -> OpsPrincipal:
         subject = str(claims["sub"])
         if claims.get("jdg") is True:
             # Giám khảo: chỉ hiệu lực khi mã đăng nhập nhanh còn bật VÀ chưa đổi (ver khớp).
@@ -345,6 +425,14 @@ class OpsTokenService:
         if user is None:
             raise _unauthorized()
         return OpsPrincipal(user.subject, user.roles, session_id=sid)
+
+    async def verify_access_active(self, token: str) -> OpsPrincipal:
+        """``verify_access`` + kiểm họ token chưa bị thu hồi (reuse refresh giết cả access token
+        còn hạn, kể cả access 4 giờ của giám khảo). Redis lỗi -> 503 (fail-closed)."""
+        principal = self.verify_access(token)
+        if principal.session_id and await self._state.is_family_revoked(principal.session_id):
+            raise _unauthorized()
+        return principal
 
 
 def get_ops_token_service(
@@ -379,11 +467,11 @@ def get_ops_token_service(
     )
 
 
-def ops_principal(
+async def ops_principal(
     creds: OpsCaller, tokens: Annotated[OpsTokenService, Depends(get_ops_token_service)]
 ) -> OpsPrincipal:
-    """JWT hợp lệ (chưa kiểm vai trò) — 401 nếu sai/hết hạn."""
-    return tokens.verify_access(creds.bearer_token)
+    """JWT hợp lệ và họ token chưa bị thu hồi (chưa kiểm vai trò) — 401 nếu sai/hết hạn/thu hồi."""
+    return await tokens.verify_access_active(creds.bearer_token)
 
 
 def analyst_principal(
