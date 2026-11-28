@@ -94,3 +94,4 @@ Plan: [`../backend-vayshield.md`](../backend-vayshield.md) · Cập nhật %: `n
 | 2026-11-28 | T15 merged (approve sau 2 vòng sửa (8 major); vòng 3 chỉ verify + CI pg xanh + 138 mẫu lách của reviewer 0 lọt, chưa review lại; cần người duyệt: nguồn hotline BIN, kho tài khoản Fraud Ops, TTS server, font PDF) |
 | 2026-11-28 | T11 merged (approve sau 2 vòng sửa (1 blocker + 6 major); vòng 3 chỉ verify + CI pg xanh, chưa review lại; cần migration UNIQUE pubkey_ecdsa_p256, contract thiếu needs_confirmation, STT server) |
 | 2026-11-28 | T17 merged (chưa review độc lập; verify + chạy lại quick offline exit 0; số liệu trung thực (5 SLA FAIL, 2 NOT_MEASURED), chưa chạy Gemini thật) |
+| 2026-11-28 | T16 merged (approve sau sửa (1 blocker + 3 major); bản sửa chỉ verify + CI pg redis xanh, chưa review lại; cần người duyệt: proxy tin cậy, Turnstile, chi phí giả định) |
