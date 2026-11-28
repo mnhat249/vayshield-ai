@@ -13,7 +13,7 @@ from tests.api.shield._helpers import DEVICE_A, signed_post
 from ._helpers import APK
 
 REQ = {
-    "package_name": "vn.homecredit.real",
+    "package_name": "vn.homecredit.demo",
     "signing_cert_sha256": "ab" * 32,
     "app_label": "Home Credit",
     "installer_package": "com.android.vending",
@@ -21,7 +21,7 @@ REQ = {
 }
 
 
-async def test_empty_trust_store_never_turns_real_app_into_spoof(
+async def test_official_package_without_cert_is_unknown_not_spoof(
     build_env: Any, client: httpx.AsyncClient, fake_clock: FakeClock
 ) -> None:
     calls: list[str] = []
@@ -170,3 +170,51 @@ async def test_policy_etag_changes_after_bundle_expiry_and_stable_within_day(
     fake_clock.advance(8 * 24 * 3600)  # quá hạn 7 ngày của bundle cũ
     again = await get(**{"If-None-Match": first})
     assert again.status_code == 200 and again.headers["etag"] != first
+
+
+async def test_unknown_package_with_licensed_brand_label_is_red_even_without_certs(
+    build_env: Any, client: httpx.AsyncClient, fake_clock: FakeClock
+) -> None:
+    """Quyết định orchestrator: gói LẠ + nhãn thương hiệu cấp phép → đỏ dù trust thiếu cert."""
+    build_env()  # trust rỗng, registry có Home Credit với gói vn.homecredit.demo
+    fake = {**REQ, "package_name": "com.cash.fake", "installer_package": None}
+    data = (await signed_post(client, fake_clock, APK, fake)).json()
+    assert data["apk_verdict"] == "LOOKALIKE_SPOOF" and data["severity"] == "CRITICAL_RED"
+    assert data["lookalike_of"] == "Home Credit"
+
+
+async def test_truncated_jpeg_is_422_json_not_500(
+    env: Any, client: httpx.AsyncClient, fake_clock: FakeClock
+) -> None:
+    """EC-DB05: JPEG header hợp lệ nhưng thân cắt cụt → 422 CORRUPT_IMAGE, không 500."""
+    from ._helpers import STREAM, image_part, jpeg, meta, signed_multipart
+
+    good = jpeg()
+    r = await signed_multipart(
+        client,
+        fake_clock,
+        STREAM,
+        files=[image_part(good[: len(good) // 3])],
+        data={"metadata_json": meta()},
+    )
+    assert r.status_code == 422, r.text
+    assert r.headers["content-type"].startswith("application/json")
+    assert r.json()["error"]["code"] == "VALIDATION_ERROR"
+
+
+async def test_drain_background_waits_for_pending_work_and_logs_failures() -> None:
+    from app.services.audit_pipeline.stream import _BACKGROUND, drain_background, spawn
+
+    done: list[str] = []
+
+    async def work() -> None:
+        await asyncio.sleep(0.05)
+        done.append("ok")
+
+    async def boom() -> None:
+        raise RuntimeError("bg failed")
+
+    spawn(work())
+    spawn(boom())
+    await drain_background(2.0)
+    assert done == ["ok"] and not _BACKGROUND

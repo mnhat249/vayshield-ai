@@ -4,6 +4,9 @@
 - Hashcash (``ProofOfWork``): ``sha256(spki_b64 ':' timestamp ':' nonce)`` đủ
   ``pow_difficulty_bits`` bit 0 đầu, timestamp trong ±300s. Có PoW hợp lệ → hạn mức đăng ký/IP
   cao hơn; không PoW → hạn mức thấp (rate limit; giả định: PoW tùy chọn theo contract).
+- GIẢ ĐỊNH: mất phản hồi rồi retry cùng khóa nhận 409 (không trả lại device cũ vì chưa chứng
+  minh sở hữu khóa); client tạo khóa mới. CẦN migration mới: UNIQUE INDEX trên
+  ``anonymous_devices.pubkey_ecdsa_p256`` + ON CONFLICT (hiện còn race SELECT→INSERT).
 - SĐT opt-in: chuẩn hóa E.164 (EC-DB10) → blind index HMAC dual-pepper; chỉ lưu HMAC. SĐT đã
   thuộc thiết bị khác → KHÔNG chiếm (chưa xác minh quyền sở hữu), thiết bị vẫn đăng ký nhưng
   không liên kết SĐT. Opt-in hết hạn sau 90 ngày (EC-DB03).
@@ -163,7 +166,6 @@ async def register_device(
             settings.pow_difficulty_bits,
             int(now.timestamp()),
         )
-        await claim_proof_of_work(redis, body.public_key_spki_b64, body.proof_of_work)
     await throttle_registration(redis, ip, has_pow=has_pow, strict=strict)
     pubkey = decode_spki(body.public_key_spki_b64)
     if signer is None:
@@ -174,6 +176,9 @@ async def register_device(
             409,
             details=[ErrorDetail(field="body.public_key_spki_b64", issue="already_registered")],
         )
+
+    if body.proof_of_work is not None:  # chỉ tiêu PoW khi chắc chắn đăng ký được (không 409/503)
+        await claim_proof_of_work(redis, body.public_key_spki_b64, body.proof_of_work)
 
     phone_hmac: str | None = None
     pepper_version = 1

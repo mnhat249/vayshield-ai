@@ -193,27 +193,39 @@ def verify_apk(
         )
         return build(ApkVerdict.UNKNOWN_LOW_RISK, Severity.AMBER, signature_ok=None)
 
+    # Gói chính thức đã biết (từ registry hoặc sổ chữ ký) nhưng chưa có chứng chỉ: không xác nhận
+    # được → UNKNOWN_LOW_RISK (không bao giờ "chính thức", cũng không bị gọi oan là giả).
+    owner = next(
+        (r for r in registry.active_records() if req.package_name in r.android_packages), None
+    )
+    if owner is not None:
+        reasons.append(
+            "Chưa có chữ ký chính thức để đối chiếu; không thể xác nhận đây là ứng dụng thật."
+        )
+        return build(ApkVerdict.UNKNOWN_LOW_RISK, Severity.AMBER, signature_ok=None)
+
     claimed = detect_lookalike_brand(req.app_label, registry) if req.app_label else None
     if (
         claimed is not None
         and claimed.record is not None
-        and any(trust.packages_of(claimed.record.entity_code).values())  # biết chứng chỉ chính thức
-        and claimed.status
-        in (
-            MatchStatus.EXACT,
-            MatchStatus.LOOKALIKE,
-        )
+        and claimed.status in (MatchStatus.EXACT, MatchStatus.LOOKALIKE)
     ):
-        reasons.append(
-            f"Ứng dụng mang tên giống {claimed.record.official_short_name} nhưng không phải gói "
-            "phát hành chính thức."
+        # Nhãn khớp một tổ chức cấp phép mà gói KHÔNG thuộc gói chính thức đã biết của họ (kể cả
+        # khi chưa có chứng chỉ) → giả mạo (hướng an toàn, quyết định orchestrator).
+        official = set(claimed.record.android_packages) | set(
+            trust.packages_of(claimed.record.entity_code)
         )
-        return build(
-            ApkVerdict.LOOKALIKE_SPOOF,
-            Severity.CRITICAL_RED,
-            lookalike_of=claimed.record.official_short_name,
-            signature_ok=False,
-        )
+        if req.package_name not in official:
+            reasons.append(
+                f"Ứng dụng mang tên giống {claimed.record.official_short_name} nhưng không phải "
+                "gói phát hành chính thức."
+            )
+            return build(
+                ApkVerdict.LOOKALIKE_SPOOF,
+                Severity.CRITICAL_RED,
+                lookalike_of=claimed.record.official_short_name,
+                signature_ok=False,
+            )
 
     if sideloaded and dangerous:
         reasons.append(

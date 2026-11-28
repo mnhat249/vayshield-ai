@@ -148,8 +148,21 @@ def spawn[T](coro: Coroutine[Any, Any, T]) -> asyncio.Task[T]:
     """Chạy tác vụ tách khỏi vòng đời kết nối SSE; giữ tham chiếu để không bị GC giữa chừng."""
     task = asyncio.ensure_future(coro)
     _BACKGROUND.add(task)
-    task.add_done_callback(_BACKGROUND.discard)
+    task.add_done_callback(_background_done)
     return task
+
+
+def _background_done(task: asyncio.Task[Any]) -> None:
+    _BACKGROUND.discard(task)
+    if not task.cancelled() and task.exception() is not None:  # đã 'retrieved' → không cảnh báo
+        logger.error("background_task_failed", exc_info=task.exception())
+
+
+async def drain_background(timeout_s: float = 5.0) -> None:
+    """Chờ tác vụ nền (lưu audit/HSM/mule) xong trước khi tắt app, tối đa ``timeout_s``."""
+    pending = list(_BACKGROUND)
+    if pending:
+        await asyncio.wait(pending, timeout=timeout_s)
 
 
 def _origin(principal: BorrowerPrincipal) -> TriggerOrigin:
@@ -290,9 +303,7 @@ async def contract_events(services: AuditServices, job: StreamJob) -> AsyncGener
         qr_task = asyncio.ensure_future(scan_qr(job.ingest.images, services.cpu))
         extract_task = asyncio.ensure_future(_extract(services, job))
         submitted = spawn(
-            services.shield.on_submitted(
-                principal.device_id, meta.fiber_key, TriggerOrigin.STATION_2_SCAN, event_id
-            )
+            services.shield.on_submitted(principal.device_id, meta.fiber_key, origin, event_id)
         )
         tasks += [qr_task, extract_task]
         provenance = await load_apk_result(

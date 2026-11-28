@@ -21,6 +21,7 @@ from app.core.openapi import install_openapi
 from app.core.redis import check_redis, close_redis
 from app.core.schemas.health import HealthChecks, HealthResponse
 from app.services.audit_pipeline.container import AuditServices, start_audit_pipeline
+from app.services.audit_pipeline.stream import drain_background
 from app.services.realtime.container import start_realtime, stop_realtime
 
 API_DESCRIPTION = (
@@ -44,6 +45,7 @@ def make_lifespan(
             try:
                 await stop_realtime(app)
             finally:
+                await drain_background()  # lưu audit/HSM đang dở trước khi đóng DB
                 await close_redis()
                 await dispose_engine()
 

@@ -315,15 +315,23 @@ async def test_pow_is_single_use_and_public_key_is_unique(
 ) -> None:
     """Review MAJOR 5: PoW gửi lại không tạo thêm thiết bị; 1 khóa công khai = 1 thiết bị."""
     cfg = audit_settings.model_copy(update={"pow_difficulty_bits": 8})
-    build_env(settings=cfg)
+    env_redis = build_env(settings=cfg).services.redis
     spki = _spki(31337)
     ts = int(fake_clock.now().timestamp())
     pow_ = {"timestamp": ts, "nonce": _mine(spki, ts, 8)}
     ok = await client.post(REGISTER, json=_reg(public_key_spki_b64=spki, proof_of_work=pow_))
     assert ok.status_code == 201
     replay = await client.post(REGISTER, json=_reg(public_key_spki_b64=spki, proof_of_work=pow_))
-    assert replay.status_code == 400
-    assert replay.json()["error"]["details"][0]["issue"] == "already_used"
+    assert replay.status_code == 409  # khóa đã đăng ký; PoW cũ không dùng lại được
+    import pytest as _pytest
+
+    from app.core.errors import AppError
+    from app.core.schemas.devices import ProofOfWork
+    from app.services.audit_pipeline.registration import claim_proof_of_work
+
+    with _pytest.raises(AppError) as exc:
+        await claim_proof_of_work(env_redis, spki, ProofOfWork.model_validate(pow_))
+    assert exc.value.status_code == 400
     # Cùng khóa, PoW mới (không dùng lại) → vẫn bị từ chối vì khóa đã đăng ký.
     ts2 = ts + 1
     again = await client.post(

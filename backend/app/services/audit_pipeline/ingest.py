@@ -25,8 +25,8 @@ from ai_pipeline.vision import (
     decode_vietqr,
     detect_qr_codes,
     run_cpu_bound,
-    sanitize_image,
 )
+from ai_pipeline.vision.scrub import HIDDEN_SUSPECT_PIXELS, scrub_hidden_text
 from ai_pipeline.vision.upload_guard import read_header
 from app.core.errors import AppError, ErrorCode, ErrorDetail
 
@@ -105,31 +105,39 @@ MAX_IMAGE_PIXELS: Final = 6_000_000  # trần mỗi ảnh (≈ 2450² ); vượt
 MAX_REQUEST_PIXELS: Final = 16_000_000  # trần tổng pixel khai báo của cả request
 
 
-def _shrink(raw: bytes) -> bytes:
-    """Đọc header (guard T03), chặn ảnh quá lớn, thu nhỏ cạnh dài ≤ 1280px rồi trả PNG nhỏ."""
+def _shrink(raw: bytes) -> Image.Image:
+    """Đọc header (guard T03), chặn ảnh quá lớn, thu nhỏ cạnh dài ≤ 1280px, trả bitmap RGB.
+
+    Trần 6MP/ảnh (ví dụ ảnh 12MP bị 413) là có chủ đích: client PHẢI nén ≤ 1280px (File 4
+    §4.2(A)); ảnh gốc từ camera cần nén trước khi gửi. Ảnh cắt cụt/hỏng sau header → 422
+    ``CORRUPT_IMAGE`` (EC-DB05), không bao giờ 500."""
     header = read_header(raw)
     if header.width * header.height > MAX_IMAGE_PIXELS:
         raise ImageRejectedError("IMAGE_TOO_LARGE", "Ảnh vượt giới hạn pixel của API.")
-    with Image.open(io.BytesIO(raw)) as img:
-        if header.fmt == "JPEG":
-            img.draft("RGB", (MAX_SIDE_PX, MAX_SIDE_PX))  # giải mã giảm tỉ lệ ngay từ đầu
-        img.load()
-        rgba = img.convert("RGBA")
+    try:
+        with Image.open(io.BytesIO(raw)) as img:
+            if header.fmt == "JPEG":
+                img.draft("RGB", (MAX_SIDE_PX, MAX_SIDE_PX))  # giải mã giảm tỉ lệ ngay từ đầu
+            img.load()
+            rgba = img.convert("RGBA")
+    except (OSError, SyntaxError, ValueError, Image.DecompressionBombError) as exc:
+        raise ImageRejectedError("CORRUPT_IMAGE", "Ảnh hỏng hoặc bị cắt cụt.") from exc
     if max(rgba.size) > MAX_SIDE_PX:
         rgba.thumbnail((MAX_SIDE_PX, MAX_SIDE_PX), Image.Resampling.LANCZOS)
-    out = io.BytesIO()
-    rgba.save(out, format="PNG")
-    return out.getvalue()
+    background = Image.new("RGBA", rgba.size, (255, 255, 255, 255))
+    return Image.alpha_composite(background, rgba).convert("RGB")
 
 
 def _clean_one(raw: bytes) -> CleanImage:
-    clean = sanitize_image(_shrink(raw))
+    rgb = np.ascontiguousarray(np.asarray(_shrink(raw), dtype=np.uint8))
+    cleaned, hidden, _ = scrub_hidden_text(rgb)  # khử chữ tàng hình trên bitmap đã thu nhỏ
+    image = Image.fromarray(cleaned, mode="RGB")
     buf = io.BytesIO()
-    clean.image.convert("RGB").save(buf, format="JPEG", quality=LLM_JPEG_QUALITY)
+    image.save(buf, format="JPEG", quality=LLM_JPEG_QUALITY)
     return CleanImage(
         jpeg=buf.getvalue(),
-        blur_variance=laplacian_variance(clean.image),
-        hidden_text_suspected=clean.hidden_text_suspected,
+        blur_variance=laplacian_variance(image),
+        hidden_text_suspected=hidden >= HIDDEN_SUSPECT_PIXELS,
     )
 
 

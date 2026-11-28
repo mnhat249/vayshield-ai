@@ -215,11 +215,10 @@ class StoreShieldHook:
     async def on_submitted(
         self, device_id: UUID, fiber_key: str, origin: TriggerOrigin, event_id: str
     ) -> None:
-        source = (
-            EvidenceSource.STATION_2_VOICE
-            if origin is TriggerOrigin.STATION_2_VOICE
-            else EvidenceSource.STATION_2_SCAN
-        )
+        source = {
+            TriggerOrigin.STATION_2_VOICE: EvidenceSource.STATION_2_VOICE,
+            TriggerOrigin.SANDBOX_SIM: EvidenceSource.SANDBOX_SIM,
+        }.get(origin, EvidenceSource.STATION_2_SCAN)
         await self._apply(
             device_id, fiber_key, HsmEvent.E2_IMAGE_OR_VOICE_TERMS_SUBMITTED, event_id, source
         )
