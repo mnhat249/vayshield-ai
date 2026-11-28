@@ -3,12 +3,12 @@
 Plan: [`../backend-vayshield.md`](../backend-vayshield.md) · Cập nhật %: `node .claude/scripts/progress.js backend-vayshield --write`
 
 <!-- progress:start -->
-**Tổng tiến độ: 77.4%** `[███████████████░░░░░]` — merged 13/19 task · cập nhật 2026-11-28
+**Tổng tiến độ: 81.0%** `[████████████████░░░░]` — merged 14/19 task · cập nhật 2026-11-28
 
 | Wave | Tiến độ | | Mốc | Tiến độ |
 |---|---|---|---|---|
 | W0 | 100% | | M0 | 100% |
-| W1 | 93% | | M1 | 82% |
+| W1 | 100% | | M1 | 88% |
 | W2 | 100% | | M2 | 82% |
 | W3 | 68% | | M3 | 50% |
 | W4 | 0% | | M4 | 0% |
@@ -36,7 +36,7 @@ Plan: [`../backend-vayshield.md`](../backend-vayshield.md) · Cập nhật %: `n
 | T01 | WP1-01 | PostgreSQL schema + RLS + hash-chain | 1 | M1 | T00 | 10 | merged | task/backend-vayshield/T01 | pass local + CI pg (PR#1) | approve sau sửa (2 major); CI pg xanh | – | |
 | T02 | WP1-03 | Kernel tài chính APR/XIRR/khoảng/MIRR | 1 | M1 | T00 | 8 | merged | task/backend-vayshield/T02 | pass (177✓) | approve sau sửa (1 major); bản sửa chỉ verify, chưa review lại | – | ≥35 pytest |
 | T03 | WP1-04 | Thị giác đối kháng + VietQR | 1 | M1 | T00 | 10 | merged | task/backend-vayshield/T03 | pass (210✓) sau sửa | approve sau 2 vòng sửa (1 blocker + 7 major); vòng 2 chỉ verify, chưa review lại | – | |
-| T04 | WP1-05 | Trích xuất LLM + Conformal + Voice | 1 | M1 | T00 | 12 | verified | task/backend-vayshield/T04 | pass (433 test); PR#7 CI xanh | vòng 4: 2 blocker + 2 major (số sai câu thường ngày), đang sửa vòng 5 | – | |
+| T04 | WP1-05 | Trích xuất LLM + Conformal + Voice | 1 | M1 | T00 | 12 | merged | task/backend-vayshield/T04 | pass (433 test); PR#7 CI xanh | approve sau 5 vòng sửa (nhiều blocker số tiền); vòng 5 chỉ verify + CI pg xanh + fuzz reviewer 0 số sai, chưa review lại | – | |
 | T05 | WP1-07 | Redis HSM + Lua smurf + idempotency | 1 | M2 | T00 | 8 | merged | task/backend-vayshield/T05 | pass (462✓) | approve sau 2 vòng sửa (2 blocker + 6 major); vòng 2 chỉ verify + CI Redis thật xanh, chưa review lại | – | |
 | T06 | WP1-11 | Dataset Bench-340 (data + nhãn) | 1 | M3 | T00 | 2 | merged | task/backend-vayshield/T06 | validate pass | approve; nhãn APR đối chiếu solver T02: 63 trên 63 khớp, 17 null (advance-fee) | – | |
 | T07 | WP1-08 | Ontology 10 trục C1–C10 | 1 | M2 | T00 | 4 | merged | task/backend-vayshield/T07 | pass (188✓) | approve (sau 1 vòng sửa) | – | |
@@ -90,3 +90,4 @@ Plan: [`../backend-vayshield.md`](../backend-vayshield.md) · Cập nhật %: `n
 | 2026-11-27 | T12 merged (approve sau 3 vòng sửa (1 blocker + 10 major); vòng 4 chỉ verify + CI pg redis thật xanh, chưa review lại; cần người duyệt: mã ghép đôi 8 ký tự, nhà cung cấp SMS, RLS family_guardian_links) |
 | 2026-11-27 | T14 merged (approve sau sửa (3 major + 4 minor); bản sửa chỉ verify + CI pg xanh, chưa review lại; giả định cần duyệt: trọng số bằng chứng, quy tắc VA prefix) |
 | 2026-11-28 | T13 merged (approve sau sửa (2 blocker + 2 major); bản sửa chỉ verify + CI pg xanh, chưa review lại; cần người cấp nguyên văn luật để verified=true) |
+| 2026-11-28 | T04 merged (approve sau 5 vòng sửa (nhiều blocker số tiền); vòng 5 chỉ verify + CI pg xanh + fuzz reviewer 0 số sai, chưa review lại) |
