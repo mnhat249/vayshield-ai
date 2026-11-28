@@ -7,7 +7,7 @@ ws-ticket...) nhận phiên ``X-Sandbox-Session`` với principal có ``sandbox_
 
 from __future__ import annotations
 
-from typing import Annotated
+from typing import Annotated, Final
 
 from fastapi import Depends, FastAPI
 from fastapi.requests import HTTPConnection
@@ -22,8 +22,10 @@ from app.sandbox.session import SandboxSessionManager
 from app.services.realtime.container import (
     RealtimeServices,
     SandboxPrincipalResolver,
+    conn_ip,
     get_sandbox_resolver,
 )
+from app.services.realtime.models import BorrowerPrincipal
 
 
 def _settings_of(conn: HTTPConnection) -> Settings:
@@ -54,8 +56,36 @@ def build_simulator(
     )
 
 
-async def sandbox_resolver_dependency(manager: SandboxManager) -> SandboxPrincipalResolver:
-    return manager.resolve
+# Allowlist route cho phiên Sandbox (mặc định TỪ CHỐI). Chỉ các route không có side-effect ra
+# ngoài (SMS/Push/email/webhook): /family/*, /shield/escalate, ws-ticket... đều bị 401.
+ALLOWED_PATHS: Final = frozenset(
+    {
+        "/api/v1/shield/arm",
+        "/api/v1/shield/evaluate-response",
+        "/api/v1/triage/golden-hour-dossier",
+        "/api/v1/tts/synthesize-vi",
+        "/api/v1/policies/latest",
+    }
+)
+ALLOWED_PREFIXES: Final = ("/api/v1/audits/",)
+
+
+def path_allowed(path: str) -> bool:
+    return path in ALLOWED_PATHS or path.startswith(ALLOWED_PREFIXES)
+
+
+async def sandbox_resolver_dependency(
+    conn: HTTPConnection, manager: SandboxManager
+) -> SandboxPrincipalResolver:
+    path = conn.url.path
+    ip = conn_ip(conn)
+
+    async def resolve(token: str) -> BorrowerPrincipal | None:
+        if not path_allowed(path):
+            return None
+        return await manager.resolve(token, ip)
+
+    return resolve
 
 
 def install_sandbox(app: FastAPI, cfg: Settings) -> None:

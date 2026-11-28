@@ -36,7 +36,7 @@ from app.shield_state.fibers import (
     LoanJourneyFiber,
 )
 from app.shield_state.hsm import HsmEvent
-from app.shield_state.keys import shield_state_key
+from app.shield_state.keys import shield_state_key, smurf_window_key
 from app.shield_state.risk import AudioMode, RiskTier, SensorContext
 from app.shield_state.store import ShieldStateStore
 
@@ -182,7 +182,7 @@ class SandboxSimulator:
                 accepted = out.accepted
                 side.append("GOLDEN_HOUR_TRIAGE" if accepted else "EVENT_REJECTED")
             case SandboxEventType.RESET_SCENARIO:
-                await self._redis.delete(shield_state_key(device), context_key(session.namespace))
+                await self._reset(session, now_ms)
                 ctx = _CallContext()
                 side.append("SANDBOX_STATE_RESET")
 
@@ -204,6 +204,16 @@ class SandboxSimulator:
             scam_probability=prob,
             side_effects=side,
         )
+
+    async def _reset(self, session: SandboxSession, now_ms: int) -> None:
+        """Xóa mọi dấu vết của namespace: state Khiên, cửa sổ smurf, idem key, ngữ cảnh cuộc gọi."""
+        device = str(session.device_id)
+        snap = await self._store.load(device, now_ms)
+        doomed = [shield_state_key(device), context_key(session.namespace)]
+        doomed += [smurf_window_key(f.session_id) for f in snap.fibers]
+        for pattern in (f"vs:idem:arm:{device}:*", f"vs:idem:notif:{device}:*"):
+            doomed += [k async for k in self._redis.scan_iter(match=pattern)]
+        await self._redis.delete(*doomed)
 
     async def _bank_opened(
         self,

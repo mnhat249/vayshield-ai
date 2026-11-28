@@ -61,7 +61,11 @@ class SandboxSession:
     expires_at: datetime
 
     def principal(self) -> BorrowerPrincipal:
-        return BorrowerPrincipal(device_id=self.device_id, sandbox_namespace=self.namespace)
+        return BorrowerPrincipal(
+            device_id=self.device_id,
+            sandbox_namespace=self.namespace,
+            is_vip=self.tier is SandboxTier.JUDGE_VIP,
+        )
 
 
 @dataclass(frozen=True, slots=True)
@@ -96,9 +100,14 @@ class SandboxSessionManager:
                 return SandboxTier.JUDGE_VIP
         return SandboxTier.PUBLIC
 
-    async def _enforce_ip_cap(self, ip: str) -> None:
+    @staticmethod
+    def ip_hash(ip: str) -> str:
+        return hashlib.sha256(ip.encode()).hexdigest()[:24]
+
+    async def _hit_ip(self, kind: str, ip: str) -> None:
+        """Đếm theo IP-băm + giờ; vượt ``sandbox_max_sessions_per_ip_per_hour`` → 429."""
         hour = int(self._clock.now().timestamp()) // 3600
-        key = f"vs:sbx:ip:{hashlib.sha256(ip.encode()).hexdigest()[:24]}:{hour}"
+        key = f"vs:sbx:{kind}:{self.ip_hash(ip)}:{hour}"
         count = int(await self._redis.incr(key))
         if count == 1:
             await self._redis.expire(key, 3600 + 60)
@@ -108,10 +117,13 @@ class SandboxSessionManager:
     async def create(self, vip_code: str | None, ip: str) -> CreatedSession:
         if not self._settings.sandbox_enabled:
             raise AppError(ErrorCode.NOT_FOUND, 404)
-        tier = self._tier_for(vip_code)
         try:
+            if vip_code:
+                # Đếm MỌI lượt thử mã trước khi so (chống dò mã): vượt trần → 429 bất kể đúng sai.
+                await self._hit_ip("vip", ip)
+            tier = self._tier_for(vip_code)
             if tier is SandboxTier.PUBLIC:
-                await self._enforce_ip_cap(ip)
+                await self._hit_ip("ip", ip)
             await self._budget.assert_available(tier)
             token = TOKEN_PREFIX + secrets.token_urlsafe(24)
             namespace = self._settings.sandbox_namespace_prefix + secrets.token_hex(6)
@@ -155,6 +167,8 @@ class SandboxSessionManager:
         if not raw:
             return None
         try:
+            if int(raw["expires_ms"]) <= int(self._clock.now().timestamp() * 1000):
+                return None
             return SandboxSession(
                 token_hash=token_hash,
                 namespace=str(raw["namespace"]),
@@ -165,19 +179,17 @@ class SandboxSessionManager:
         except (KeyError, ValueError):
             return None
 
-    async def authenticate(self, token: str | None, cost_micro: int) -> SandboxSession:
-        """Tra phiên + trừ ngân sách (cầu chì). Phiên sai → 401; hết ngân sách → 429."""
-        session = await self.lookup(token)
-        if session is None:
-            raise AppError(ErrorCode.UNAUTHORIZED, 401)
-        await self._budget.charge(session.tier, cost_micro)
-        return session
+    async def charge(self, session: SandboxSession, ip: str, cost_micro: int) -> None:
+        """Trừ ngân sách (nhịp phiên → hạn mức phiên → hạn mức IP → kho chung). Gọi SAU limiter."""
+        await self._budget.charge_request(
+            session.tier, session.token_hash[:24], self.ip_hash(ip), cost_micro
+        )
 
-    async def resolve(self, token: str) -> BorrowerPrincipal | None:
-        """``SandboxPrincipalResolver`` cho T12/T11: phiên hợp lệ → principal namespace riêng,
-        mỗi lần gọi trừ ``REQUEST_COST_MICRO`` (các route AI-capable dùng chung cầu chì)."""
+    async def resolve(self, token: str, ip: str) -> BorrowerPrincipal | None:
+        """``SandboxPrincipalResolver`` (T12/T11): phiên hợp lệ → principal có namespace riêng; mỗi
+        lần gọi trừ ``REQUEST_COST_MICRO``. Phân quyền theo route do ``deps`` làm trước."""
         session = await self.lookup(token)
         if session is None:
             return None
-        await self._budget.charge(session.tier, REQUEST_COST_MICRO)
+        await self.charge(session, ip, REQUEST_COST_MICRO)
         return session.principal()
