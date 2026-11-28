@@ -106,6 +106,14 @@ class InMemoryDeviceRepository:
     devices: dict[UUID, DeviceRecord] = field(default_factory=dict)
 
     async def create(self, device: DeviceRecord) -> bool:
+        from app.core.errors import AppError, ErrorCode, ErrorDetail
+
+        if any(d.pubkey_spki == device.pubkey_spki for d in self.devices.values()):
+            raise AppError(
+                ErrorCode.CONFLICT,
+                409,
+                details=[ErrorDetail(field="body.public_key_spki_b64", issue="already_registered")],
+            )
         linked = device.phone_blind_hmac is not None and not any(
             d.phone_blind_hmac == device.phone_blind_hmac for d in self.devices.values()
         )
@@ -161,7 +169,10 @@ class SqlDeviceRepository:
         engine = init_engine()
         if engine is None:
             raise AppError(ErrorCode.SERVICE_DEGRADED, 503)
-        async with short_session() as session:
+        async with short_session() as session, session.begin():
+            await session.execute(
+                text("SELECT set_config('app.current_device_id', :d, true)"), {"d": str(device_id)}
+            )
             links = (
                 await session.execute(
                     text(
@@ -177,6 +188,7 @@ class SqlDeviceRepository:
 
     async def create(self, device: DeviceRecord) -> bool:
         from app.core.db import short_session
+        from app.core.errors import AppError, ErrorCode, ErrorDetail
 
         params = {
             "id": device.device_id,
@@ -193,10 +205,10 @@ class SqlDeviceRepository:
         )
         async with short_session() as session, session.begin():
             if device.phone_blind_hmac is not None:
-                # Nguyên tử: SĐT đã thuộc thiết bị khác → DO NOTHING (không race SELECT/INSERT).
+                # Nguyên tử: SĐT hoặc khóa đã thuộc thiết bị khác → DO NOTHING (không race).
                 inserted = (
                     await session.execute(
-                        text(insert + " ON CONFLICT (phone_blind_hmac) DO NOTHING RETURNING id"),
+                        text(insert + " ON CONFLICT DO NOTHING RETURNING id"),
                         {
                             **params,
                             "phone": device.phone_blind_hmac,
@@ -206,7 +218,22 @@ class SqlDeviceRepository:
                 ).first()
                 if inserted is not None:
                     return True
-            await session.execute(text(insert), {**params, "phone": None, "exp": None})
+            # Không SĐT (hoặc SĐT trùng): UNIQUE pubkey (migration 0003) chặn đăng ký trùng khóa
+            # ngay cả khi 2 request cùng vượt qua ``pubkey_exists`` → 409 sạch, không 500.
+            created = (
+                await session.execute(
+                    text(insert + " ON CONFLICT (pubkey_ecdsa_p256) DO NOTHING RETURNING id"),
+                    {**params, "phone": None, "exp": None},
+                )
+            ).first()
+            if created is None:
+                raise AppError(
+                    ErrorCode.CONFLICT,
+                    409,
+                    details=[
+                        ErrorDetail(field="body.public_key_spki_b64", issue="already_registered")
+                    ],
+                )
             return False
 
     async def pubkey_exists(self, pubkey_spki: bytes) -> bool:
