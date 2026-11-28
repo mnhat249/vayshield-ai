@@ -170,7 +170,8 @@ async def test_s2_ec18_prompt_injection_in_image_does_not_change_numbers() -> No
     assert INJECTION_NOTE_VI in out.extraction.extraction_notes_vi
     assert out.phase1_decision is not None
     assert EscalationReason.PROMPT_INJECTION_SUSPECTED in out.phase1_decision.reasons
-    assert out.needs_user_confirmation
+    # T19: cờ injection chỉ thêm cảnh báo + leo thang Pro, KHÔNG làm số liệu "mơ hồ" (hạ nhãn đỏ).
+    assert out.needs_user_confirmation == clean.needs_user_confirmation
     for call in client.calls:
         assert call.request.system_instruction.startswith(SYSTEM_PROMPT_V2)
         assert INJECTION not in call.request.system_instruction
