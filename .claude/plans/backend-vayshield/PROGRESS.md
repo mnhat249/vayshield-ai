@@ -3,14 +3,14 @@
 Plan: [`../backend-vayshield.md`](../backend-vayshield.md) · Cập nhật %: `node .claude/scripts/progress.js backend-vayshield --write`
 
 <!-- progress:start -->
-**Tổng tiến độ: 88.2%** `[██████████████████░░]` — merged 15/19 task · cập nhật 2026-11-28
+**Tổng tiến độ: 90.0%** `[██████████████████░░]` — merged 16/19 task · cập nhật 2026-11-28
 
 | Wave | Tiến độ | | Mốc | Tiến độ |
 |---|---|---|---|---|
 | W0 | 100% | | M0 | 100% |
-| W1 | 100% | | M1 | 97% |
+| W1 | 100% | | M1 | 100% |
 | W2 | 100% | | M2 | 89% |
-| W3 | 91% | | M3 | 50% |
+| W3 | 100% | | M3 | 50% |
 | W4 | 33% | | M4 | 0% |
 | W5 | 0% | |  |  |
 <!-- progress:end -->
@@ -43,7 +43,7 @@ Plan: [`../backend-vayshield.md`](../backend-vayshield.md) · Cập nhật %: `n
 | T08 | WP1-02 | Seed registry + luật + mule mẫu | 2 | M2 | T01 | 6 | merged | task/backend-vayshield/T08 | pass (881✓); PR#4 CI pg | approve sau sửa (4 major); bản sửa chỉ verify + CI pg xanh, chưa review lại; dữ liệu verified=false cần người xác minh | – | Người xác minh dữ liệu thật |
 | T09 | WP1-03 | Ma trận 9 phán quyết + lookalike | 2 | M1 | T02,T01 | 4 | merged | task/backend-vayshield/T09 | pass (922✓); PR#5 CI pg | approve sau 3 vòng sửa (1 blocker + nhiều major); vòng 3 chỉ verify + CI pg xanh + bộ hồi quy 354 tên, chưa review lại | – | |
 | T10 | WP1-06 | Mật mã & bảo mật nền | 2 | M1 | T01 | 2 | merged | task/backend-vayshield/T10 | pass (539✓); PR#3 CI pg | approve sau sửa (2 major); CI pg xanh; rủi ro mở: chữ ký policy chỉ phủ payload cần task contract | – | |
-| T11 | WP1-06 | API Trạm 1 & 2 (SSE) | 3 | M1 | T02,T03,T04,T09,T10 | 6 | verified | task/backend-vayshield/T11 | pass (2501 test); PR#11 CI chạy | review: 1 blocker pixel flood + 4 major đã sửa, chờ CI và re-review | – | |
+| T11 | WP1-06 | API Trạm 1 & 2 (SSE) | 3 | M1 | T02,T03,T04,T09,T10 | 6 | merged | task/backend-vayshield/T11 | pass (2501 test); PR#11 CI chạy | approve sau 2 vòng sửa (1 blocker + 6 major); vòng 3 chỉ verify + CI pg xanh, chưa review lại; cần migration UNIQUE pubkey_ecdsa_p256, contract thiếu needs_confirmation, STT server | – | |
 | T12 | WP1-08 | API Trạm 3 + WS + leo thang + gia đình | 3 | M2 | T05,T07,T10 | 6 | merged | task/backend-vayshield/T12 | pass (1927 test); PR#6 CI pg+redis xanh | approve sau 3 vòng sửa (1 blocker + 10 major); vòng 4 chỉ verify + CI pg redis thật xanh, chưa review lại; cần người duyệt: mã ghép đôi 8 ký tự, nhà cung cấp SMS, RLS family_guardian_links | – | |
 | T13 | WP1-02 | Legal GraphRAG | 3 | M2 | T08 | 2 | merged | task/backend-vayshield/T13 | pass (2000 test); CI pg xanh | approve sau sửa (2 blocker + 2 major); bản sửa chỉ verify + CI, chưa review lại | – | |
 | T14 | WP1-09 | Mule graph + Dynamic VA + B2B webhook | 3 | M2 | T01,T10 | 5 | merged | task/backend-vayshield/T14 | pass (1922 test); PR#8 CI pg xanh | approve sau sửa (3 major + 4 minor); bản sửa chỉ verify + CI pg xanh, chưa review lại; giả định cần duyệt: trọng số bằng chứng, quy tắc VA prefix | – | |
@@ -92,3 +92,4 @@ Plan: [`../backend-vayshield.md`](../backend-vayshield.md) · Cập nhật %: `n
 | 2026-11-28 | T13 merged (approve sau sửa (2 blocker + 2 major); bản sửa chỉ verify + CI pg xanh, chưa review lại; cần người cấp nguyên văn luật để verified=true) |
 | 2026-11-28 | T04 merged (approve sau 5 vòng sửa (nhiều blocker số tiền); vòng 5 chỉ verify + CI pg xanh + fuzz reviewer 0 số sai, chưa review lại) |
 | 2026-11-28 | T15 merged (approve sau 2 vòng sửa (8 major); vòng 3 chỉ verify + CI pg xanh + 138 mẫu lách của reviewer 0 lọt, chưa review lại; cần người duyệt: nguồn hotline BIN, kho tài khoản Fraud Ops, TTS server, font PDF) |
+| 2026-11-28 | T11 merged (approve sau 2 vòng sửa (1 blocker + 6 major); vòng 3 chỉ verify + CI pg xanh, chưa review lại; cần migration UNIQUE pubkey_ecdsa_p256, contract thiếu needs_confirmation, STT server) |
