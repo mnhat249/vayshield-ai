@@ -1,0 +1,13 @@
+# Context build = backend/. Dockerfile chi COPY app, ai_pipeline, migrations, seeds, pyproject, uv.lock.
+# KHONG loai migrations/seeds/app.
+.venv/
+**/__pycache__/
+**/*.pyc
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+tests/
+.env
+.env.*
+!.env.example
+*.log
