@@ -41,6 +41,7 @@ class BorrowerPrincipal:
 
     device_id: UUID
     sandbox_namespace: str = "live"
+    is_vip: bool = False  # phiên sandbox JUDGE_VIP (T16) → được dùng kho khóa Gemini VIP
 
     @property
     def is_sandbox(self) -> bool:

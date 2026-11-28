@@ -122,7 +122,9 @@ def _fields_event(facts: LoanFacts) -> AuditFieldsExtracted:
 
 
 async def _extract(services: AuditServices, job: StreamJob) -> ExtractionOutcome | None:
-    pipeline: ExtractionPipeline | None = services.pipeline_for(job.principal.is_sandbox)
+    pipeline: ExtractionPipeline | None = services.pipeline_for(
+        job.principal.is_sandbox, vip=job.principal.is_vip
+    )
     if pipeline is None:
         return None
     parts = [ImagePart(i.jpeg, "image/jpeg") for i in job.ingest.images]
