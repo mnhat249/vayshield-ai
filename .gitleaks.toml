@@ -20,10 +20,8 @@ keywords = ["postgres", "redis"]
 
 # Allowlist HẸP: chỉ giá trị giả đã biết + file mẫu. KHÔNG allowlist cả thư mục mã nguồn.
 [allowlist]
-description = "Giá trị giả/placeholder và file mẫu"
+description = "Giá trị giả/placeholder (KHÔNG allowlist theo path .env.example/env.sample: dán khóa thật vào đó vẫn bị bắt)"
 paths = [
-  '''(^|/)\.env\.example$''',
-  '''(^|/)infra/env\.sample$''',
   '''(^|/)uv\.lock$''',
 ]
 regexes = [
@@ -31,6 +29,8 @@ regexes = [
   '''change-me(-admin|-app)?''',
   '''ci_only_[a-z_]*password''',
   '''example\.invalid''',
+  '''REVWLU9OTFk[0-9A-Za-z+/=]*''',   # base64 của chuỗi "DEV-ONLY..." (khóa dev giả trong docker-compose.yml)
+  '''dev-only-[a-z0-9-]+''',
   '''AIzaSyFAKE[0-9A-Za-z_\-]*''',
 ]
 stopwords = ["placeholder", "dummy", "fake-key"]
