@@ -61,7 +61,7 @@ async def _verdict_code(
 def _run_all(samples: list[dict[str, Any]]) -> list[tuple[str, str, VerdictCode, VerdictCode]]:
     sys.path[:0] = [str(_RUNNER), str(_ROOT / "benchmark-dataset" / "schema")]
     try:
-        from suites import make_oracle_pipeline  # type: ignore[import-not-found]
+        from suites import make_oracle_pipeline
 
         out: list[tuple[str, str, VerdictCode, VerdictCode]] = []
 
