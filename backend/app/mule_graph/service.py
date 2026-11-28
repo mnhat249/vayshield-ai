@@ -18,14 +18,16 @@ from __future__ import annotations
 
 import math
 import re
-from collections.abc import Sequence
+from collections.abc import Awaitable, Callable, Sequence
 from dataclasses import dataclass
 from datetime import datetime, timedelta
 from typing import Final
 from uuid import UUID
 
 from app.core.ids import new_uuid7
+from app.core.logging import get_logger
 from app.core.schemas.ops import EvidenceChannel, ScamTrap, SeverityLevel, SimoDossierStatus
+from app.core.schemas.sse import OpsThreatSignal
 from app.mule_graph.models import ClusterRecord, MuleEdgeRecord, MuleNodeRecord
 from app.mule_graph.repository import MuleGraphRepository
 from app.mule_graph.robust import robust_centroid
@@ -46,6 +48,8 @@ EVIDENCE_WEIGHTS: Final[dict[EvidenceChannel, float]] = {
     EvidenceChannel.OCR_RECEIPT_EXTRACTED: 0.35,
     EvidenceChannel.VOICE_CHAT_REPORTED: 0.2,
 }
+
+_log = get_logger("vayshield.mule_graph")
 
 NODES_TABLE: Final = "mule_account_nodes"
 CIPHER_COLUMN: Final = "account_cipher_envelope"
@@ -91,6 +95,10 @@ class ReportResult:
     cluster_severity: SeverityLevel | None = None
 
 
+ThreatSignalSink = Callable[[OpsThreatSignal], Awaitable[object]]
+"""Cổng tùy chọn: nhận tín hiệu đã che (chỉ ``masked_account_display``) khi đạt quorum/leo thang."""
+
+
 class MuleGraphService:
     def __init__(
         self,
@@ -99,11 +107,13 @@ class MuleGraphService:
         cipher: EnvelopeCipher,
         *,
         pepper_version: int = 1,
+        on_threat_signal: ThreatSignalSink | None = None,
     ) -> None:
         self._repo = repo
         self._indexer = indexer
         self._cipher = cipher
         self._pepper_version = pepper_version
+        self._on_threat_signal = on_threat_signal
 
     async def report_mule_account(
         self,
@@ -138,6 +148,7 @@ class MuleGraphService:
         async with self._repo.transaction():
             await self._repo.lock_scope(va_hmac or lookup.current)
             node = await self._repo.find_node_by_hmacs(lookup.candidates)
+            prev_status = node.simo_dossier_status if node is not None else None
             if node is None:
                 node_id = new_uuid7()
                 blob = self._cipher.encrypt(
@@ -180,6 +191,8 @@ class MuleGraphService:
                 node.id, now, scam_trap, impersonated_lender_id, va_hmac, va_candidates
             )
             final = await self._node(node.id)
+        if self._on_threat_signal is not None:
+            await self._emit_signals(self._on_threat_signal, final, prev_status, cluster_info, now)
         return ReportResult(
             node_id=final.id,
             newly_counted=inserted,
@@ -200,7 +213,7 @@ class MuleGraphService:
         lender_id: UUID | None,
         va_hmac: str | None,
         va_candidates: Sequence[str],
-    ) -> tuple[int, SeverityLevel | None]:
+    ) -> tuple[int, SeverityLevel | None, bool]:
         """Tính lại trạng thái đỉnh + dải VA + cụm (trong giao dịch của caller).
 
         Quorum của MỖI STK chỉ tính từ thiết bị đã báo chính STK đó. Tín hiệu dải VA (nhiều STK
@@ -215,11 +228,15 @@ class MuleGraphService:
         in_range = len(group) >= QUORUM_MIN_DEVICES  # >= 2 STK khác đuôi cùng dải (EC-DB02)
         edges = await self._repo.edges_for_nodes([n.id for n in group])
         cluster_id: UUID | None = None
-        cluster_info: tuple[int, SeverityLevel | None] = (0, None)
+        cluster_info: tuple[int, SeverityLevel | None, bool] = (0, None, False)
         if in_range:
-            cluster = await self._ensure_cluster(group, edges, now, scam_trap, lender_id)
+            cluster, escalated = await self._ensure_cluster(group, edges, now, scam_trap, lender_id)
             cluster_id = cluster.id
-            cluster_info = (len({e.reporter_device_id for e in edges}), cluster.severity_level)
+            cluster_info = (
+                len({e.reporter_device_id for e in edges}),
+                cluster.severity_level,
+                escalated,
+            )
         for n in group:
             own = [e for e in edges if e.mule_node_id == n.id]
             quorum = len({e.reporter_device_id for e in own})
@@ -255,7 +272,8 @@ class MuleGraphService:
         now: datetime,
         scam_trap: ScamTrap,
         lender_id: UUID | None,
-    ) -> ClusterRecord:
+    ) -> tuple[ClusterRecord, bool]:
+        """Trả (cụm, vừa leo lên CRITICAL_WAVE ở lần gọi này)."""
         existing_id = next((n.cluster_id for n in group if n.cluster_id is not None), None)
         cluster = await self._repo.get_cluster(existing_id) if existing_id else None
         if cluster is None:
@@ -269,6 +287,7 @@ class MuleGraphService:
                 last_seen_at=now,
                 impersonated_lender_id=lender_id,
             )
+        was_critical = cluster.severity_level is SeverityLevel.CRITICAL_WAVE
         cluster.last_seen_at = now
         if cluster.impersonated_lender_id is None:
             cluster.impersonated_lender_id = lender_id
@@ -287,4 +306,61 @@ class MuleGraphService:
             if usable:
                 cluster.centroid_embedding = robust_centroid(usable)
         await self._repo.save_cluster(cluster)
-        return cluster
+        return cluster, (cluster.severity_level is SeverityLevel.CRITICAL_WAVE and not was_critical)
+
+    @staticmethod
+    async def _emit_signals(
+        sink: ThreatSignalSink,
+        node: MuleNodeRecord,
+        prev_status: SimoDossierStatus | None,
+        cluster_info: tuple[int, SeverityLevel | None, bool],
+        now: datetime,
+    ) -> None:
+        """Best-effort, sau commit: lỗi phát tín hiệu KHÔNG làm hỏng báo cáo mule.
+
+        Chỉ phát khi VỪA chuyển trạng thái (không lặp lại mỗi báo cáo). Tín hiệu chỉ chứa STK đã
+        che + mẫu tóm tắt cứng (không có STK thô)."""
+        signals: list[OpsThreatSignal] = []
+        if (
+            node.simo_dossier_status is SimoDossierStatus.QUORUM_REACHED
+            and prev_status is not SimoDossierStatus.QUORUM_REACHED
+        ):
+            severity = cluster_info[1].value if cluster_info[1] is not None else "ELEVATED"
+            signals.append(
+                OpsThreatSignal(
+                    signal_id=new_uuid7(),
+                    kind="QUORUM_REACHED",
+                    cluster_id=node.cluster_id,
+                    mule_node_id=node.id,
+                    bank_bin=node.bank_bin,
+                    masked_account_display=node.masked_account_display,
+                    severity_level=severity,  # type: ignore[arg-type]
+                    occurred_at=now,
+                    summary_vi=(
+                        f"Tài khoản {node.masked_account_display} đạt quorum "
+                        f"{node.distinct_device_quorum} thiết bị độc lập báo cáo."
+                    ),
+                )
+            )
+        if cluster_info[2] and node.cluster_id is not None:
+            signals.append(
+                OpsThreatSignal(
+                    signal_id=new_uuid7(),
+                    kind="CLUSTER_ESCALATED",
+                    cluster_id=node.cluster_id,
+                    mule_node_id=node.id,
+                    bank_bin=node.bank_bin,
+                    masked_account_display=node.masked_account_display,
+                    severity_level="CRITICAL_WAVE",
+                    occurred_at=now,
+                    summary_vi=(
+                        "Cụm tài khoản ảo động leo thang CRITICAL_WAVE "
+                        f"({cluster_info[0]} thiết bị trong cửa sổ 6 giờ)."
+                    ),
+                )
+            )
+        for signal in signals:
+            try:
+                await sink(signal)
+            except Exception:
+                _log.warning("mule_threat_signal_publish_failed", extra={"kind": signal.kind})
