@@ -102,3 +102,4 @@ Plan: [`../backend-vayshield.md`](../backend-vayshield.md) · Cập nhật %: `n
 | 2026-11-28 | T18 merged (approve sau sửa (5 major); bản sửa chỉ verify + CI, chưa review lại; chưa chạy Docker/gitleaks/k6 thật; deploy là việc của người dùng) |
 | 2026-11-28 | 19/19 task merged. Mở Wave 6 vá lỗ hổng: T19 (injection + voice phương ngữ), T20 (migration 0003), T21 (tích hợp). Không đổi contract (cần người duyệt) |
 | 2026-11-28 | T21 merged (chưa review độc lập; verify + CI pg xanh; sửa ngoài owns được cho phép: config.py guard khóa dev, backend-ci.yml, mule feed hook) |
+| 2026-11-28 | T20 merged (chưa review độc lập; CI pg xanh gồm RLS family và unique pubkey; migration 0003 dừng nếu dữ liệu cũ trùng khóa) |
