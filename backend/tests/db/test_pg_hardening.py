@@ -270,7 +270,7 @@ async def test_fk_delete_rules_in_catalog(pg_admin: AsyncEngine) -> None:
         rows = (
             await c.execute(
                 text(
-                    "SELECT conname, confdeltype FROM pg_constraint WHERE conname IN ("
+                    "SELECT conname, confdeltype::text FROM pg_constraint WHERE conname IN ("
                     "'b2b_disbursement_shields_matched_session_id_fkey',"
                     "'mule_incident_edges_source_audit_id_fkey',"
                     "'mule_incident_edges_source_intercept_id_fkey')"
