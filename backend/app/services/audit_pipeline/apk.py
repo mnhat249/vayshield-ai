@@ -197,6 +197,7 @@ def verify_apk(
     if (
         claimed is not None
         and claimed.record is not None
+        and any(trust.packages_of(claimed.record.entity_code).values())  # biết chứng chỉ chính thức
         and claimed.status
         in (
             MatchStatus.EXACT,

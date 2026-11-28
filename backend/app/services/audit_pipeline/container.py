@@ -94,6 +94,10 @@ class AuditServices:
     limiter: CompositeRateLimiter | None = None
     redis: Redis | None = None
     refresher: Callable[[], Awaitable[None]] | None = None
+    trust_loaded: bool = True  # False tới khi sổ chữ ký APK nạp xong (đường PostgreSQL)
+    refresh_ttl_s: float = 300.0
+    _refreshed_at: float | None = field(default=None, repr=False)
+    _bg_refresh: asyncio.Task[None] | None = field(default=None, repr=False)
     _lock: asyncio.Lock = field(default_factory=asyncio.Lock, repr=False)
 
     @property
@@ -103,13 +107,40 @@ class AuditServices:
 
     @property
     def loaded(self) -> bool:
-        return bool(getattr(self.registry, "loaded", True))
+        return bool(getattr(self.registry, "loaded", True)) and self.trust_loaded
 
     def readiness(self) -> dict[str, bool]:
-        return {"lender_registry": self.loaded, "policy_signer": self.signer is not None}
+        return {
+            "lender_registry": bool(getattr(self.registry, "loaded", True)),
+            "apk_trust": self.trust_loaded,
+            "policy_signer": self.signer is not None,
+        }
+
+    def _maybe_refresh_in_background(self) -> None:
+        """Nạp lại theo chu kỳ (registry_pg: 'và theo chu kỳ'); lỗi giữ snapshot cũ."""
+        if self.refresher is None:
+            return
+        now = self.clock.monotonic()
+        if self._refreshed_at is None:
+            self._refreshed_at = now
+            return
+        busy = self._bg_refresh is not None and not self._bg_refresh.done()
+        if busy or now - self._refreshed_at < self.refresh_ttl_s:
+            return
+        self._refreshed_at = now
+        refresher = self.refresher
+
+        async def run() -> None:
+            try:
+                await refresher()
+            except Exception:
+                logger.warning("lender_registry_periodic_refresh_failed")
+
+        self._bg_refresh = asyncio.ensure_future(run())
 
     async def ensure_ready(self) -> None:
         if self.loaded:
+            self._maybe_refresh_in_background()
             return
         async with self._lock:
             if self.loaded:
@@ -118,6 +149,7 @@ class AuditServices:
                 if self.refresher is None:
                     raise RuntimeError("registry chưa được cấu hình")
                 await self.refresher()
+                self._refreshed_at = self.clock.monotonic()
             except Exception:
                 logger.warning("lender_registry_load_failed")
                 raise AppError(
@@ -185,8 +217,11 @@ def build_services(
             registry = pg_registry
 
             async def _refresh() -> None:
+                # Nạp trust TRƯỚC; chỉ khi cả hai thành công mới đổi snapshot/cờ (nguyên tử).
+                trust_new = await load_apk_trust(engine)
                 await pg_registry.refresh()
-                services_ref[0].trust = await load_apk_trust(engine)
+                services_ref[0].trust = trust_new
+                services_ref[0].trust_loaded = True
 
             refresher = _refresh
         else:
@@ -223,6 +258,7 @@ def build_services(
         limiter=CompositeRateLimiter.from_settings(redis, settings) if redis is not None else None,
         redis=redis,
         refresher=refresher,
+        trust_loaded=refresher is None,
     )
     services_ref.append(services)
     return services
