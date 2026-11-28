@@ -91,3 +91,4 @@ Plan: [`../backend-vayshield.md`](../backend-vayshield.md) · Cập nhật %: `n
 | 2026-11-27 | T14 merged (approve sau sửa (3 major + 4 minor); bản sửa chỉ verify + CI pg xanh, chưa review lại; giả định cần duyệt: trọng số bằng chứng, quy tắc VA prefix) |
 | 2026-11-28 | T13 merged (approve sau sửa (2 blocker + 2 major); bản sửa chỉ verify + CI pg xanh, chưa review lại; cần người cấp nguyên văn luật để verified=true) |
 | 2026-11-28 | T04 merged (approve sau 5 vòng sửa (nhiều blocker số tiền); vòng 5 chỉ verify + CI pg xanh + fuzz reviewer 0 số sai, chưa review lại) |
+| 2026-11-28 | T15 merged (approve sau 2 vòng sửa (8 major); vòng 3 chỉ verify + CI pg xanh + 138 mẫu lách của reviewer 0 lọt, chưa review lại; cần người duyệt: nguồn hotline BIN, kho tài khoản Fraud Ops, TTS server, font PDF) |
