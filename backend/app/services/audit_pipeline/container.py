@@ -299,13 +299,15 @@ async def get_audit_services(
     return services
 
 
-async def start_audit_pipeline(app: FastAPI) -> None:
+async def start_audit_pipeline(app: FastAPI, settings: Settings | None = None) -> None:
     """Nạp sớm registry lúc khởi động (gọi từ lifespan nếu được đấu). Lỗi → log, request đầu sẽ
     thử lại và trả 503 nếu vẫn lỗi (không bao giờ phục vụ với registry rỗng)."""
     services: AuditServices | None = getattr(app.state, "audit_services", None)
     if services is None:
         services = build_services(
-            settings=get_settings(), clock=get_clock(), redis=core_redis.init_redis()
+            settings=settings or get_settings(),
+            clock=get_clock(),
+            redis=core_redis.init_redis(),
         )
         app.state.audit_services = services
     try:

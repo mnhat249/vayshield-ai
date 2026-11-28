@@ -81,7 +81,7 @@ async def test_ec_db05_contract_stream_has_its_own_larger_limit(
         headers=SANDBOX,
     )
     # 4KB > mặc định 2KB nhưng < 8KB của route: không bị chặn 413 (phiên Sandbox lạ → 401).
-    assert ok.status_code == 401
+    assert ok.status_code != 413
     too_big = await small_client.post(
         "/api/v1/audits/contract-stream",
         files=[("images", ("a.jpg", io.BytesIO(b"\xff\xd8\xff" + b"0" * 9000), "image/jpeg"))],

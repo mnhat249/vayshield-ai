@@ -7,7 +7,8 @@ Cầu nối duy nhất giữa ``MultiImageLoanExtraction`` (T04) và kernel tài
 Quy tắc an toàn (D2 — LLM không hạ phán quyết):
 
 - Cờ cảnh báo (phí ứng trước, mạo danh, hình thái đặc biệt, thiếu trang, nhiều khoản vay) chỉ có
-  thể được GIỮ hoặc NÂNG khi người dùng sửa số (``with_user_numbers``); không có đường nào xóa.
+  thể được GIỮ hoặc NÂNG khi người dùng sửa số (``with_user_numbers``); không có đường nào xóa
+  (kể cả ``missing_critical_page``: nhập tay 3 ô không thay được trang hợp đồng còn thiếu).
 - ``ambiguous`` (T04: ``needs_user_confirmation`` / số bị co-giãn đơn vị / nghi ngờ / cụt JSON) ép
   khoảng APR thành "không xác định" → ma trận ra AMBER và hỏi lại người dùng, KHÔNG đoán số.
 """
@@ -250,9 +251,8 @@ class LoanFacts:
             fees=fees,
             upfront_demanded=demanded,
             upfront_amount_vnd=amount,
-            # Người dùng đã nhập đủ số → không còn "chờ xác nhận"; thiếu trang cũng được bù.
+            # Người dùng đã tự xác nhận số → hết "chờ xác nhận"; cờ thiếu trang vẫn giữ.
             ambiguous=False,
-            missing_critical_page=False,
             confidence=1.0,
         )
 

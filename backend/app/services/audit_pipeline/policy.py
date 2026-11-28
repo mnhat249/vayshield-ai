@@ -16,7 +16,7 @@ phủ ``payload`` (contract đã khóa).
 from __future__ import annotations
 
 import hashlib
-from datetime import timedelta
+from datetime import datetime, timedelta
 from typing import Final
 
 from ai_pipeline.ontology.challenge import generate_challenge
@@ -93,9 +93,17 @@ def build_payload(registry: LenderRegistry, trust: ApkTrustStore) -> PolicyPaylo
     )
 
 
-def policy_etag(payload: PolicyPayload, key_id: str) -> str:
+def policy_etag(payload: PolicyPayload, key_id: str, expires_at: datetime) -> str:
+    """ETag gồm cả ``expires_at``: bundle quá hạn thì ETag đổi, thiết bị không giữ 304 mãi."""
     digest = hashlib.sha256(
-        canonical_json({"v": POLICY_VERSION, "k": key_id, "p": payload.model_dump(mode="json")})
+        canonical_json(
+            {
+                "v": POLICY_VERSION,
+                "k": key_id,
+                "p": payload.model_dump(mode="json"),
+                "x": expires_at.isoformat(),
+            }
+        )
     ).hexdigest()[:24]
     return f'"policy-v{POLICY_VERSION}-{digest}"'
 
@@ -107,11 +115,11 @@ def build_signed_policy(
     bundle = sign_policy_bundle(
         payload,
         policy_version=POLICY_VERSION,
-        issued_at=clock.now(),
+        issued_at=clock.now().replace(hour=0, minute=0, second=0, microsecond=0),
         ttl=POLICY_TTL,
         signer=signer,
     )
-    return bundle, policy_etag(payload, signer.key_id)
+    return bundle, policy_etag(payload, signer.key_id, bundle.expires_at)
 
 
 def etag_matches(if_none_match: str | None, etag: str) -> bool:
