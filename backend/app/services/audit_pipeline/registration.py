@@ -96,6 +96,26 @@ def _bad_key() -> AppError:
     )
 
 
+async def claim_proof_of_work(redis: Redis | None, spki_b64: str, pow_: ProofOfWork) -> None:
+    """PoW dùng MỘT LẦN: SET NX theo hash (TTL 2× cửa sổ) — không gửi lại PoW cũ để tạo
+    nhiều device_id (Sybil)."""
+    if redis is None:
+        return
+    key = (
+        "vs:pow:" + hashlib.sha256(f"{spki_b64}:{pow_.timestamp}:{pow_.nonce}".encode()).hexdigest()
+    )
+    try:
+        first = await redis.set(key, "1", nx=True, ex=2 * POW_WINDOW_S)
+    except Exception:
+        raise AppError(ErrorCode.SERVICE_DEGRADED, 503) from None
+    if not first:
+        raise AppError(
+            ErrorCode.MALFORMED_REQUEST,
+            400,
+            details=[ErrorDetail(field="body.proof_of_work.nonce", issue="already_used")],
+        )
+
+
 async def throttle_registration(
     redis: Redis | None, ip: str, *, has_pow: bool, strict: bool
 ) -> None:
@@ -143,10 +163,17 @@ async def register_device(
             settings.pow_difficulty_bits,
             int(now.timestamp()),
         )
+        await claim_proof_of_work(redis, body.public_key_spki_b64, body.proof_of_work)
     await throttle_registration(redis, ip, has_pow=has_pow, strict=strict)
     pubkey = decode_spki(body.public_key_spki_b64)
     if signer is None:
         raise AppError(ErrorCode.SERVICE_DEGRADED, 503)
+    if await repo.pubkey_exists(pubkey):  # 1 khóa = 1 thiết bị
+        raise AppError(
+            ErrorCode.CONFLICT,
+            409,
+            details=[ErrorDetail(field="body.public_key_spki_b64", issue="already_registered")],
+        )
 
     phone_hmac: str | None = None
     pepper_version = 1
@@ -178,11 +205,12 @@ async def register_device(
         pepper_version=pepper_version,
         phone_optin_exp_at=(now + PHONE_OPTIN_TTL) if phone_hmac is not None else None,
     )
-    linked = await repo.create(record)
+    await repo.create(record)
     return DeviceRegisterResponse(
         device_id=device_id,
         policy_version=POLICY_VERSION,
         daily_wage_vnd=wage,
-        phone_optin_expires_at=record.phone_optin_exp_at if linked else None,
+        # Cùng dạng phản hồi dù SĐT có liên kết được hay không (không làm oracle dò SĐT).
+        phone_optin_expires_at=record.phone_optin_exp_at,
         server_epoch=signed_epoch_offset(clock, signer, device_id=device_id),
     )

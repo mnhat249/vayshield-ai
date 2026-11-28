@@ -76,6 +76,10 @@ class DeviceRepository(Protocol):
 
     async def get(self, device_id: UUID) -> DeviceRecord | None: ...
 
+    async def pubkey_exists(self, pubkey_spki: bytes) -> bool:
+        """Khóa công khai đã đăng ký? (chống Sybil: 1 khóa = 1 thiết bị)."""
+        ...
+
     async def erase(self, device_id: UUID, redis: Redis | None) -> tuple[int, int]:
         """Xóa toàn bộ dữ liệu thiết bị (Luật 91/2025, EC-DB21). Trả
         ``(liên kết người thân bị hủy, cạnh mule giữ lại dạng bia mộ ẩn danh)``. Idempotent."""
@@ -112,6 +116,9 @@ class InMemoryDeviceRepository:
 
     async def get(self, device_id: UUID) -> DeviceRecord | None:
         return self.devices.get(device_id)
+
+    async def pubkey_exists(self, pubkey_spki: bytes) -> bool:
+        return any(d.pubkey_spki == pubkey_spki for d in self.devices.values())
 
     async def erase(self, device_id: UUID, redis: Redis | None) -> tuple[int, int]:
         self.devices.pop(device_id, None)
@@ -179,31 +186,40 @@ class SqlDeviceRepository:
             "pv": device.policy_version,
             "pepper": device.pepper_version,
         }
-        insert = text(
+        insert = (
             "INSERT INTO anonymous_devices (id, pubkey_ecdsa_p256, platform_type, daily_wage_vnd,"
             " policy_version, phone_blind_hmac, pepper_version, phone_optin_exp_at)"
             " VALUES (:id, :pk, :plat, :wage, :pv, :phone, :pepper, :exp)"
         )
         async with short_session() as session, session.begin():
             if device.phone_blind_hmac is not None:
-                taken = (
+                # Nguyên tử: SĐT đã thuộc thiết bị khác → DO NOTHING (không race SELECT/INSERT).
+                inserted = (
                     await session.execute(
-                        text("SELECT 1 FROM anonymous_devices WHERE phone_blind_hmac = :h"),
-                        {"h": device.phone_blind_hmac},
-                    )
-                ).first()
-                if taken is None:
-                    await session.execute(
-                        insert,
+                        text(insert + " ON CONFLICT (phone_blind_hmac) DO NOTHING RETURNING id"),
                         {
                             **params,
                             "phone": device.phone_blind_hmac,
                             "exp": device.phone_optin_exp_at,
                         },
                     )
+                ).first()
+                if inserted is not None:
                     return True
-            await session.execute(insert, {**params, "phone": None, "exp": None})
+            await session.execute(text(insert), {**params, "phone": None, "exp": None})
             return False
+
+    async def pubkey_exists(self, pubkey_spki: bytes) -> bool:
+        from app.core.db import short_session
+
+        async with short_session() as session:
+            row = (
+                await session.execute(
+                    text("SELECT 1 FROM anonymous_devices WHERE pubkey_ecdsa_p256 = :pk LIMIT 1"),
+                    {"pk": pubkey_spki},
+                )
+            ).first()
+        return row is not None
 
     async def get(self, device_id: UUID) -> DeviceRecord | None:
         from app.core.db import short_session

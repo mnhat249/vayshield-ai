@@ -118,7 +118,10 @@ async def test_ec_db25_register_pow_valid_and_invalid(
 async def test_ec_db25_register_without_pow_is_rate_limited_per_ip(
     env: Any, client: httpx.AsyncClient
 ) -> None:
-    codes = [(await client.post(REGISTER, json=_reg())).status_code for _ in range(12)]
+    codes = [
+        (await client.post(REGISTER, json=_reg(public_key_spki_b64=_spki(9000 + i)))).status_code
+        for i in range(12)
+    ]
     assert codes[:10] == [201] * 10
     assert codes[10:] == [429, 429]
 
@@ -129,11 +132,15 @@ async def test_ec_db03_ec_db10_phone_stored_as_blind_hmac_and_never_hijacked(
     """SĐT chỉ lưu HMAC (đã chuẩn hóa E.164); SĐT đã thuộc thiết bị khác KHÔNG bị chiếm; opt-in
     hết hạn sau 90 ngày."""
     first = await client.post(REGISTER, json=_reg(phone_e164_optin="+84909123456"))
-    second = await client.post(REGISTER, json=_reg(phone_e164_optin="+840909123456"))
+    second = await client.post(
+        REGISTER,
+        json=_reg(public_key_spki_b64=_spki(777), phone_e164_optin="+840909123456"),
+    )
     d1, d2 = first.json(), second.json()
     exp = d1["phone_optin_expires_at"]
     assert exp is not None
-    assert d2["phone_optin_expires_at"] is None  # cùng SĐT (khác định dạng) → không chiếm
+    # Cùng dạng phản hồi (không làm oracle dò SĐT) nhưng KHÔNG chiếm liên kết SĐT:
+    assert d2["phone_optin_expires_at"] == exp
     dev1 = await env.services.devices.get(UUID(d1["device_id"]))
     assert dev1 is not None and dev1.phone_blind_hmac is not None
     assert "909123456" not in dev1.phone_blind_hmac and len(dev1.phone_blind_hmac) == 64
@@ -301,3 +308,29 @@ async def test_no_database_means_registry_unconfigured_not_empty(
     r = await _get_policy(client, fake_clock)
     assert r.status_code == 503
     assert e.services.readiness()["lender_registry"] is False
+
+
+async def test_pow_is_single_use_and_public_key_is_unique(
+    build_env: Any, client: httpx.AsyncClient, fake_clock: FakeClock, audit_settings: Any
+) -> None:
+    """Review MAJOR 5: PoW gửi lại không tạo thêm thiết bị; 1 khóa công khai = 1 thiết bị."""
+    cfg = audit_settings.model_copy(update={"pow_difficulty_bits": 8})
+    build_env(settings=cfg)
+    spki = _spki(31337)
+    ts = int(fake_clock.now().timestamp())
+    pow_ = {"timestamp": ts, "nonce": _mine(spki, ts, 8)}
+    ok = await client.post(REGISTER, json=_reg(public_key_spki_b64=spki, proof_of_work=pow_))
+    assert ok.status_code == 201
+    replay = await client.post(REGISTER, json=_reg(public_key_spki_b64=spki, proof_of_work=pow_))
+    assert replay.status_code == 400
+    assert replay.json()["error"]["details"][0]["issue"] == "already_used"
+    # Cùng khóa, PoW mới (không dùng lại) → vẫn bị từ chối vì khóa đã đăng ký.
+    ts2 = ts + 1
+    again = await client.post(
+        REGISTER,
+        json=_reg(
+            public_key_spki_b64=spki,
+            proof_of_work={"timestamp": ts2, "nonce": _mine(spki, ts2, 8)},
+        ),
+    )
+    assert again.status_code == 409
