@@ -50,11 +50,11 @@ Plan: [`../backend-vayshield.md`](../backend-vayshield.md) · Cập nhật %: `n
 | T14 | WP1-09 | Mule graph + Dynamic VA + B2B webhook | 3 | M2 | T01,T10 | 5 | merged | task/backend-vayshield/T14 | pass (1922 test); PR#8 CI pg xanh | approve sau sửa (3 major + 4 minor); bản sửa chỉ verify + CI pg xanh, chưa review lại; giả định cần duyệt: trọng số bằng chứng, quy tắc VA prefix | – | |
 | T15 | WP1-09 | Copilot + SIMO + triage + TTS | 4 | M2 | T13,T14 | 3 | merged | task/backend-vayshield/T15 | pass (2947 test); CI pg xanh | approve sau 2 vòng sửa; vòng 3 chỉ verify + CI, chưa review lại | – | |
 | T16 | WP1-10 | Sandbox Mode + VIP quota | 4 | M2 | T11,T12 | 4 | merged | task/backend-vayshield/T16 | pass (3052 test); CI pg redis xanh | approve sau sửa (1 blocker + 3 major); bản sửa chỉ verify + CI | – | |
-| T17 | WP1-11 | Runner benchmark + ablation | 4 | M3 | T06,T11,T12 | 2 | merged | task/backend-vayshield/T17 | pass (3020 test); quick offline exit 0 | chưa review độc lập; số liệu trung thực: 5 SLA FAIL, 2 NOT_MEASURED | – | Gọi Gemini thật: cần duyệt |
+| T17 | WP1-11 | Runner benchmark + ablation | 4 | M3 | T06,T11,T12 | 2 | merged | task/backend-vayshield/T17 | pass (3020 test); quick offline exit 0 | changes(0/4): LIVE bỏ cảnh báo oracle; Ablation3 'chặn ca 1' là tautology; MAE bỏ qua mẫu giải lỗi; results/** lệch sau T19 | 2026-11-28 | Gọi Gemini thật: cần duyệt |
 | T18 | WP1-12 | Cloud + Docker + gitleaks + k6 | 5 | M4 | tất cả | 4 | merged | task/backend-vayshield/T18 | pass (3052 test); 30 test cấu hình tĩnh; CI xanh | approve sau sửa (5 major); chưa chạy Docker/gitleaks/k6 thật | – | Deploy cần duyệt |
 | T19 | WP1-05 | Vá injection scanner + voice phương ngữ | 6 | M3 | T04,T17 | 2 | merged | task/backend-vayshield/T19 | pass (3152 test); CI xanh | sửa 1 blocker (injection hạ nhãn); bản sửa chưa review lại; held-out recall 72,5 phần trăm FPR 0 | – | Lỗ hổng từ benchmark T17 |
-| T20 | WP1-01 | Migration 0003: unique pubkey, RLS family links, ON DELETE SET NULL | 6 | M2 | T01,T11,T12 | 2 | merged | task/backend-vayshield/T20 | pass (3059 test); CI pg xanh | chưa review độc lập | – | Chỉ thêm migration mới |
-| T21 | WP1-12 | Tích hợp: quorum→feed, dockerignore, CI infra, guard khóa dev | 6 | M4 | T14,T15,T18 | 2 | merged | task/backend-vayshield/T21 | pass (3067 test); CI xanh | chưa review độc lập | – | Việc tích hợp nhỏ ngoài owns các task cũ |
+| T20 | WP1-01 | Migration 0003: unique pubkey, RLS family links, ON DELETE SET NULL | 6 | M2 | T01,T11,T12 | 2 | merged | task/backend-vayshield/T20 | pass (3059 test); CI pg xanh | approve (5 minor: thiếu test erase EC-DB21, race nhánh SĐT, khóa bảng khi migrate, thứ tự deploy) | 2026-11-28 | Chỉ thêm migration mới |
+| T21 | WP1-12 | Tích hợp: quorum→feed, dockerignore, CI infra, guard khóa dev | 6 | M4 | T14,T15,T18 | 2 | merged | task/backend-vayshield/T21 | pass (3067 test); CI xanh | approve (4 minor: guard khóa dev lách được bằng biến thể, số thiết bị sai trong summary_vi, CI không lint infra/, chưa phủ EC-OPS16) | 2026-11-28 | Việc tích hợp nhỏ ngoài owns các task cũ |
 
 ## Nhật ký
 | Ngày | Sự kiện |
@@ -104,3 +104,4 @@ Plan: [`../backend-vayshield.md`](../backend-vayshield.md) · Cập nhật %: `n
 | 2026-11-28 | T21 merged (chưa review độc lập; verify + CI pg xanh; sửa ngoài owns được cho phép: config.py guard khóa dev, backend-ci.yml, mule feed hook) |
 | 2026-11-28 | T20 merged (chưa review độc lập; CI pg xanh gồm RLS family và unique pubkey; migration 0003 dừng nếu dữ liệu cũ trùng khóa) |
 | 2026-11-28 | T19 merged (approve sau sửa; bản sửa chỉ verify + CI xanh, chưa review lại; recall injection held-out 72.5 phần trăm FPR 0; blocker injection hạ nhãn đã sửa) |
+| 2026-11-28 | Review độc lập: T17 changes(0/4), T20 approve (5 minor), T21 approve (4 minor). Chưa gửi sửa T17 (chờ người dùng) |
