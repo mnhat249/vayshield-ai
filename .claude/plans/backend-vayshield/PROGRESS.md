@@ -3,15 +3,15 @@
 Plan: [`../backend-vayshield.md`](../backend-vayshield.md) · Cập nhật %: `node .claude/scripts/progress.js backend-vayshield --write`
 
 <!-- progress:start -->
-**Tổng tiến độ: 90.0%** `[██████████████████░░]` — merged 16/19 task · cập nhật 2026-11-28
+**Tổng tiến độ: 92.0%** `[██████████████████░░]` — merged 17/19 task · cập nhật 2026-11-28
 
 | Wave | Tiến độ | | Mốc | Tiến độ |
 |---|---|---|---|---|
 | W0 | 100% | | M0 | 100% |
 | W1 | 100% | | M1 | 100% |
 | W2 | 100% | | M2 | 89% |
-| W3 | 100% | | M3 | 50% |
-| W4 | 33% | | M4 | 0% |
+| W3 | 100% | | M3 | 100% |
+| W4 | 56% | | M4 | 0% |
 | W5 | 0% | |  |  |
 <!-- progress:end -->
 
@@ -49,7 +49,7 @@ Plan: [`../backend-vayshield.md`](../backend-vayshield.md) · Cập nhật %: `n
 | T14 | WP1-09 | Mule graph + Dynamic VA + B2B webhook | 3 | M2 | T01,T10 | 5 | merged | task/backend-vayshield/T14 | pass (1922 test); PR#8 CI pg xanh | approve sau sửa (3 major + 4 minor); bản sửa chỉ verify + CI pg xanh, chưa review lại; giả định cần duyệt: trọng số bằng chứng, quy tắc VA prefix | – | |
 | T15 | WP1-09 | Copilot + SIMO + triage + TTS | 4 | M2 | T13,T14 | 3 | merged | task/backend-vayshield/T15 | pass (2947 test); CI pg xanh | approve sau 2 vòng sửa; vòng 3 chỉ verify + CI, chưa review lại | – | |
 | T16 | WP1-10 | Sandbox Mode + VIP quota | 4 | M2 | T11,T12 | 4 | pending | task/backend-vayshield/T16 | – | – | – | |
-| T17 | WP1-11 | Runner benchmark + ablation | 4 | M3 | T06,T11,T12 | 2 | pending | task/backend-vayshield/T17 | – | – | – | Gọi Gemini thật: cần duyệt |
+| T17 | WP1-11 | Runner benchmark + ablation | 4 | M3 | T06,T11,T12 | 2 | merged | task/backend-vayshield/T17 | pass (3020 test); quick offline exit 0 | chưa review độc lập; số liệu trung thực: 5 SLA FAIL, 2 NOT_MEASURED | – | Gọi Gemini thật: cần duyệt |
 | T18 | WP1-12 | Cloud + Docker + gitleaks + k6 | 5 | M4 | tất cả | 4 | pending | task/backend-vayshield/T18 | – | – | – | Deploy cần duyệt |
 
 ## Nhật ký
