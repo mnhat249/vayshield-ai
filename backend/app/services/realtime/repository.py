@@ -24,6 +24,18 @@ from app.services.realtime.models import GuardianLink, LinkStatus
 LIVE_STATUSES = (LinkStatus.ACTIVE, LinkStatus.PUSH_EXPIRED_410)
 TABLE = "family_guardian_links"
 
+# RLS (migration 0003): chủ thiết bị thấy mọi liên kết của mình; người thân chỉ đúng 1 liên kết.
+_SQL_CTX_DEVICE = text("SELECT set_config('app.current_device_id', :v, true)")
+_SQL_CTX_LINK = text("SELECT set_config('app.current_guardian_link_id', :v, true)")
+
+
+async def _as_device(session: Any, device_id: UUID) -> None:
+    await session.execute(_SQL_CTX_DEVICE, {"v": str(device_id)})
+
+
+async def _as_link(session: Any, link_id: UUID) -> None:
+    await session.execute(_SQL_CTX_LINK, {"v": str(link_id)})
+
 
 class FamilyRepository(Protocol):
     async def create_pending(
@@ -184,6 +196,7 @@ class SqlFamilyRepository:
 
         blob = self._enc(link_id, "fallback_contact_cipher", {"label": borrower_display_label})
         async with short_session() as session, session.begin():
+            await _as_device(session, device_id)
             await session.execute(
                 text(
                     "INSERT INTO family_guardian_links (id, borrower_device_id, guardian_alias,"
@@ -211,6 +224,7 @@ class SqlFamilyRepository:
         from app.core.db import short_session
 
         async with short_session() as session, session.begin():
+            await _as_link(session, link_id)
             cur = (
                 await session.execute(
                     text(
@@ -252,7 +266,8 @@ class SqlFamilyRepository:
     async def get_link(self, link_id: UUID) -> GuardianLink | None:
         from app.core.db import short_session
 
-        async with short_session() as session:
+        async with short_session() as session, session.begin():
+            await _as_link(session, link_id)
             row = (
                 await session.execute(
                     text(
@@ -268,7 +283,8 @@ class SqlFamilyRepository:
     async def list_live_for_device(self, device_id: UUID) -> list[GuardianLink]:
         from app.core.db import short_session
 
-        async with short_session() as session:
+        async with short_session() as session, session.begin():
+            await _as_device(session, device_id)
             rows = (
                 await session.execute(
                     text(
@@ -286,6 +302,7 @@ class SqlFamilyRepository:
         from app.core.db import short_session
 
         async with short_session() as session, session.begin():
+            await _as_link(session, link_id)
             await session.execute(
                 text(
                     "UPDATE family_guardian_links SET status = 'PUSH_EXPIRED_410',"
