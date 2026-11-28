@@ -50,7 +50,8 @@ exec uvicorn app.main:app \
 EOF
 RUN sed -i 's/\r$//g' /usr/local/bin/entrypoint.sh \
  && chmod 0755 /usr/local/bin/entrypoint.sh \
- && chown -R vayshield:vayshield /app
+ && chmod -R a-w,a+rX /app
+# /app thuộc root, chỉ đọc: user runtime (vayshield) không sửa được mã, chỉ ghi vào /tmp (tmpfs).
 
 USER vayshield
 EXPOSE 8000

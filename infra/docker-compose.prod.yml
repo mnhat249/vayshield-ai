@@ -1,10 +1,14 @@
 # VayShield AI — compose PRODUCTION cho VPS/Railway Pro tự quản (1 lệnh):
+#   python infra/scripts/preflight.py infra/prod.env      # kiểm secret TRƯỚC (compose chỉ chặn biến rỗng)
 #   docker compose -f infra/docker-compose.prod.yml --env-file infra/prod.env up -d --build
+# Seed dữ liệu mẫu CHỈ khi cần và có chủ đích (không chạy mặc định ở prod):
+#   docker compose -f infra/docker-compose.prod.yml --env-file infra/prod.env --profile seed run --rm db-seed
 # infra/prod.env do NGƯỜI VẬN HÀNH tự tạo từ infra/env.sample (KHÔNG commit; .gitignore chặn .env*).
-# Mọi secret dùng cú pháp ${VAR:?} → thiếu biến thì compose từ chối chạy, không có giá trị mặc định.
+# Cú pháp ${VAR:?} CHỈ chặn biến rỗng/thiếu, KHÔNG kiểm định dạng — preflight.py mới kiểm độ dài/base64
+# và từ chối giá trị mẫu (change-me, DEV-ONLY).
 #
-# Chỉ Caddy mở cổng 80/443 (EC-OPS05): REST + SSE + WSS cùng domain, TLS tự động. Postgres/Redis/backend
-# KHÔNG publish cổng ra host. Backend chỉ tin X-Forwarded-For từ dải mạng nội bộ cố định bên dưới.
+# Mạng: edge (Caddy + backend) và internal (backend + PG + Redis + keepwarm, KHÔNG ra internet).
+# Chỉ Caddy mở cổng 80/443 (EC-OPS05). Backend chỉ tin X-Forwarded-For từ IP cố định của Caddy.
 name: vayshield-prod
 x-logging: &logging
   driver: json-file
@@ -17,7 +21,10 @@ networks:
     driver: bridge
     ipam:
       config:
-        - subnet: 172.28.10.0/24   # FORWARDED_ALLOW_IPS trỏ đúng dải này
+        - subnet: 172.28.10.0/24
+  internal:
+    driver: bridge
+    internal: true   # PG/Redis không có đường ra ngoài
 
 services:
   postgres-pgvector:
@@ -28,7 +35,7 @@ services:
       POSTGRES_PASSWORD: ${DB_ADMIN_PASSWORD:?đặt DB_ADMIN_PASSWORD}
     volumes:
       - pgdata:/var/lib/postgresql/data
-    networks: [edge]
+    networks: [internal]
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U vayshield_admin -d vayshield"]
       interval: 5s
@@ -44,7 +51,7 @@ services:
       APP_DB_PASSWORD: ${DB_PASSWORD:?đặt DB_PASSWORD}
     volumes:
       - ../backend/migrations:/migrations:ro
-    networks: [edge]
+    networks: [internal]
     entrypoint: ["/bin/sh", "-ec"]
     command:
       - |
@@ -66,14 +73,35 @@ services:
     restart: "no"
     logging: *logging
 
+  # Seed dữ liệu mẫu: KHÔNG chạy mặc định ở prod (profile "seed"). Idempotent (ON CONFLICT).
+  db-seed:
+    profiles: ["seed"]
+    build:
+      context: ../backend
+      dockerfile: Dockerfile
+    platform: linux/amd64
+    image: vayshield-backend:prod
+    entrypoint: ["python", "-m", "seeds.run"]
+    environment:
+      ADMIN_DATABASE_URL: postgresql://vayshield_admin:${DB_ADMIN_PASSWORD:?đặt DB_ADMIN_PASSWORD}@postgres-pgvector:5432/vayshield
+    networks: [internal]
+    depends_on:
+      db-init:
+        condition: service_completed_successfully
+    restart: "no"
+    logging: *logging
+
   redis-hub:
     image: redis:7.4-alpine
-    command: ["redis-server", "--appendonly", "yes"]
+    # requirepass: REDIS_URL dạng redis://:<pw>@redis-hub:6379/0 (redis-py hỗ trợ). pw chỉ nên gồm [A-Za-z0-9].
+    command: ["redis-server", "--appendonly", "yes", "--requirepass", "${REDIS_PASSWORD:?đặt REDIS_PASSWORD}"]
+    environment:
+      REDIS_PASSWORD: ${REDIS_PASSWORD:?đặt REDIS_PASSWORD}
     volumes:
       - redisdata:/data
-    networks: [edge]
+    networks: [internal]
     healthcheck:
-      test: ["CMD", "redis-cli", "ping"]
+      test: ["CMD-SHELL", "redis-cli -a \"$$REDIS_PASSWORD\" --no-auth-warning ping | grep -q PONG"]
       interval: 5s
       timeout: 3s
       retries: 10
@@ -91,7 +119,7 @@ services:
       APP_PUBLIC_BASE_URL: https://${PUBLIC_DOMAIN:?đặt PUBLIC_DOMAIN}
       CORS_ORIGINS: ${CORS_ORIGINS:?đặt CORS_ORIGINS (https://..., không dùng *)}
       DATABASE_URL: postgresql+asyncpg://vayshield_app:${DB_PASSWORD:?đặt DB_PASSWORD}@postgres-pgvector:5432/vayshield
-      REDIS_URL: redis://redis-hub:6379/0
+      REDIS_URL: redis://:${REDIS_PASSWORD:?đặt REDIS_PASSWORD}@redis-hub:6379/0
       PEPPER_B2B_PHONE: ${PEPPER_B2B_PHONE:?}
       PEPPER_MULE_ACCOUNT: ${PEPPER_MULE_ACCOUNT:?}
       KMS_MASTER_KEK: ${KMS_MASTER_KEK:?}
@@ -100,12 +128,22 @@ services:
       GEMINI_API_KEYS: ${GEMINI_API_KEYS:-}
       GEMINI_VIP_KEYS: ${GEMINI_VIP_KEYS:-}
       SANDBOX_VIP_CODE: ${SANDBOX_VIP_CODE:-}
+      # Tùy chọn — xem hậu quả khi để trống trong infra/env.sample
+      JUDGE_OPS_QUICK_LOGIN_CODE: ${JUDGE_OPS_QUICK_LOGIN_CODE:-}
+      VAPID_PUBLIC_KEY: ${VAPID_PUBLIC_KEY:-}
+      VAPID_PRIVATE_KEY: ${VAPID_PRIVATE_KEY:-}
+      VAPID_SUBJECT: ${VAPID_SUBJECT:-mailto:security@example.invalid}
+      SMS_PROVIDER: ${SMS_PROVIDER:-fake}
+      SMS_API_BASE_URL: ${SMS_API_BASE_URL:-}
+      SMS_API_KEY: ${SMS_API_KEY:-}
+      SMS_API_SECRET: ${SMS_API_SECRET:-}
+      SMS_SENDER_ID: ${SMS_SENDER_ID:-VAYSHIELD}
       EXPOSE_ERROR_DETAILS: "false"
-      # Chỉ tin XFF từ proxy trong dải edge (Caddy). Thiếu dòng này → rate-limit IP gom về IP proxy.
-      FORWARDED_ALLOW_IPS: 172.28.10.0/24
+      # Chỉ tin XFF từ đúng IP cố định của Caddy. Thiếu dòng này → rate-limit IP gom về IP proxy.
+      FORWARDED_ALLOW_IPS: 172.28.10.2
     expose:
       - "8000"
-    networks: [edge]
+    networks: [edge, internal]
     depends_on:
       db-init:
         condition: service_completed_successfully
@@ -130,7 +168,9 @@ services:
       - ./Caddyfile:/etc/caddy/Caddyfile:ro
       - caddy_data:/data
       - caddy_config:/config
-    networks: [edge]
+    networks:
+      edge:
+        ipv4_address: 172.28.10.2   # cố định: FORWARDED_ALLOW_IPS của backend trỏ đúng IP này
     depends_on:
       - vayshield-backend
     restart: unless-stopped

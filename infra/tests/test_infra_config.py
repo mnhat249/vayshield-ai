@@ -29,6 +29,7 @@ INFRA_ONLY_ENV = {
     "WEB_CONCURRENCY",
     "UVICORN_KEEPALIVE_S",
     "PROBE_URL",
+    "REDIS_PASSWORD",
     "PROBE_INTERVAL_S",
     "UV_LINK_MODE",
     "UV_PROJECT_ENVIRONMENT",
@@ -146,8 +147,8 @@ def test_prod_secret_bat_buoc_va_khong_gia_tri_mac_dinh() -> None:
     assert env["CORS_ORIGINS"].startswith("${CORS_ORIGINS:?")  # bắt buộc khai báo, không mặc định *
     # allowlist proxy: CIDR cụ thể, không "*"
     assert env["FORWARDED_ALLOW_IPS"] != "*"
-    subnet = _load(INFRA / "docker-compose.prod.yml")["networks"]["edge"]["ipam"]["config"][0]
-    assert env["FORWARDED_ALLOW_IPS"] == subnet["subnet"]
+    caddy = _load(INFRA / "docker-compose.prod.yml")["services"]["caddy"]
+    assert env["FORWARDED_ALLOW_IPS"] == caddy["networks"]["edge"]["ipv4_address"]
 
 
 def test_ec_ops22_url_cong_khai_la_https() -> None:
@@ -254,6 +255,8 @@ def test_ec_ops01_gitleaks_toml_hop_le_va_allowlist_hep() -> None:
     allow = cfg["allowlist"]
     broad = [p for p in allow["paths"] if re.search(r"(backend|app|src)", p) and "env" not in p]
     assert broad == []  # không nuốt thư mục mã nguồn
+    # Không allowlist theo path file mẫu: dán khóa thật vào .env.example/env.sample vẫn phải bị bắt
+    assert not any("env" in p for p in allow["paths"])
     assert not any(r in (".*", ".+") for r in allow["regexes"])
 
 
@@ -281,3 +284,134 @@ def test_k6_script_20_phien_va_nguong() -> None:
     assert "VUS || '20'" in js
     assert "namespace_leak: ['rate==0']" in js
     assert "p(95)<250" in js
+
+
+def test_ec_ops01_khoa_that_dan_vao_env_sample_van_bi_bat() -> None:
+    mod = _scan_module()
+    cfg = mod.load_config(ROOT / ".gitleaks.toml")
+    real_like = "GEMINI_API_KEYS=AIzaSy" + "B" * 33
+    assert mod.scan_text("infra/env.sample", real_like, cfg)
+    assert mod.scan_text(".env.example", real_like, cfg)
+    # file mẫu hiện tại sạch
+    sample = (INFRA / "env.sample").read_text(encoding="utf-8")
+    assert mod.scan_text("infra/env.sample", sample, cfg) == []
+
+
+def test_compose_judge_co_khoa_dev_hop_le_va_signer_khoi_tao_duoc(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Settings từ env của compose gốc phải dựng được signer/KEK/blind index (healthz ok)."""
+    from app.core.config import Settings
+    from app.security.blind_index import BlindIndexer
+    from app.security.envelope import EnvelopeCipher
+    from app.security.signing import Ed25519Signer
+
+    env = _load(ROOT / "docker-compose.yml")["services"]["vayshield-backend"]["environment"]
+    for key, value in env.items():
+        monkeypatch.setenv(key, str(value))
+    monkeypatch.delenv("GEMINI_API_KEYS", raising=False)
+    cfg = Settings()
+    assert Ed25519Signer.from_settings(cfg).key_id
+    assert BlindIndexer.from_settings(cfg) is not None
+    assert EnvelopeCipher.from_settings(cfg) is not None
+    assert cfg.app_env.value == "local"  # khóa dev KHÔNG đi cùng APP_ENV=production
+
+
+def test_khoa_dev_bi_preflight_tu_choi() -> None:
+    pre = _load_script("preflight")
+    env = _load(ROOT / "docker-compose.yml")["services"]["vayshield-backend"]["environment"]
+    dev = {k: str(env[k]) for k in pre.B64_32 + pre.STR_32}
+    errors = pre.check(dev)
+    for key in pre.B64_32 + pre.STR_32:
+        assert any(e.startswith(key) for e in errors), key
+    assert all("DEV-ONLY" not in e and "dev-only" not in e for e in errors)  # không in giá trị
+
+
+def test_preflight_chap_nhan_gia_tri_hop_le_va_bat_loi_dinh_dang() -> None:
+    import base64
+
+    pre = _load_script("preflight")
+    good = {
+        "KMS_MASTER_KEK": base64.b64encode(bytes(range(32))).decode(),
+        "ED25519_POLICY_PRIVATE_KEY": base64.b64encode(bytes(range(1, 33))).decode(),
+        "PEPPER_B2B_PHONE": "p" * 40,
+        "PEPPER_MULE_ACCOUNT": "q" * 40,
+        "JWT_OPS_SECRET": "j" * 40,
+        "DB_ADMIN_PASSWORD": "Adm1nRealPw",
+        "DB_PASSWORD": "AppRealPw1",
+        "REDIS_PASSWORD": "RedisRealPw1",
+        "CORS_ORIGINS": "https://demo.real.vn",
+        "PUBLIC_DOMAIN": "demo.real.vn",
+    }
+    assert pre.check(good) == []
+    bad = {
+        **good,
+        "KMS_MASTER_KEK": base64.b64encode(b"short").decode(),
+        "JWT_OPS_SECRET": "x" * 10,
+    }
+    errs = pre.check(bad)
+    assert any(e.startswith("KMS_MASTER_KEK") for e in errs)
+    assert any(e.startswith("JWT_OPS_SECRET") for e in errs)
+    assert any(e.startswith("CORS_ORIGINS") for e in pre.check({**good, "CORS_ORIGINS": "*"}))
+    assert any(
+        e.startswith("JUDGE_OPS")
+        for e in pre.check({**good, "JUDGE_OPS_QUICK_LOGIN_CODE": "short"})
+    )
+    assert pre.check(
+        pre.parse_env((INFRA / "env.sample").read_text(encoding="utf-8"))
+    )  # mẫu bị từ chối
+
+
+def test_db_seed_compose_judge_va_prod_chi_khi_co_co() -> None:
+    root = _load(ROOT / "docker-compose.yml")["services"]
+    assert root["db-seed"]["entrypoint"] == ["python", "-m", "seeds.run"]
+    assert "ADMIN_DATABASE_URL" in root["db-seed"]["environment"]
+    assert "db-init" in root["db-seed"]["depends_on"]
+    assert "db-seed" in root["vayshield-backend"]["depends_on"]
+    prod = _load(INFRA / "docker-compose.prod.yml")["services"]
+    assert prod["db-seed"]["profiles"] == ["seed"]  # chỉ chạy khi --profile seed
+    assert "db-seed" not in prod["vayshield-backend"]["depends_on"]
+
+
+def test_prod_tach_mang_edge_internal_va_redis_requirepass() -> None:
+    prod = _load(INFRA / "docker-compose.prod.yml")
+    assert prod["networks"]["internal"]["internal"] is True
+    svcs = prod["services"]
+    assert set(svcs["vayshield-backend"]["networks"]) == {"edge", "internal"}
+    assert svcs["postgres-pgvector"]["networks"] == ["internal"]
+    assert svcs["redis-hub"]["networks"] == ["internal"]
+    assert "--requirepass" in svcs["redis-hub"]["command"]
+    assert svcs["vayshield-backend"]["environment"]["REDIS_URL"].startswith("redis://:")
+
+
+def test_railway_dockerfile_path_khop_root_directory_backend() -> None:
+    cfg = json.loads((INFRA / "railway/railway.json").read_text(encoding="utf-8"))
+    assert cfg["build"]["dockerfilePath"] == "Dockerfile"  # Root Directory = backend (README)
+    assert "Root Directory = `backend`" in (INFRA / "README.md").read_text(encoding="utf-8")
+
+
+def test_dockerfile_app_chi_doc_cho_user_runtime() -> None:
+    text = (ROOT / "backend/Dockerfile").read_text(encoding="utf-8")
+    assert "chown -R vayshield" not in text
+    assert "chmod -R a-w,a+rX /app" in text
+
+
+def test_k6_moi_vu_mot_phien_va_429_hop_le() -> None:
+    js = (ROOT / "loadtest/k6_judges.js").read_text(encoding="utf-8")
+    assert "export function setup()" in js
+    assert "expectedStatuses(200, 429)" in js
+    create = js.index("/api/v1/sandbox/sessions")
+    assert js.index("export default function") > create  # tạo phiên chỉ ở setup(), trước default
+    assert "/api/v1/sandbox/sessions" not in js[js.index("export default function") :]
+
+
+def _load_script(name: str) -> Any:
+    import importlib.util
+    import sys
+
+    spec = importlib.util.spec_from_file_location(name, INFRA / f"scripts/{name}.py")
+    assert spec and spec.loader
+    mod = importlib.util.module_from_spec(spec)
+    sys.modules[name] = mod
+    spec.loader.exec_module(mod)
+    return mod

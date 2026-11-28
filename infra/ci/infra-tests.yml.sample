@@ -1,0 +1,15 @@
+# MẪU workflow (đặt vào .github/workflows/ bởi người có quyền): chạy test cấu hình hạ tầng T18.
+name: infra-tests
+on:
+  pull_request:
+    paths: ["infra/**", "docker-compose.yml", "backend/Dockerfile", ".gitleaks.toml", ".gitattributes", "loadtest/**"]
+permissions:
+  contents: read
+jobs:
+  infra:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v5
+      - run: uv run --project backend pytest -c backend/pyproject.toml infra/tests -q -p no:cacheprovider
+      - run: python infra/scripts/secret_scan.py

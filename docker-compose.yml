@@ -71,6 +71,22 @@ services:
       retries: 10
     logging: *logging
 
+  # Nạp dữ liệu mẫu (nhà cho vay, điều luật, đồ thị mule sandbox). Idempotent (ON CONFLICT).
+  db-seed:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    platform: linux/amd64
+    image: vayshield-backend:local
+    entrypoint: ["python", "-m", "seeds.run"]
+    environment:
+      ADMIN_DATABASE_URL: postgresql://vayshield_admin:${DB_ADMIN_PASSWORD:-vayshield_admin_local_secret}@postgres-pgvector:5432/vayshield
+    depends_on:
+      db-init:
+        condition: service_completed_successfully
+    restart: "no"
+    logging: *logging
+
   vayshield-backend:
     build:
       context: ./backend
@@ -87,10 +103,18 @@ services:
       EMAIL_PROVIDER: fake
       # Khóa Gemini: để trống (chạy với mock/fake). Muốn gọi thật: export GEMINI_API_KEYS=... ở shell.
       GEMINI_API_KEYS: ${GEMINI_API_KEYS:-}
+      # ---- KHÓA DEV GIẢ, HỢP LỆ VỀ ĐỊNH DẠNG — CHỈ DÙNG LOCAL/GIÁM KHẢO, TUYỆT ĐỐI KHÔNG DÙNG PRODUCTION ----
+      # (giải base64 ra chuỗi bắt đầu bằng "DEV-ONLY"; infra/scripts/preflight.py từ chối chúng.)
+      # Có chúng thì signer/mã hóa/blind index khởi tạo được và /healthz không degraded ngay lệnh đầu.
+      ED25519_POLICY_PRIVATE_KEY: REVWLU9OTFktbG9jYWwtZWQyNTUxOS1zZWVkLTAwMDE=
+      KMS_MASTER_KEK: REVWLU9OTFktbG9jYWwta21zLWtlay1hZXMyNTYtMDA=
+      PEPPER_B2B_PHONE: dev-only-pepper-b2b-phone-local-0000000000
+      PEPPER_MULE_ACCOUNT: dev-only-pepper-mule-account-local-00000000
+      JWT_OPS_SECRET: dev-only-jwt-ops-secret-local-0000000000000
     ports:
       - "8000:8000"   # CHỈ local; bản Cloud/prod chỉ lộ 443 (EC-OPS05)
     depends_on:
-      db-init:
+      db-seed:
         condition: service_completed_successfully
       redis-hub:
         condition: service_healthy

@@ -60,6 +60,19 @@ spec:
               valueFrom: { secretKeyRef: { name: vayshield-gemini-vip-keys, key: latest } }
             - name: SANDBOX_VIP_CODE
               valueFrom: { secretKeyRef: { name: vayshield-sandbox-vip-code, key: latest } }
+            # --- Tùy chọn (để trống/thiếu: xem hậu quả trong infra/env.sample) ---
+            - { name: SMS_PROVIDER, value: fake }        # fake = không gửi SMS thật
+            - { name: VAPID_SUBJECT, value: "mailto:<SECURITY_CONTACT>" }
+            - name: VAPID_PUBLIC_KEY
+              valueFrom: { secretKeyRef: { name: vayshield-vapid-public-key, key: latest } }
+            - name: VAPID_PRIVATE_KEY
+              valueFrom: { secretKeyRef: { name: vayshield-vapid-private-key, key: latest } }
+            - name: JUDGE_OPS_QUICK_LOGIN_CODE   # >= 16 ký tự, ngắn hơn = tắt
+              valueFrom: { secretKeyRef: { name: vayshield-judge-ops-code, key: latest } }
+            - name: SMS_API_KEY
+              valueFrom: { secretKeyRef: { name: vayshield-sms-api-key, key: latest } }
+            - name: SMS_API_SECRET
+              valueFrom: { secretKeyRef: { name: vayshield-sms-api-secret, key: latest } }
           startupProbe:
             httpGet: { path: /healthz, port: 8000 }
             periodSeconds: 3

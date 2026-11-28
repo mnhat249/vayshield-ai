@@ -26,8 +26,26 @@ Backend KHÔNG tự đọc `X-Forwarded-For`; rate-limit IP dùng `request.clien
 - Không đặt `FORWARDED_ALLOW_IPS` đúng dải proxy => mọi người dùng gom về IP proxy, dùng chung 1 bucket
   (`RATE_LIMIT_IP_RPM`, sandbox theo IP) và dễ tự khóa nhau.
 - Đặt `*` khi cổng container còn truy cập trực tiếp => kẻ gian giả `X-Forwarded-For` để né rate-limit.
-- Compose prod cố định subnet `172.28.10.0/24` và đặt allowlist đúng dải đó. Với Cloud Run/Railway phải
+- Compose prod gán IP cố định `172.28.10.2` cho Caddy và đặt allowlist đúng IP đó (mạng `edge`: Caddy + backend; mạng `internal`: backend + PG + Redis + không ra internet). Với Cloud Run/Railway phải
   tự xác minh dải IP proxy của nền tảng rồi điền `FORWARDED_ALLOW_IPS`.
+
+## Migrate và seed (Cloud Run / Railway, không có compose)
+- Compose tự chạy `db-init` (role + migration) và `db-seed` (`python -m seeds.run`, idempotent). Ở prod seed chỉ chạy khi
+  có cờ rõ ràng: `docker compose -f infra/docker-compose.prod.yml --env-file infra/prod.env --profile seed run --rm db-seed`.
+- Cloud Run/Railway: chạy MỘT LẦN từ máy/job đáng tin cậy với `ADMIN_DATABASE_URL` (role admin, không phải role app):
+  `python -m app.db_schema.migrate` rồi (nếu cần dữ liệu mẫu) `python -m seeds.run`, trong `backend/` hoặc từ image.
+- Railway: đặt **Root Directory = `backend`** trong dashboard (Dockerfile chỉ build với context `backend/`);
+  `railway.json` dùng `dockerfilePath: Dockerfile` tương ứng. Cloud Run: build với `docker buildx build -f backend/Dockerfile backend`.
+
+## Secret và preflight
+`${VAR:?}` trong compose chỉ chặn biến rỗng, không kiểm định dạng. Chạy `python infra/scripts/preflight.py infra/prod.env`
+trước khi `up`: kiểm KEK/Ed25519 = base64 đúng 32 byte, pepper và `JWT_OPS_SECRET` >= 32 byte, từ chối `change-me`/`DEV-ONLY`.
+Khóa dev trong `docker-compose.yml` gốc (giải base64 ra `DEV-ONLY...`) CHỈ dùng local; preflight từ chối chúng.
+Redis prod dùng `requirepass` (`REDIS_URL=redis://:<pw>@redis-hub:6379/0`). Biến tùy chọn (VAPID, SMS, mã judge): xem `env.sample`.
+
+## Chạy test cấu hình
+`infra/tests` không nằm trong `testpaths` của backend: `cd backend && uv run pytest -c pyproject.toml ../infra/tests -q`
+(hoặc `uv run --project backend pytest infra/tests`). Mẫu bước CI: `infra/ci/infra-tests.yml.sample`.
 
 ## Việc người vận hành phải làm thủ công
 1. Tạo secret thật (Secret Manager / `infra/prod.env`), không commit.
