@@ -37,10 +37,12 @@ _ABBREVIATIONS: Final[tuple[tuple[str, str], ...]] = (
 
 _DATE_RE: Final = re.compile(r"(?<![\d/])(?:ngày\s+)?(\d{1,2})/(\d{1,2})/(\d{4})(?![\d/])")
 _HOTLINE_RE: Final = re.compile(r"(?<!\d)1[89]00(?:[ .]?\d{3,4}){1,2}(?!\d)")
-_UNIT_RE: Final = (
-    r"(?P<unit>\s*(?:%|₫|đ(?![\wÀ-ỹ])|tr(?![\wÀ-ỹ])|k(?![\wÀ-ỹ])|(?i:vn[dđ])(?![\wÀ-ỹ])))?"
-)
-_NUMBER_RE: Final = re.compile(r"(?<![\d\w])(?P<num>\d(?:[\d.,]*\d)?)" + _UNIT_RE)
+# Đơn vị không phân biệt hoa thường (500K, 2TR, 1.200 vnd). Số dính liền chữ lạ (``12k3``, ``5m``)
+# không khớp -> giữ nguyên, không đọc sai nghĩa.
+_UNIT_RE: Final = r"(?P<unit>\s*(?:%|₫|(?i:đ|tr|k|vn[dđ])(?![\wÀ-ỹ])))?"
+_NUMBER_RE: Final = re.compile(r"(?<![\d\w])(?P<num>\d(?:[\d.,]*\d)?)" + _UNIT_RE + r"(?![\wÀ-ỹ])")
+# ``1tr2`` = 1,2 triệu; ``2tr05`` = 2,05 triệu (chữ số sau ``tr`` là phần thập phân của triệu).
+_TR_DECIMAL_RE: Final = re.compile(r"(?<![\d\w])(\d{1,6})(?i:tr)(\d{1,6})(?![\w\d])")
 _PER_RE: Final = re.compile(r"\s*/\s*(năm|tháng|ngày|tuần)\b")
 _THOUSANDS_DOT: Final = re.compile(r"^\d{1,3}(?:\.\d{3})+$")
 _THOUSANDS_COMMA: Final = re.compile(r"^\d{1,3}(?:,\d{3})+$")
@@ -174,6 +176,12 @@ def _verbalize_number(token: str, unit: str | None) -> str:
     return spoken
 
 
+def _verbalize_tr_decimal(m: re.Match[str]) -> str:
+    whole, frac = m.group(1), m.group(2)
+    value = int(whole) * 1_000_000 + int(frac) * 10 ** (6 - len(frac))
+    return number_to_vi(value)
+
+
 def normalize_vi(text: str) -> str:
     """Chuẩn hóa văn bản tiếng Việt để đọc thành tiếng. Idempotent với văn bản đã chuẩn hóa."""
     out = unicodedata.normalize("NFC", text)
@@ -187,7 +195,10 @@ def normalize_vi(text: str) -> str:
         out,
     )
     out = _PER_RE.sub(lambda m: f" mỗi {m.group(1)}", out)
+    out = _TR_DECIMAL_RE.sub(_verbalize_tr_decimal, out)
+    # Đọc SỐ trước, thay viết tắt SAU: nếu đổi "VND" -> "đồng" trước thì ``1,200 VND`` mất hậu tố
+    # tiền tệ và ``,200`` bị hiểu là thập phân (đọc sai số tiền).
+    out = _NUMBER_RE.sub(lambda m: _verbalize_number(m.group("num"), m.group("unit")), out)
     for short, spoken in _ABBREVIATIONS:
         out = re.sub(rf"(?<![\w]){re.escape(short)}(?![\w])", spoken, out)
-    out = _NUMBER_RE.sub(lambda m: _verbalize_number(m.group("num"), m.group("unit")), out)
     return _SPACES_RE.sub(" ", out).strip()

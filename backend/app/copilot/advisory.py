@@ -13,7 +13,7 @@ from __future__ import annotations
 
 import re
 import unicodedata
-from collections.abc import Iterable
+from collections.abc import Callable, Iterable
 from dataclasses import dataclass
 from typing import Final, Protocol
 
@@ -23,38 +23,71 @@ OFFICIAL_HOTLINE_VAR: Final = "{{OFFICIAL_HOTLINE}}"
 _SENTINEL: Final = "\u0001OFFICIAL\u0001"
 MIN_USEFUL_CHARS: Final = 40
 
-_ZERO_WIDTH_RE: Final = re.compile(r"[​-‏⁠﻿­]")
+_ZERO_WIDTH_RE: Final = re.compile("[​-‏‪-‮⁠-⁤᠎͏﻿­]")
 _TEMPLATE_RE: Final = re.compile(r"\{\{.*?\}\}", re.DOTALL)
-_OBF_DOT_RE: Final = re.compile(
-    r"\s*(?:\[\s*\.\s*\]|\(\s*\.\s*\)|\{\s*\.\s*\}|\s+dot\s+|\s+chấm\s+)\s*"
+
+# Dấu chấm Unicode và chữ giả dạng Latin (Cyrillic/Hy Lạp) -> ASCII TRƯỚC khi dò tên miền/SĐT.
+_DOT_TABLE: Final = str.maketrans({"。": ".", "｡": ".", "․": ".", "‧": ".", "·": "."})
+_HOMOGLYPHS: Final = {
+    "а": "a", "е": "e", "о": "o", "р": "p", "с": "c", "у": "y", "х": "x", "і": "i", "ј": "j",
+    "ѕ": "s", "ԁ": "d", "ӏ": "l", "һ": "h", "ԛ": "q", "ԝ": "w", "к": "k", "м": "m", "н": "h",
+    "т": "t", "в": "b", "α": "a", "ε": "e", "ι": "i", "κ": "k", "ο": "o", "ρ": "p", "τ": "t",
+    "υ": "u", "χ": "x", "ν": "v",
+}  # fmt: skip
+_HOMOGLYPH_TABLE: Final = str.maketrans(
+    {**_HOMOGLYPHS, **{k.upper(): v.upper() for k, v in _HOMOGLYPHS.items()}}
 )
-_OBF_SCHEME_RE: Final = re.compile(r"\bh(?:xx|tt)p(s?)\s*(?:://|:\\\\|\[:\]//)", re.IGNORECASE)
+
+_OBF_DOT_RE: Final = re.compile(
+    r"\s*[\[({<]\s*(?:dot|chấm|\.)\s*[\])}>]\s*"  # (dot) [dot] {.} (.)
+    r"|\s+(?:dot|chấm)\s+"  # "evil dot com"
+    r"|(?<=\w)\s+\.\s*(?=\w)",  # "zalo . me" (khoảng trắng TRƯỚC dấu chấm)
+    re.IGNORECASE,
+)
+_OBF_AT_RE: Final = re.compile(
+    r"\s*[\[({<]\s*(?:at|a còng|a cờ ng)\s*[\])}>]\s*|(?<=\w)\s+@\s*(?=\w)", re.I
+)
+_OBF_SCHEME_RE: Final = re.compile(r"(?<!\w)h(?:xx|tt)p(s?)\s*(?:://|:\\|\[:\]//)", re.IGNORECASE)
+_IP_RE: Final = re.compile(r"(?<![\w.])\d{1,3}(?:\.\d{1,3}){3}(?::\d{1,5})?(?:[/?#]\S*)?(?![\w])")
 _URL_RE: Final = re.compile(
-    r"(?:\b[a-z][a-z0-9+.\-]{1,15}://\S+)"  # có scheme
-    r"|(?:\bwww\.\S+)"
-    r"|(?:\b(?:[a-z0-9\-]+\.)+[a-z]{2,24}\b(?:[/:?#]\S*)?)",  # tên miền trần (zalo.me/x, bit.ly/y)
+    r"(?:(?<!\w)[a-z][a-z0-9+.\-]{1,15}://\S+)"  # có scheme
+    r"|(?:(?<!\w)www\.\S+)"
+    # tên miền trần (zalo.me/x, bit.ly/y, vay-nhanh.việt): nhãn + TLD chữ cái Unicode
+    r"|(?:(?<![\w.])(?:[\w\-]+\.)+[^\W\d_]{2,24}(?![\w])(?:[/:?#]\S*)?)",
     re.IGNORECASE,
 )
 _EMAIL_RE: Final = re.compile(r"[^\s@]+@[^\s@]+", re.IGNORECASE)
-# SĐT: 0/+84 + 8-10 số; hotline 18xx/19xx; hoặc >= 9 chữ số liền/cách bằng space/gạch.
+_HANDLE_RE: Final = re.compile(r"@\w[\w.]{1,}")  # @scam_support_vn (Telegram/Zalo/IG...)
+_ENCODED_RE: Final = re.compile(r"[A-Za-z0-9+/_\-]{20,}={0,2}")  # base64/hex dài (URL mã hóa)
+# Dấu ngăn thường gặp khi kẻ gian tách chữ số để lách bộ lọc.
+_SEP: Final = r"[\s.\-_/\\()·,]"
 _PHONE_RES: Final[tuple[re.Pattern[str], ...]] = (
-    re.compile(r"(?<![\w.])(?:\+\s*84|84|0)(?:[\s.\-()]*\d){8,10}(?!\d)"),
-    re.compile(r"(?<!\d)1[89]00(?:[\s.\-]*\d){4,8}(?!\d)"),
-    re.compile(r"(?<![\w.])\d(?:[ \-]?\d){8,}(?!\d)"),
+    # 0/84/+84 + 8-10 chữ số, ngăn cách bằng dấu bất kỳ ở trên (gộp chữ số trước khi bắt).
+    re.compile(rf"(?<![\w.])(?:\+\s*84|84|0)(?:{_SEP}{{0,3}}\d){{8,10}}(?!\d)"),
+    re.compile(
+        rf"(?<!\d)1{_SEP}{{0,3}}[89]{_SEP}{{0,3}}0{_SEP}{{0,3}}0(?:{_SEP}{{0,3}}\d){{4,8}}(?!\d)"
+    ),
+    # >= 9 chữ số tách bằng space/gạch/gạch chéo (KHÔNG dấu chấm: số tiền 1.200.000).
+    re.compile(r"(?<![\w.])\d(?:[\s\-_/]{0,3}\d){8,}(?!\d)"),
+    re.compile(r"(?<![\w.])\d{7,}(?!\d)"),  # chốt chặn: không để dãy >= 7 chữ số liền nhau
 )
+_LOOKALIKE_DIGITS_RE: Final = re.compile(r"(?<![A-Za-z0-9])[\dOoIl|]{9,}(?![A-Za-z0-9])")
+_LOOKALIKE_TABLE: Final = str.maketrans("OoIl|", "00111")
 _DIGIT_WORD: Final = (
     r"(?:không|một|hai|ba|bốn|tư|năm|lăm|sáu|bảy|tám|chín"
     r"|zero|one|two|three|four|five|six|seven|eight|nine)"
 )
-_SPOKEN_PHONE_RE: Final = re.compile(
-    rf"(?<!\w)(?:{_DIGIT_WORD}[\s,.\-]+){{6,}}{_DIGIT_WORD}(?!\w)", re.IGNORECASE
+_SPOKEN_ITEM: Final = rf"(?:{_DIGIT_WORD}|\d+)"
+_SPOKEN_RUN_RE: Final = re.compile(
+    rf"(?<!\w){_SPOKEN_ITEM}(?:[\s,.\-]+{_SPOKEN_ITEM})+(?!\w)", re.IGNORECASE
 )
+_SPOKEN_MIN_DIGITS: Final = 7
 
 
 @dataclass(frozen=True, slots=True)
 class SanitizeResult:
     text: str
-    removed: tuple[str, ...]  # loại đã tước: url|email|phone|template
+    removed: tuple[str, ...]  # loại đã tước: url|email|phone|template|handle|encoded
 
 
 def _digits(s: str) -> str:
@@ -67,6 +100,7 @@ def sanitize_outbound(text: str, *, whitelist_hotlines: Iterable[str] = ()) -> S
     allowed = {d for h in whitelist_hotlines if (d := _digits(h))}
     removed: list[str] = []
     out = unicodedata.normalize("NFKC", text)
+    out = out.translate(_DOT_TABLE).translate(_HOMOGLYPH_TABLE)
     out = _ZERO_WIDTH_RE.sub("", out)
     out = out.replace(OFFICIAL_HOTLINE_VAR, _SENTINEL)
 
@@ -77,18 +111,25 @@ def sanitize_outbound(text: str, *, whitelist_hotlines: Iterable[str] = ()) -> S
     out = _TEMPLATE_RE.sub(strip_templates, out)
     out = _OBF_SCHEME_RE.sub(lambda m: f"http{m.group(1)}://", out)
     out = _OBF_DOT_RE.sub(".", out)
+    out = _OBF_AT_RE.sub("@", out)
 
-    def strip_email(m: re.Match[str]) -> str:
-        removed.append("email")
-        return " "
+    def strip_as(kind: str) -> Callable[[re.Match[str]], str]:
+        def _strip(m: re.Match[str]) -> str:
+            removed.append(kind)
+            return " "
 
-    out = _EMAIL_RE.sub(strip_email, out)
+        return _strip
 
-    def strip_url(m: re.Match[str]) -> str:
-        removed.append("url")
-        return " "
+    def fix_lookalike(m: re.Match[str]) -> str:
+        run = m.group(0)  # "09l2345678", "O912345678": chữ giả dạng chữ số
+        real = sum(c.isdigit() for c in run)
+        return run.translate(_LOOKALIKE_TABLE) if real >= 6 else run
 
-    out = _URL_RE.sub(strip_url, out)
+    out = _LOOKALIKE_DIGITS_RE.sub(fix_lookalike, out)
+    out = _EMAIL_RE.sub(strip_as("email"), out)
+    out = _HANDLE_RE.sub(strip_as("handle"), out)
+    out = _URL_RE.sub(strip_as("url"), out)
+    out = _ENCODED_RE.sub(strip_as("encoded"), out)
 
     def strip_phone(m: re.Match[str]) -> str:
         digits = _digits(m.group(0))
@@ -100,12 +141,20 @@ def sanitize_outbound(text: str, *, whitelist_hotlines: Iterable[str] = ()) -> S
     for pattern in _PHONE_RES:
         out = pattern.sub(strip_phone, out)
 
-    def strip_spoken(m: re.Match[str]) -> str:
-        removed.append("phone")
-        return " "
+    out = _IP_RE.sub(strip_as("url"), out)  # sau SĐT: "1.8.0.0.5.8.8.8" là hotline, không phải IP
 
-    out = _SPOKEN_PHONE_RE.sub(strip_spoken, out)
-    out = re.sub(r"[ \t]{2,}", " ", out).replace(" ,", ",").replace(" .", ".").strip()
+    def strip_spoken(m: re.Match[str]) -> str:
+        run = m.group(0)
+        words = re.findall(_DIGIT_WORD, run, flags=re.IGNORECASE)
+        total = len(words) + len(_digits(run))
+        if words and total >= _SPOKEN_MIN_DIGITS:  # chữ số đọc thành lời (có thể trộn số)
+            removed.append("phone")
+            return " "
+        return run
+
+    out = _SPOKEN_RUN_RE.sub(strip_spoken, out)
+    out = out.replace("@", " ")  # allowlist: không còn '@' nào ngoài kết quả đã lọc
+    out = re.sub(r"[ 	]{2,}", " ", out).replace(" ,", ",").replace(" .", ".").strip()
     out = out.replace(_SENTINEL, OFFICIAL_HOTLINE_VAR)
     return SanitizeResult(text=out, removed=tuple(dict.fromkeys(removed)))
 

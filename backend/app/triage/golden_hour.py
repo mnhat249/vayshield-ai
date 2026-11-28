@@ -25,7 +25,8 @@ GOLDEN_HOUR_MINUTES: Final = 60
 POLICE_HOTLINE: Final = "113"  # số khẩn cấp công an toàn quốc (thông tin công khai)
 VN_TZ: Final = timezone(timedelta(hours=7))
 MAX_MINUTES: Final = 10 * 365 * 24 * 60
-_UNSAFE_RE: Final = re.compile(r"[^A-Za-z0-9*]")
+_UNSAFE_RE: Final = re.compile(r"[^A-Za-z0-9]")
+FUTURE_SKEW_S: Final = 5 * 60  # dung sai lệch đồng hồ thiết bị; xa hơn = mốc giờ không đáng tin
 
 _CHANNEL_VI: Final[dict[ScamChannel, str]] = {
     ScamChannel.PHONE_CALL: "cuộc gọi điện thoại",
@@ -45,15 +46,14 @@ _TIER_VI: Final[dict[AmountBucketTier, str]] = {
 
 
 def mask_untrusted_account(raw: str | None) -> str | None:
-    """Che số tài khoản do client gửi: giữ nguyên nếu đã che (có ``*``), ngược lại chỉ để lộ 3 số
-    cuối. Trả ``None`` nếu rỗng."""
+    """Che số tài khoản do client gửi: LUÔN che lại (kể cả chuỗi có ``*``, vì client có thể giấu số
+    thật giữa các dấu ``*``), chỉ để lộ 3 ký tự cuối.
+    Trả ``None`` nếu rỗng."""
     if raw is None:
         return None
     clean = _UNSAFE_RE.sub("", raw)
     if not clean:
         return None
-    if "*" in clean:
-        return clean[:32]
     return "***" + clean[-3:]
 
 
@@ -80,7 +80,7 @@ def _hotline_entry(registry: BankHotlineRegistry, bank_bin: str | None) -> BankF
     return BankFreezeHotline(bank_bin=bank_bin, bank_short_name=name, hotline="", verified=False)
 
 
-def _steps(remaining: int, has_missing_hotline: bool) -> list[str]:
+def _steps(remaining: int, has_missing_hotline: bool, future_time: bool = False) -> list[str]:
     steps = [
         "Gọi ngay tổng đài ngân hàng của bạn để yêu cầu tạm khóa/tra soát giao dịch vừa chuyển.",
         "Không chuyển thêm bất kỳ khoản nào để 'lấy lại tiền' hay 'giải tỏa': đó là chiêu lừa "
@@ -94,7 +94,13 @@ def _steps(remaining: int, has_missing_hotline: bool) -> list[str]:
             "Nếu chưa có số tổng đài ở trên, hãy gọi số in ở mặt sau thẻ hoặc trong ứng dụng "
             "ngân hàng của bạn.",
         )
-    if remaining == 0:
+    if future_time:
+        steps.insert(
+            0,
+            "Giờ chuyển tiền bạn khai nằm ở tương lai (đồng hồ máy có thể sai): đừng chờ, hãy "
+            "liên hệ ngân hàng và công an ngay.",
+        )
+    elif remaining == 0:
         steps.insert(0, "Đã quá 1 giờ đầu nhưng vẫn cần liên hệ ngân hàng và công an ngay.")
     return steps
 
@@ -129,8 +135,11 @@ def build_golden_hour_dossier(
 ) -> GoldenHourDossierResponse:
     now = now.astimezone(UTC)
     elapsed = (now - _aware(req.transferred_at)).total_seconds()
-    minutes = min(MAX_MINUTES, max(0, int(elapsed // 60)))  # giờ máy lệch về tương lai -> 0
-    remaining = max(0, GOLDEN_HOUR_MINUTES - minutes)
+    # Lệch nhỏ về tương lai (đồng hồ máy) -> coi như vừa chuyển. Xa hơn dung sai thì mốc giờ không
+    # đáng tin: KHÔNG hứa "còn đủ 60 phút", coi như hết thời gian chờ và giục liên hệ ngay.
+    future_time = elapsed < -FUTURE_SKEW_S
+    minutes = min(MAX_MINUTES, max(0, int(elapsed // 60)))
+    remaining = 0 if future_time else max(0, GOLDEN_HOUR_MINUTES - minutes)
     victim = _hotline_entry(registry, req.victim_bank_bin)
     hotlines = [victim]
     mule: BankFreezeHotline | None = None
@@ -145,7 +154,7 @@ def build_golden_hour_dossier(
         golden_hour_remaining_minutes=remaining,
         bank_freeze_hotlines=hotlines,
         police_hotline=POLICE_HOTLINE,
-        steps_vi=_steps(remaining, any(not h.hotline for h in hotlines)),
+        steps_vi=_steps(remaining, any(not h.hotline for h in hotlines), future_time),
         police_report_draft_vi=build_report_draft(req, victim, mule),
         pdf_available=True,
     )

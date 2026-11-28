@@ -193,6 +193,10 @@ def _evidence(node: MuleNodeRecord, edges: Sequence[MuleEdgeRecord]) -> list[Dos
     ]
 
 
+def _is_seed_cluster(cluster: ClusterRecord | None) -> bool:
+    return cluster is not None and cluster.campaign_label.startswith(SIMULATED_SEED_PREFIX)
+
+
 def _actor(subject: str) -> str:
     return subject.replace("|", "_")[:120]
 
@@ -206,6 +210,7 @@ async def build_dossier(
     unseal: bool,
     actor_subject: str,
     now: datetime,
+    is_judge: bool = False,
 ) -> SimoDossier:
     node = await repo.graph.get_node(mule_node_id)
     if node is None:
@@ -237,6 +242,10 @@ async def build_dossier(
 
     unsealed: str | None = None
     chain_hash: str | None = None
+    if unseal and is_judge and not _is_seed_cluster(cluster):
+        # Giám khảo (tài khoản dùng chung) chỉ được mở niêm phong dữ liệu mô phỏng, không bao giờ
+        # STK thật; chặn TRƯỚC audit/giải mã.
+        raise AppError(ErrorCode.FORBIDDEN, 403)
     if unseal:
         if cipher is None:
             raise AppError(ErrorCode.SERVICE_DEGRADED, 503, "Kho khóa giải mã chưa được cấu hình.")

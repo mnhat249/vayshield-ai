@@ -27,6 +27,7 @@ from app.copilot.ops_auth import (
 from app.copilot.repository import OpsRepository
 from app.core.clock import Clock, get_clock
 from app.core.config import get_settings
+from app.core.errors import AppError, ErrorCode
 from app.core.openapi import WS_TICKET_MAX_LEN, WS_TICKET_MIN_LEN, error_responses
 from app.core.redis import get_redis
 from app.core.schemas.ops import (
@@ -45,6 +46,9 @@ from app.security.tickets import TicketNamespace, consume_ticket, issue_ticket
 router = APIRouter(prefix="/api/v1/ops", tags=["ops"])
 
 _NO_STORE: Final = {"Cache-Control": "no-store"}
+AUTH_IP_RPM: Final = 10  # /auth/token: 10 lần/phút/IP
+AUTH_GLOBAL_RPM: Final = 120  # và trần toàn cục (chống dò phân tán nhiều IP)
+AUTH_BUCKET_TAG: Final = "ops-auth-token"
 _FEED_DOC: Final[dict[int | str, dict[str, Any]]] = {
     200: {
         "description": "SSE live threat feed (ops.threat_signal, ping). "
@@ -69,10 +73,13 @@ async def ops_token(
     redis: Annotated[Redis, Depends(get_redis)],
     clock: Annotated[Clock, Depends(get_clock)],
 ) -> OpsTokenResponse:
-    # Rate limit theo IP TRƯỚC khi chạm bộ kiểm tra mật khẩu/mã (chống dò mật khẩu).
-    await CompositeRateLimiter.from_settings(redis).enforce(
-        device_id=None, ip=client_ip(request.client), clock=clock
-    )
+    # Rate limit TRƯỚC khi chạm bộ kiểm tra mật khẩu/mã (chống dò mật khẩu): bucket RIÊNG cho
+    # endpoint này (không dùng chung ngưỡng với API thường) theo IP + một bucket toàn cục.
+    ip = client_ip(request.client)
+    per_ip = CompositeRateLimiter(redis, device_rpm=1, ip_rpm=AUTH_IP_RPM)
+    await per_ip.enforce(device_id=None, ip=f"{AUTH_BUCKET_TAG}|{ip}", clock=clock)
+    overall = CompositeRateLimiter(redis, device_rpm=1, ip_rpm=AUTH_GLOBAL_RPM)
+    await overall.enforce(device_id=None, ip=f"{AUTH_BUCKET_TAG}|*", clock=clock)
     response.headers.update(_NO_STORE)
     return await tokens.exchange(body)
 
@@ -118,8 +125,9 @@ async def simo_dossier(
         writer,
         mule_node_id=mule_node_id,
         unseal=unseal,
-        actor_subject=ops.subject,
+        actor_subject=ops.audit_actor,
         now=clock.now(),
+        is_judge=ops.is_judge,
     )
 
 
@@ -170,10 +178,13 @@ async def live_feed(
     ],
 ) -> StreamingResponse:
     # Tiêu thụ vé TRƯỚC khi mở luồng: sai/đã dùng -> 401 JSON (không phải SSE).
-    await consume_ticket(redis, ticket, namespace=TicketNamespace.OPS_STREAM)
-    frames: AsyncIterator[str] = threat_signal_frames(redis)
+    claims = await consume_ticket(redis, ticket, namespace=TicketNamespace.OPS_STREAM)
+    if claims.role != ROLE_FRAUD_ANALYST:
+        raise AppError(ErrorCode.FORBIDDEN, 403)
+    settings = get_settings()
+    frames: AsyncIterator[str] = threat_signal_frames(redis)  # trần = min(MAX_STREAM_S, TTL access)
     return StreamingResponse(
-        with_keepalive(frames, get_settings().sse_keepalive_interval_s),
+        with_keepalive(frames, settings.sse_keepalive_interval_s),
         media_type=f"{SSE_MEDIA_TYPE}; charset=utf-8",
         headers=dict(SSE_HEADERS),
     )

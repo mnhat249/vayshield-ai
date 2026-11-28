@@ -117,12 +117,13 @@ async def test_s2_ec48_after_golden_hour_remaining_is_zero_with_urgent_step(
     assert "quá 1 giờ" in d["steps_vi"][0]
 
 
-async def test_s2_ec48_client_clock_in_future_clamps_to_zero(
+async def test_s2_ec48_client_clock_far_in_future_is_not_trusted(
     triage_app: FastAPI, client: httpx.AsyncClient, fake_clock: FakeClock
 ) -> None:
     r = await client.post(URL, json=_body(fake_clock, minutes_ago=-30), headers=SANDBOX_HEADERS)
     d = r.json()
-    assert d["minutes_since_transfer"] == 0 and d["golden_hour_remaining_minutes"] == 60
+    # Lệch xa (30 phút) -> mốc giờ không đáng tin: không hứa còn đủ 60 phút (xem test review).
+    assert d["minutes_since_transfer"] == 0 and d["golden_hour_remaining_minutes"] == 0
 
 
 async def test_s2_ec48_naive_timestamp_is_vietnam_time(
@@ -193,3 +194,24 @@ async def test_s2_ec48_latency_under_120ms(
         samples.append((time.perf_counter() - t0) * 1000)
         assert r.status_code == 200
     assert statistics.median(samples) < 120, samples
+
+
+def test_s2_ec48_review_mask_always_hides_all_but_last_three_even_with_stars() -> None:
+    from app.triage.golden_hour import mask_untrusted_account
+
+    assert mask_untrusted_account("1903123456788899") == "***899"
+    assert mask_untrusted_account("19031234*****8899") == "***899"  # '*' không bypass che
+    assert mask_untrusted_account("***899") == "***899"
+    assert mask_untrusted_account("***") is None
+    assert mask_untrusted_account(None) is None
+
+
+async def test_s2_ec48_review_far_future_transfer_does_not_claim_full_hour(
+    triage_app: FastAPI, client: httpx.AsyncClient, fake_clock: FakeClock
+) -> None:
+    near = await client.post(URL, json=_body(fake_clock, minutes_ago=-3), headers=SANDBOX_HEADERS)
+    assert near.json()["golden_hour_remaining_minutes"] == 60  # lệch đồng hồ nhỏ: dung sai
+    far = await client.post(URL, json=_body(fake_clock, minutes_ago=-30), headers=SANDBOX_HEADERS)
+    d = far.json()
+    assert d["golden_hour_remaining_minutes"] == 0
+    assert "tương lai" in d["steps_vi"][0]
