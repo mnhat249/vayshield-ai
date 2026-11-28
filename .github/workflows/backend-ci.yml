@@ -3,9 +3,9 @@ name: backend-ci
 on:
   push:
     branches: [main]
-    paths: ["backend/**", "contracts/**", ".github/workflows/backend-ci.yml"]
+    paths: ["backend/**", "contracts/**", "infra/**", "loadtest/**", "docker-compose.yml", ".github/workflows/backend-ci.yml"]
   pull_request:
-    paths: ["backend/**", "contracts/**", ".github/workflows/backend-ci.yml"]
+    paths: ["backend/**", "contracts/**", "infra/**", "loadtest/**", "docker-compose.yml", ".github/workflows/backend-ci.yml"]
 
 permissions:
   contents: read
@@ -111,3 +111,7 @@ jobs:
 
       - name: Pytest (kể cả test @pytest.mark.pg / redis_real)
         run: uv run pytest -q
+
+      - name: Infra tests (cấu hình hạ tầng T18, không cần mạng/Docker)
+        working-directory: .
+        run: uv run --project backend pytest -c backend/pyproject.toml infra/tests -q -p no:cacheprovider

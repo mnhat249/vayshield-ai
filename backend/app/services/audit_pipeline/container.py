@@ -31,6 +31,8 @@ from app.core.clock import Clock, get_clock
 from app.core.config import AppEnv, Settings, get_settings
 from app.core.errors import AppError, ErrorCode
 from app.core.logging import get_logger
+from app.core.schemas.sse import OpsThreatSignal
+from app.mule_graph.service import ThreatSignalSink
 from app.security.blind_index import BlindIndexer
 from app.security.rate_limit import CompositeRateLimiter
 from app.security.signing import Ed25519Signer
@@ -233,7 +235,7 @@ def build_services(
     if mule is None:
         mule = NullMulePort()
         if has_db and indexer is not None:
-            built = _try(lambda: _build_mule_port(indexer, settings), "mule_graph")
+            built = _try(lambda: _build_mule_port(indexer, settings, redis), "mule_graph")
             if built is not None:
                 mule = built
     if shield is None:
@@ -265,7 +267,19 @@ def build_services(
     return services
 
 
-def _build_mule_port(indexer: BlindIndexer, settings: Settings) -> MulePort:
+def _make_threat_sink(redis: Redis) -> ThreatSignalSink:
+    """Cổng tín hiệu mule -> live feed Ops (Redis pub/sub). Chỉ dữ liệu đã che theo schema."""
+    from app.copilot.feed import publish_threat_signal
+
+    async def sink(signal: OpsThreatSignal) -> object:
+        return await publish_threat_signal(redis, signal)
+
+    return sink
+
+
+def _build_mule_port(
+    indexer: BlindIndexer, settings: Settings, redis: Redis | None = None
+) -> MulePort:
     from app.core.db import get_sessionmaker
     from app.mule_graph.repository_pg import SqlMuleGraphRepository
     from app.mule_graph.service import MuleGraphService
@@ -277,6 +291,7 @@ def _build_mule_port(indexer: BlindIndexer, settings: Settings) -> MulePort:
         indexer,
         get_envelope_cipher(settings),
         pepper_version=settings.pepper_mule_account_version,
+        on_threat_signal=_make_threat_sink(redis) if redis is not None else None,
     )
     return MuleGraphPort(service, repo, indexer)
 
