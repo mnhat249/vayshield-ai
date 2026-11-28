@@ -4,7 +4,8 @@
 - ``--ready``: thoát 0 chỉ khi body ``status == "ok"`` (readiness chặt: DB + Redis + registry/trust
   đã nạp + khóa ký sẵn sàng; "degraded" = chưa sẵn sàng nhận lưu lượng).
 - ``--loop``: giữ ấm mỗi PROBE_INTERVAL_S giây (mặc định 180 — File 6 §1.2 mục 1, EC-OPS11).
-  /healthz đã chạy ``SELECT 1`` PG + ``PING`` Redis nên mỗi nhịp giữ ấm kết nối PgBouncer/serverless.
+  /healthz đã chạy ``SELECT 1`` PG + ``PING`` Redis nên mỗi nhịp giữ ấm kết nối
+  PgBouncer/serverless.
 
 Không in body (tránh lọt dữ liệu vào log). Không gọi Gemini ở đây (tốn ngân sách).
 """
