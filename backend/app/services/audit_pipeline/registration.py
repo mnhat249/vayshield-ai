@@ -5,8 +5,9 @@
   ``pow_difficulty_bits`` bit 0 đầu, timestamp trong ±300s. Có PoW hợp lệ → hạn mức đăng ký/IP
   cao hơn; không PoW → hạn mức thấp (rate limit; giả định: PoW tùy chọn theo contract).
 - GIẢ ĐỊNH: mất phản hồi rồi retry cùng khóa nhận 409 (không trả lại device cũ vì chưa chứng
-  minh sở hữu khóa); client tạo khóa mới. CẦN migration mới: UNIQUE INDEX trên
-  ``anonymous_devices.pubkey_ecdsa_p256`` + ON CONFLICT (hiện còn race SELECT→INSERT).
+  minh sở hữu khóa); client tạo khóa mới. Migration 0003 có UNIQUE INDEX trên
+  ``anonymous_devices.pubkey_ecdsa_p256``; ``repo.create`` dùng ON CONFLICT nên 2 request đua
+  nhau cùng khóa → 1 thành công, 1 nhận 409 (không race SELECT→INSERT).
 - SĐT opt-in: chuẩn hóa E.164 (EC-DB10) → blind index HMAC dual-pepper; chỉ lưu HMAC. SĐT đã
   thuộc thiết bị khác → KHÔNG chiếm (chưa xác minh quyền sở hữu), thiết bị vẫn đăng ký nhưng
   không liên kết SĐT. Opt-in hết hạn sau 90 ngày (EC-DB03).

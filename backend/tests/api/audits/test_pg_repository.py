@@ -41,7 +41,7 @@ def _device(phone: str | None = None) -> DeviceRecord:
     now = datetime.now(UTC)
     return DeviceRecord(
         device_id=uuid.uuid4(),
-        pubkey_spki=b"\x30" * 91,
+        pubkey_spki=b"\x30" + uuid.uuid4().bytes * 5 + b"\x00" * 10,  # UNIQUE từ 0003
         platform_type="ANDROID_NATIVE",
         daily_wage_vnd=350_000,
         policy_version=1,
