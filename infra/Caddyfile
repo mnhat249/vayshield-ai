@@ -1,0 +1,31 @@
+# Reverse proxy cho VPS: TLS tự động (Let's Encrypt), HTTP/2, TLS >= 1.2 (1.3 ưu tiên).
+# REST + SSE + WSS cùng một domain trên cổng 443 (EC-OPS05).
+{$PUBLIC_DOMAIN} {
+	encode zstd gzip
+
+	tls {
+		protocols tls1.2 tls1.3
+	}
+
+	reverse_proxy vayshield-backend:8000 {
+		# flush_interval -1: đẩy từng chunk SSE ngay, không gom gói (File 6 §1.2 mục 2).
+		flush_interval -1
+		# Luồng SSE/WSS sống lâu: không cắt vì idle.
+		transport http {
+			read_timeout 0
+			response_header_timeout 60s
+		}
+		header_down X-Accel-Buffering no
+	}
+
+	header {
+		Strict-Transport-Security "max-age=31536000"
+		X-Content-Type-Options nosniff
+		-Server
+	}
+}
+
+# EC-OPS18: www -> domain chuẩn duy nhất bằng 308 (tránh lệch Access-Control-Allow-Origin).
+www.{$PUBLIC_DOMAIN} {
+	redir https://{$PUBLIC_DOMAIN}{uri} 308
+}

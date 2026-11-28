@@ -1,0 +1,20 @@
+# EC-OPS03: ép LF cho mọi file văn bản để Docker Linux không gặp "/bin/sh^M: bad interpreter".
+# Lua script Redis (shield_state/lua) và migration SQL BẮT BUỘC LF (EVALSHA/checksum ổn định).
+* text=auto eol=lf
+*.sh   text eol=lf
+*.lua  text eol=lf
+*.sql  text eol=lf
+*.py   text eol=lf
+*.yml  text eol=lf
+*.yaml text eol=lf
+*.toml text eol=lf
+*.json text eol=lf
+Dockerfile text eol=lf
+Caddyfile text eol=lf
+
+*.png  binary
+*.jpg  binary
+*.jpeg binary
+*.webp binary
+*.pdf  binary
+*.zip  binary
